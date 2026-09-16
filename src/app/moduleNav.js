@@ -1,39 +1,30 @@
 export const SIDEBAR = [
-  { key: "dashboard", label: "Dashboard", path: "/dashboard",        icon: "LayoutDashboard" },
-  { key: "sales",     label: "Sales",     path: "/sales/quotations", icon: "ShoppingCart" },
-  { key: "products",  label: "Products",  path: "/products",         icon: "Package" },
-  { key: "parties",   label: "Parties",   path: "/parties/customers",icon: "Users" },
-  { key: "purchases", label: "Purchases", path: "/purchases",        icon: "Truck" },
-  { key: "reports",   label: "Reports",   path: "/reports/sales",    icon: "FileBarChart" },
+  { key: "dashboard", label: "Dashboard", path: "/dashboard", icon: "LayoutDashboard" },
+  { key: "master",    label: "Master",    path: "/master/product-types", icon: "Boxes" },
+  { key: "bills",     label: "Bills",     path: "/bills/quotations", icon: "Receipt" },
+  { key: "reports",   label: "Reports",   path: "/reports/sales", icon: "BarChart3" },
   { key: "settings",  label: "Settings",  path: "/settings/company", icon: "Settings" },
 ];
 
 export const MODULE_TABS = {
-  products: [
-    { label: "Product Master", path: "/products" },
-    { label: "Categories",     path: "/products/categories" },
-    { label: "Attributes",     path: "/products/attributes" },
-    { label: "Brands",         path: "/products/brands" },
-    { label: "Units",          path: "/products/units" },
+  master: [
+    { label: "Product Types", path: "/master/product-types" },
+    { label: "Attributes",    path: "/master/attributes" },
+    { label: "Products",      path: "/master/products" },
+    { label: "Customers",     path: "/master/customers" },
   ],
-  sales: [
-    { label: "Quotations", path: "/sales/quotations" },
-    { label: "Invoices",   path: "/sales/invoices" },
-    { label: "Payments",   path: "/sales/payments" },
-  ],
-  parties: [
-    { label: "Customers", path: "/parties/customers" },
-    { label: "Suppliers", path: "/parties/suppliers" },
+  bills: [
+    { label: "Quotations", path: "/bills/quotations" },
+    { label: "Invoices",   path: "/bills/invoices" },
   ],
   reports: [
     { label: "Sales",       path: "/reports/sales" },
-    { label: "Purchase",    path: "/reports/purchase" },
-    { label: "Inventory",   path: "/reports/inventory" },
+    { label: "Products",    path: "/reports/products" },
+    { label: "Customers",   path: "/reports/customers" },
     { label: "Outstanding", path: "/reports/outstanding" },
   ],
   settings: [
     { label: "Company",    path: "/settings/company" },
-    { label: "Documents",  path: "/settings/documents" },
     { label: "Tax",        path: "/settings/tax" },
     { label: "Users",      path: "/settings/users" },
     { label: "Appearance", path: "/settings/appearance" },

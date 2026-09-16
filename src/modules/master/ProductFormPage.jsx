@@ -366,7 +366,7 @@ export function ProductFormPage() {
         };
         const created = await createMut.mutateAsync(payload);
         toast.success("Product created");
-        navigate(`/products/${created.id}`);
+        navigate(`/master/products/${created.id}`);
       } else {
         await updateMut.mutateAsync({
           id,
@@ -434,7 +434,7 @@ export function ProductFormPage() {
         qc.invalidateQueries({ queryKey: ["products"] });
         qc.invalidateQueries({ queryKey: ["product", id] });
         qc.invalidateQueries({ queryKey: ["variants", id] });
-        navigate(`/products/${id}`);
+        navigate(`/master/products/${id}`);
       }
     } catch (e) {
       console.error(e);
@@ -461,7 +461,7 @@ export function ProductFormPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate("/products")}
+              onClick={() => navigate("/master/products")}
             >
               Cancel
             </Button>
@@ -476,7 +476,7 @@ export function ProductFormPage() {
           </div>
         }
       />
-      <ModuleTabs tabs={MODULE_TABS.products} />
+      <ModuleTabs tabs={MODULE_TABS.master} />
 
       <div className="p-3 md:p-6 space-y-4 max-w-6xl">
         {/* ───── Basic Information ───── */}
@@ -535,19 +535,14 @@ export function ProductFormPage() {
                 </div>
               </Field>
 
-              <Field label="Category" required>
-                <Select
-                  value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
-                >
-                  <option value="">Select a category…</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
+             <Field label="Product Type" required>
+  <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+    <option value="">Select a product type…</option>
+    {categories.map((c) => (
+      <option key={c.id} value={c.id}>{c.name}</option>
+    ))}
+  </Select>
+</Field>
 
               <Field label="Brand">
                 <Select

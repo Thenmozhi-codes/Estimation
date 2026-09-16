@@ -58,7 +58,7 @@ export function InvoiceFormPage() {
       };
       const created = await createMut.mutateAsync(payload);
       toast.success(`Invoice ${created.number} created`);
-      navigate(`/sales/invoices/${created.id}`);
+      navigate(`/bills/invoices/${created.id}`);
     } catch (e) {
       console.error(e);
       toast.error(e?.message || "Save failed");
@@ -75,7 +75,7 @@ export function InvoiceFormPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate("/sales/invoices")}
+              onClick={() => navigate("/bills/invoices")}
             >
               <ArrowLeft className="h-4 w-4" /> Cancel
             </Button>
@@ -85,7 +85,7 @@ export function InvoiceFormPage() {
           </div>
         }
       />
-      <ModuleTabs tabs={MODULE_TABS.sales} />
+      <ModuleTabs tabs={MODULE_TABS.bills} />
 
       <div className="p-3 md:p-6 space-y-4 max-w-5xl">
         <Card>

@@ -43,7 +43,7 @@ export function NotificationBell() {
           subtitle: formatMoney(
             Math.max(0, (i.grandTotal || 0) - (i.amountPaid || 0)),
           ) + " pending",
-          path: `/sales/invoices/${i.id}`,
+          path: `/bills/invoices/${i.id}`,
         }),
       );
 
@@ -58,7 +58,7 @@ export function NotificationBell() {
           icon: Clock,
           title: `Quotation ${q.number} awaiting response`,
           subtitle: `Status: ${q.status}`,
-          path: `/sales/quotations/${q.id}`,
+          path: `/bills/quotations/${q.id}`,
         }),
       );
 
@@ -73,7 +73,7 @@ export function NotificationBell() {
           icon: Package,
           title: `Low stock: ${r.productName}`,
           subtitle: `${r.variantSku} — only ${r.quantity} left`,
-          path: `/inventory`,
+          path: `/master/products`,
         }),
       );
 

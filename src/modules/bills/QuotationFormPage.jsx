@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Save } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
+import { ModuleTabs } from "@/components/common/ModuleTabs";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -12,35 +13,38 @@ import { Card, CardBody } from "@/components/ui/Card";
 import { FormGrid } from "@/components/ui/FormGrid";
 import { LineItemsEditor } from "@/components/forms/LineItemsEditor";
 import { toast } from "@/lib/toast";
-import { useCreatePurchase } from "@/hooks/useDocuments";
+import { useCreateQuotation } from "@/hooks/useDocuments";
 import { useParties } from "@/hooks/useParties";
+import { MODULE_TABS } from "@/app/moduleNav";
 
-export function PurchaseFormPage() {
+export function QuotationFormPage() {
   const navigate = useNavigate();
   const { data: parties = [] } = useParties();
-  const createMut = useCreatePurchase();
+  const createMut = useCreateQuotation();
 
   const today = new Date().toISOString().slice(0, 10);
 
   const [partyId, setPartyId] = useState("");
   const [date, setDate] = useState(today);
-  const [status, setStatus] = useState("received");
+  const [validUntil, setValidUntil] = useState("");
+  const [status, setStatus] = useState("draft");
   const [discount, setDiscount] = useState(0);
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState([]);
 
-  const suppliers = parties.filter(
-    (p) => p.type === "supplier" || p.type === "both",
+  const customers = parties.filter(
+    (p) => p.type === "customer" || p.type === "both",
   );
 
   const handleSave = async () => {
-    if (!partyId) return toast.error("Select a supplier");
+    if (!partyId) return toast.error("Select a customer");
     if (!items.length) return toast.error("Add at least one item");
 
     try {
       const payload = {
         partyId,
         date,
+        validUntil: validUntil || null,
         status,
         discount: Number(discount) || 0,
         notes,
@@ -53,8 +57,8 @@ export function PurchaseFormPage() {
         })),
       };
       const created = await createMut.mutateAsync(payload);
-      toast.success(`Purchase ${created.number} recorded`);
-      navigate(`/purchases/${created.id}`);
+      toast.success(`Quotation ${created.number} created`);
+      navigate(`/bills/quotations/${created.id}`);
     } catch (e) {
       console.error(e);
       toast.error(e?.message || "Save failed");
@@ -64,31 +68,36 @@ export function PurchaseFormPage() {
   return (
     <>
       <PageHeader
-        title="New Purchase"
-        description="Stock is added when status is Received or Paid"
+        title="New Quotation"
+        description="Select customer, add items, save"
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/purchases")}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate("/bills/quotations")}
+            >
               <ArrowLeft className="h-4 w-4" /> Cancel
             </Button>
             <Button size="sm" onClick={handleSave} disabled={createMut.isPending}>
-              <Save className="h-4 w-4" /> Save Purchase
+              <Save className="h-4 w-4" /> Save Quotation
             </Button>
           </div>
         }
       />
+      <ModuleTabs tabs={MODULE_TABS.bills} />
 
       <div className="p-3 md:p-6 space-y-4 max-w-5xl">
         <Card>
           <CardBody>
             <FormGrid cols={2}>
-              <Field label="Supplier" required>
+              <Field label="Customer" required>
                 <Select
                   value={partyId}
                   onChange={(e) => setPartyId(e.target.value)}
                 >
-                  <option value="">Select supplier…</option>
-                  {suppliers.map((p) => (
+                  <option value="">Select customer…</option>
+                  {customers.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
@@ -98,8 +107,8 @@ export function PurchaseFormPage() {
               <Field label="Status">
                 <Select value={status} onChange={(e) => setStatus(e.target.value)}>
                   <option value="draft">Draft</option>
-                  <option value="received">Received</option>
-                  <option value="paid">Paid</option>
+                  <option value="sent">Sent</option>
+                  <option value="approved">Approved</option>
                 </Select>
               </Field>
               <Field label="Date">
@@ -107,6 +116,13 @@ export function PurchaseFormPage() {
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
+                />
+              </Field>
+              <Field label="Valid Until">
+                <Input
+                  type="date"
+                  value={validUntil}
+                  onChange={(e) => setValidUntil(e.target.value)}
                 />
               </Field>
             </FormGrid>

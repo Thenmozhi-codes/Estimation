@@ -126,7 +126,7 @@ export function InvoiceDetailPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate("/sales/invoices")}
+              onClick={() => navigate("/bills/invoices")}
             >
               <ArrowLeft className="h-4 w-4" /> Back
             </Button>
@@ -141,7 +141,7 @@ export function InvoiceDetailPage() {
           </div>
         }
       />
-      <ModuleTabs tabs={MODULE_TABS.sales} />
+      <ModuleTabs tabs={MODULE_TABS.bills} />
 
       <div className="p-3 md:p-6 space-y-4 max-w-5xl">
         <Card>

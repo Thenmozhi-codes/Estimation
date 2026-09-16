@@ -15,7 +15,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { FormGrid } from "@/components/ui/FormGrid";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils/cn";
-import { categorySchema } from "@/lib/domain/schemas";
+import { categorySchema } from "@/lib/domain/schemas/master";
 import {
   useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory,
   useAttributes, useCategoryAttributes, useUpsertCategoryAttribute,
@@ -24,43 +24,48 @@ import { categoryAttributeRepo } from "@/lib/api/repos";
 import { useQueryClient } from "@tanstack/react-query";
 import { MODULE_TABS } from "@/app/moduleNav";
 
-export function CategoryPage() {
+export function ProductTypesPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [edit, setEdit] = useState(null);
   const [confirm, setConfirm] = useState(null);
 
-  const { data: categories = [], isLoading } = useCategories();
-  const createCat = useCreateCategory();
-  const updateCat = useUpdateCategory();
-  const deleteCat = useDeleteCategory();
+  const { data: types = [], isLoading } = useCategories();
+  const createMut = useCreateCategory();
+  const updateMut = useUpdateCategory();
+  const deleteMut = useDeleteCategory();
 
-  const selected = categories.find((c) => c.id === selectedId) || categories[0];
+  const selected = types.find((t) => t.id === selectedId) || types[0];
 
   const form = useForm({
     resolver: zodResolver(categorySchema),
     defaultValues: { name: "", code: "", description: "", isActive: true },
   });
 
-  const openNew = () => { setEdit("new"); form.reset({ name: "", code: "", description: "", isActive: true }); };
-  const openEdit = (c) => { setEdit(c); form.reset(c); };
+  const openNew = () => {
+    setEdit("new");
+    form.reset({ name: "", code: "", description: "", isActive: true });
+  };
+  const openEdit = (t) => { setEdit(t); form.reset(t); };
 
   const onSubmit = async (values) => {
     try {
       if (edit === "new") {
-        const created = await createCat.mutateAsync(values);
-        toast.success("Category created");
+        const created = await createMut.mutateAsync(values);
+        toast.success("Product type created");
         setSelectedId(created.id);
       } else {
-        await updateCat.mutateAsync({ id: edit.id, patch: values });
-        toast.success("Category updated");
+        await updateMut.mutateAsync({ id: edit.id, patch: values });
+        toast.success("Product type updated");
       }
       setEdit(null);
-    } catch (e) { toast.error(e?.message || "Failed"); }
+    } catch (e) {
+      toast.error(e?.message || "Failed");
+    }
   };
 
   const onDelete = async () => {
-    await deleteCat.mutateAsync(confirm.id);
-    toast.success("Category deleted");
+    await deleteMut.mutateAsync(confirm.id);
+    toast.success("Product type deleted");
     setConfirm(null);
     setSelectedId(null);
   };
@@ -68,56 +73,56 @@ export function CategoryPage() {
   return (
     <>
       <PageHeader
-        title="Categories"
-        description="Group products and control which attributes apply"
+        title="Product Types"
+        description="Types of products you sell — each drives its own set of attributes"
         actions={
-          <Button onClick={openNew} size="sm">
+          <Button size="sm" onClick={openNew}>
             <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">New Category</span>
+            <span className="hidden sm:inline">New Type</span>
             <span className="sm:hidden">New</span>
           </Button>
         }
       />
-      <ModuleTabs tabs={MODULE_TABS.products} />
+      <ModuleTabs tabs={MODULE_TABS.master} />
 
-      <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-0 md:gap-4 p-3 md:p-6">
+      <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-0 md:gap-4 p-3 md:p-5">
         <Card className="md:sticky md:top-4 h-fit">
-          <div className="px-3 py-2 border-b border-line text-xs font-bold text-timber-700 uppercase tracking-wide">
-            Categories ({categories.length})
+          <div className="px-3 py-2 border-b border-line text-2xs font-bold text-muted uppercase tracking-wider">
+            Types ({types.length})
           </div>
           <div className="max-h-[60vh] md:max-h-[70vh] overflow-y-auto scrollbar-thin divide-y divide-line">
             {isLoading ? (
               <div className="p-4 text-sm text-muted">Loading…</div>
-            ) : categories.length === 0 ? (
-              <div className="p-4 text-sm text-muted">No categories yet.</div>
+            ) : types.length === 0 ? (
+              <div className="p-4 text-sm text-muted">No types yet.</div>
             ) : (
-              categories.map((c) => (
+              types.map((t) => (
                 <button
-                  key={c.id}
-                  onClick={() => setSelectedId(c.id)}
+                  key={t.id}
+                  onClick={() => setSelectedId(t.id)}
                   className={cn(
                     "w-full text-left px-3 py-2.5 flex items-center justify-between gap-2 transition-colors",
-                    selected?.id === c.id
-                      ? "bg-timber-100 border-l-2 border-timber-500"
-                      : "hover:bg-timber-50 border-l-2 border-transparent",
+                    selected?.id === t.id
+                      ? "bg-primary-50 dark:bg-primary-950/30 border-l-2 border-primary-500"
+                      : "hover:bg-bg border-l-2 border-transparent",
                   )}
                 >
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-timber-700 truncate">
-                      {c.name}
+                    <div className="text-sm font-semibold text-ink truncate">
+                      {t.name}
                     </div>
-                    <div className="text-[11px] text-muted">{c.code}</div>
+                    <div className="text-2xs text-muted">{t.code}</div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
-                      onClick={(e) => { e.stopPropagation(); openEdit(c); }}
-                      className="p-1 text-[10px] font-semibold text-timber-700 hover:bg-timber-200 rounded"
+                      onClick={(e) => { e.stopPropagation(); openEdit(t); }}
+                      className="px-1.5 py-1 text-2xs font-semibold text-primary-600 hover:bg-primary-100 dark:hover:bg-primary-950/40 rounded"
                     >
                       Edit
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); setConfirm(c); }}
-                      className="p-1 text-danger hover:bg-red-50 rounded"
+                      onClick={(e) => { e.stopPropagation(); setConfirm(t); }}
+                      className="p-1 text-danger hover:bg-red-50 dark:hover:bg-red-950/40 rounded"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -130,12 +135,12 @@ export function CategoryPage() {
 
         <div>
           {selected ? (
-            <CategoryAttributesPanel category={selected} />
+            <AttributesMappingPanel type={selected} />
           ) : (
             <Card>
               <EmptyState
-                title="Select a category"
-                description="Pick a category to choose which attributes apply to its products."
+                title="Select a product type"
+                description="Pick a type to choose which attributes apply to its products."
               />
             </Card>
           )}
@@ -145,7 +150,7 @@ export function CategoryPage() {
       <Sheet
         open={!!edit}
         onClose={() => setEdit(null)}
-        title={edit === "new" ? "New Category" : "Edit Category"}
+        title={edit === "new" ? "New Product Type" : "Edit Product Type"}
         footer={
           <>
             <Button variant="ghost" onClick={() => setEdit(null)}>Cancel</Button>
@@ -158,10 +163,10 @@ export function CategoryPage() {
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <FormGrid cols={2}>
             <Field label="Name" required error={form.formState.errors.name?.message}>
-              <Input {...form.register("name")} placeholder="e.g. Plywood" />
+              <Input {...form.register("name")} placeholder="e.g. Ply" />
             </Field>
             <Field label="Code" required error={form.formState.errors.code?.message}>
-              <Input {...form.register("code")} placeholder="e.g. PLYWOOD" />
+              <Input {...form.register("code")} placeholder="e.g. PLY" />
             </Field>
             <Field label="Description" className="sm:col-span-2">
               <Textarea {...form.register("description")} rows={2} placeholder="Optional" />
@@ -174,18 +179,18 @@ export function CategoryPage() {
         open={!!confirm}
         onClose={() => setConfirm(null)}
         onConfirm={onDelete}
-        title="Delete category?"
-        description={`"${confirm?.name}" will be removed. Products in this category may break.`}
+        title="Delete product type?"
+        description={`"${confirm?.name}" will be removed. Products using this type may break.`}
         confirmLabel="Delete"
       />
     </>
   );
 }
 
-function CategoryAttributesPanel({ category }) {
+function AttributesMappingPanel({ type }) {
   const qc = useQueryClient();
   const { data: allAttrs = [] } = useAttributes();
-  const { data: mapped = [], isLoading } = useCategoryAttributes(category.id);
+  const { data: mapped = [], isLoading } = useCategoryAttributes(type.id);
   const upsert = useUpsertCategoryAttribute();
 
   const mappedIds = new Set(mapped.map((m) => m.attributeId));
@@ -198,14 +203,14 @@ function CategoryAttributesPanel({ category }) {
         toast.success(`${attr.name} removed`);
       } else {
         await upsert.mutateAsync({
-          categoryId: category.id,
+          categoryId: type.id,
           attributeId: attr.id,
           isRequired: attr.isRequired,
           sortOrder: mapped.length,
         });
         toast.success(`${attr.name} added`);
       }
-      qc.invalidateQueries({ queryKey: ["categoryAttributes", category.id] });
+      qc.invalidateQueries({ queryKey: ["categoryAttributes", type.id] });
     } catch (e) {
       toast.error(e?.message || "Failed");
     }
@@ -215,27 +220,33 @@ function CategoryAttributesPanel({ category }) {
     const existing = mapped.find((m) => m.attributeId === attr.id);
     if (!existing) return;
     await upsert.mutateAsync({
-      categoryId: category.id,
+      categoryId: type.id,
       attributeId: attr.id,
       isRequired,
       sortOrder: existing.sortOrder,
     });
-    qc.invalidateQueries({ queryKey: ["categoryAttributes", category.id] });
+    qc.invalidateQueries({ queryKey: ["categoryAttributes", type.id] });
   };
 
   return (
     <Card>
-      <div className="px-4 py-3 border-b border-line">
-        <div className="font-semibold text-timber-700 text-sm">
-          Attributes for {category.name}
+      <div className="px-5 py-3.5 border-b border-line">
+        <div className="font-semibold text-ink text-sm">
+          Attributes for {type.name}
         </div>
-        <div className="text-xs text-muted mt-0.5">
-          Tick attributes that should appear when creating a product in this category.
+        <div className="text-2xs text-muted mt-0.5">
+          Tick attributes that should appear when creating a product of this type.
         </div>
       </div>
 
       {isLoading ? (
         <div className="p-4 text-sm text-muted">Loading…</div>
+      ) : allAttrs.length === 0 ? (
+        <EmptyState
+          compact
+          title="No attributes defined"
+          description="Create attributes first from Master → Attributes."
+        />
       ) : (
         <div className="divide-y divide-line">
           {allAttrs.map((a) => {
@@ -245,8 +256,8 @@ function CategoryAttributesPanel({ category }) {
               <div
                 key={a.id}
                 className={cn(
-                  "flex items-center gap-3 px-4 py-2.5 transition-colors",
-                  isMapped && "bg-timber-50/50",
+                  "flex items-center gap-3 px-5 py-2.5 transition-colors",
+                  isMapped && "bg-primary-50/40 dark:bg-primary-950/20",
                 )}
               >
                 <button
@@ -254,17 +265,17 @@ function CategoryAttributesPanel({ category }) {
                   className={cn(
                     "w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0",
                     isMapped
-                      ? "bg-timber-500 border-timber-500 text-white"
-                      : "bg-white border-timber-400",
+                      ? "bg-primary-500 border-primary-500 text-white"
+                      : "bg-surface border-line hover:border-primary-400",
                   )}
                 >
-                  {isMapped && <Check className="h-3.5 w-3.5" strokeWidth={3} />}
+                  {isMapped && <Check className="h-3 w-3" strokeWidth={3} />}
                 </button>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-timber-700 truncate">
+                  <div className="text-sm font-semibold text-ink truncate">
                     {a.name}
                   </div>
-                  <div className="text-[11px] text-muted capitalize">
+                  <div className="text-2xs text-muted capitalize">
                     {a.dataType}
                   </div>
                 </div>
@@ -274,7 +285,7 @@ function CategoryAttributesPanel({ category }) {
                       type="checkbox"
                       checked={mapping?.isRequired ?? false}
                       onChange={(e) => setRequired(a, e.target.checked)}
-                      className="accent-timber-500"
+                      className="accent-primary-500"
                     />
                     Required
                   </label>

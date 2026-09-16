@@ -99,7 +99,7 @@ export function ProductDetailPage() {
       <>
         <PageHeader title="Product not found" />
         <div className="p-6">
-          <Button onClick={() => navigate("/products")}>
+          <Button onClick={() => navigate("/master/products")}>
             <ArrowLeft className="h-4 w-4" /> Back to products
           </Button>
         </div>
@@ -150,20 +150,20 @@ export function ProductDetailPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate("/products")}
+              onClick={() => navigate("/master/products")}
             >
               <ArrowLeft className="h-4 w-4" /> Back
             </Button>
             <Button
               size="sm"
-              onClick={() => navigate(`/products/${id}/edit`)}
+              onClick={() => navigate(`/master/products/${id}/edit`)}
             >
               <Pencil className="h-4 w-4" /> Edit
             </Button>
           </div>
         }
       />
-      <ModuleTabs tabs={MODULE_TABS.products} />
+      <ModuleTabs tabs={MODULE_TABS.master} />
 
       <div className="p-3 md:p-6 space-y-4 max-w-6xl">
         <Card>
@@ -173,7 +173,7 @@ export function ProductDetailPage() {
               <Detail label="Status">
                 <StatusBadge status={product.status} />
               </Detail>
-              <Detail label="Category">{cat?.name || "—"}</Detail>
+              <Detail label="Product Type">{cat?.name || "—"}</Detail>
               <Detail label="Brand">{brand?.name || "—"}</Detail>
               <Detail label="Variants">{variants.length}</Detail>
               {product.description && (

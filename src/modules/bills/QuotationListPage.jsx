@@ -64,14 +64,14 @@ export function QuotationListPage() {
         title="Quotations"
         description="Estimates sent to customers"
         actions={
-          <Button size="sm" onClick={() => navigate("/sales/quotations/new")}>
+          <Button size="sm" onClick={() => navigate("/bills/quotations/new")}>
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">New Quotation</span>
             <span className="sm:hidden">New</span>
           </Button>
         }
       />
-      <ModuleTabs tabs={MODULE_TABS.sales} />
+      <ModuleTabs tabs={MODULE_TABS.bills} />
 
       <Toolbar
         search={search}
@@ -152,11 +152,11 @@ export function QuotationListPage() {
           ]}
           rows={filtered}
           loading={isLoading}
-          onRowClick={(r) => navigate(`/sales/quotations/${r.id}`)}
+          onRowClick={(r) => navigate(`/bills/quotations/${r.id}`)}
           emptyTitle="No quotations yet"
           emptyDescription="Create your first quotation to send to a customer."
           emptyAction={
-            <Button onClick={() => navigate("/sales/quotations/new")}>
+            <Button onClick={() => navigate("/bills/quotations/new")}>
               <Plus className="h-4 w-4" /> New Quotation
             </Button>
           }

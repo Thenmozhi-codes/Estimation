@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { ATTRIBUTE_DATA_TYPES, PARTY_TYPES, PRICE_TYPES } from "../constants";
+
+import { ATTRIBUTE_DATA_TYPES, PARTY_TYPES } from "../constants";
 
 export const unitSchema = z.object({
   name: z.string().min(1, "Name required"),

@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, ShoppingCart, Package, Users,
-  Truck, FileBarChart, Settings, Search, Menu, X,
-  LogOut, User as UserIcon, ChevronDown, Warehouse,
+  LayoutDashboard, Boxes, Receipt, BarChart3, Settings as SettingsIcon,
+  Search, Menu, X, LogOut, User as UserIcon, ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { GlobalSearch } from "@/components/GlobalSearch";
@@ -13,35 +12,12 @@ import { Dropdown, DropdownItem, DropdownDivider } from "@/components/ui/Dropdow
 import { PageTransition } from "@/components/common/PageTransition";
 import { useAuthStore } from "@/lib/store/authStore";
 
-const NAV_GROUPS = [
-  {
-    label: "General",
-    items: [
-      { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    ],
-  },
-  {
-    label: "Operations",
-    items: [
-      { to: "/sales",     label: "Sales",     icon: ShoppingCart },
-      { to: "/purchases", label: "Purchases", icon: Truck },
-      { to: "/inventory", label: "Inventory", icon: Warehouse },
-      { to: "/parties",   label: "Parties",   icon: Users },
-    ],
-  },
-  {
-    label: "Catalog",
-    items: [
-      { to: "/products",  label: "Products",  icon: Package },
-    ],
-  },
-  {
-    label: "Insights",
-    items: [
-      { to: "/reports",   label: "Reports",   icon: FileBarChart },
-      { to: "/settings",  label: "Settings",  icon: Settings },
-    ],
-  },
+const NAV = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/master",    label: "Master",    icon: Boxes },
+  { to: "/bills",     label: "Bills",     icon: Receipt },
+  { to: "/reports",   label: "Reports",   icon: BarChart3 },
+  { to: "/settings",  label: "Settings",  icon: SettingsIcon },
 ];
 
 export function AppLayout() {
@@ -106,73 +82,59 @@ export function AppLayout() {
           <button
             className="md:hidden p-1.5 text-muted hover:text-ink rounded-md"
             onClick={() => setSidebarOpen(false)}
-            aria-label="Close menu"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 p-2 overflow-y-auto scrollbar-thin">
-          {NAV_GROUPS.map((group) => (
-            <div key={group.label} className="mb-3">
-              <div className="px-3 pt-3 pb-1.5 text-2xs font-semibold uppercase tracking-wider text-subtle">
-                {group.label}
-              </div>
-              <div className="space-y-0.5">
-                {group.items.map(({ to, label, icon: Icon }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    onClick={() => setSidebarOpen(false)}
-                    className={({ isActive }) =>
-                      cn(
-                        "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150",
-                        isActive
-                          ? "bg-primary-50 text-primary-700 font-semibold dark:bg-primary-950/40 dark:text-primary-300"
-                          : "text-ink/70 hover:text-ink hover:bg-slate-100 dark:hover:bg-slate-800",
-                      )
-                    }
-                  >
-                    {({ isActive }) => (
-                      <>
-                        <Icon
-                          className={cn(
-                            "h-4 w-4 shrink-0 transition-colors",
-                            isActive
-                              ? "text-primary-500"
-                              : "text-muted group-hover:text-ink",
-                          )}
-                          strokeWidth={isActive ? 2 : 1.75}
-                        />
-                        <span>{label}</span>
-                      </>
+        <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto scrollbar-thin">
+          {NAV.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              onClick={() => setSidebarOpen(false)}
+              className={({ isActive }) =>
+                cn(
+                  "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-150",
+                  isActive
+                    ? "bg-primary-50 text-primary-700 font-semibold dark:bg-primary-950/40 dark:text-primary-300"
+                    : "text-ink/70 hover:text-ink hover:bg-slate-100 dark:hover:bg-slate-800",
+                )
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <Icon
+                    className={cn(
+                      "h-4 w-4 shrink-0 transition-colors",
+                      isActive ? "text-primary-500" : "text-muted group-hover:text-ink",
                     )}
-                  </NavLink>
-                ))}
-              </div>
-            </div>
+                    strokeWidth={isActive ? 2 : 1.75}
+                  />
+                  <span>{label}</span>
+                </>
+              )}
+            </NavLink>
           ))}
         </nav>
 
-        {/* Footer */}
         <div className="p-3 border-t border-line">
           <div className="flex items-center justify-between text-2xs text-muted">
-            <span className="font-medium">v0.3 · Premium</span>
-            <kbd className="border border-line rounded px-1.5 py-0.5 bg-bg text-2xs">
+            <span className="font-medium">v0.4</span>
+            <kbd className="border border-line rounded px-1.5 py-0.5 bg-bg">
               ⌘\
             </kbd>
           </div>
         </div>
       </aside>
 
-      {/* Main column */}
+      {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-16 border-b border-line bg-surface flex items-center px-3 md:px-5 gap-2">
           <button
             className="md:hidden p-1.5 text-ink rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
             onClick={() => setSidebarOpen(true)}
-            aria-label="Open menu"
           >
             <Menu className="h-4.5 w-4.5" />
           </button>
@@ -219,10 +181,7 @@ export function AppLayout() {
                 </div>
                 <div className="text-2xs text-muted truncate">{user?.email}</div>
               </div>
-              <DropdownItem icon={UserIcon} onClick={() => navigate("/settings/users")}>
-                Profile
-              </DropdownItem>
-              <DropdownItem icon={Settings} onClick={() => navigate("/settings/company")}>
+              <DropdownItem icon={SettingsIcon} onClick={() => navigate("/settings/company")}>
                 Settings
               </DropdownItem>
               <DropdownDivider />

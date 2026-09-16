@@ -17,7 +17,7 @@ import {
 } from "@/hooks/useParties";
 import { MODULE_TABS } from "@/app/moduleNav";
 
-export function PartyDetailPage({ type }) {
+export function CustomerDetailPage({ type }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -60,7 +60,7 @@ export function PartyDetailPage({ type }) {
   const totalSales = invoices.reduce((s, i) => s + (i.grandTotal || 0), 0);
   const totalPaid = invoices.reduce((s, i) => s + (i.amountPaid || 0), 0);
 
-  const backPath = isCustomer ? "/parties/customers" : "/parties/suppliers";
+  const backPath = isCustomer ? "/master/customers" : "/master/suppliers";
 
   return (
     <>
@@ -83,7 +83,7 @@ export function PartyDetailPage({ type }) {
           </Button>
         }
       />
-      <ModuleTabs tabs={MODULE_TABS.parties} />
+      <ModuleTabs tabs={MODULE_TABS.master} />
 
       {/* Tabs */}
       <div className="border-b border-line bg-white px-3 md:px-6 overflow-x-auto scrollbar-thin">
@@ -194,7 +194,7 @@ export function PartyDetailPage({ type }) {
                 },
               ]}
               rows={quotations}
-              onRowClick={(r) => navigate(`/sales/quotations/${r.id}`)}
+              onRowClick={(r) => navigate(`/bills/quotations/${r.id}`)}
               emptyTitle="No quotations"
               emptyDescription="No quotations for this party yet."
             />
@@ -245,7 +245,7 @@ export function PartyDetailPage({ type }) {
                 },
               ]}
               rows={invoices}
-              onRowClick={(r) => navigate(`/sales/invoices/${r.id}`)}
+              onRowClick={(r) => navigate(`/bills/invoices/${r.id}`)}
               emptyTitle="No invoices"
               emptyDescription="No invoices for this party yet."
             />

@@ -14,7 +14,7 @@ import { useProducts, useDeleteProduct } from "@/hooks/useProducts";
 import { useCategories, useBrands } from "@/hooks/useMasters";
 import { MODULE_TABS } from "@/app/moduleNav";
 
-export function ProductListPage() {
+export function ProductsPage() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -61,17 +61,17 @@ export function ProductListPage() {
   return (
     <>
       <PageHeader
-        title="Product Master"
-        description="Every product, variant and price in one place"
+        title="Products"
+        description="All products with their type, variants and prices"
         actions={
-          <Button size="sm" onClick={() => navigate("/products/new")}>
+          <Button size="sm" onClick={() => navigate("/master/products/new")}>
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">New Product</span>
             <span className="sm:hidden">New</span>
           </Button>
         }
       />
-      <ModuleTabs tabs={MODULE_TABS.products} />
+      <ModuleTabs tabs={MODULE_TABS.master} />
 
       <Toolbar
         search={search}
@@ -83,7 +83,7 @@ export function ProductListPage() {
           onChange={(e) => setCategoryFilter(e.target.value)}
           className="w-full sm:w-44"
         >
-          <option value="">All categories</option>
+          <option value="">All types</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -137,7 +137,7 @@ export function ProductListPage() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      navigate(`/products/${row.id}`);
+                      navigate(`/master/products/${row.id}`);
                     }}
                     className="px-2 py-1 text-xs font-semibold text-timber-700 hover:bg-timber-100 rounded"
                   >
@@ -158,11 +158,11 @@ export function ProductListPage() {
           ]}
           rows={filtered}
           loading={isLoading}
-          onRowClick={(r) => navigate(`/products/${r.id}`)}
+          onRowClick={(r) => navigate(`/master/products/${r.id}`)}
           emptyTitle="No products yet"
           emptyDescription="Create your first product with variants and prices."
           emptyAction={
-            <Button onClick={() => navigate("/products/new")}>
+            <Button onClick={() => navigate("/master/products/new")}>
               <Plus className="h-4 w-4" /> New Product
             </Button>
           }

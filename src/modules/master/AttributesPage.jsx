@@ -25,7 +25,7 @@ import {
 } from "@/hooks/useMasters";
 import { MODULE_TABS } from "@/app/moduleNav";
 
-export function AttributePage() {
+export function AttributesPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [editAttr, setEditAttr] = useState(null); // null | "new" | row
   const [confirmAttr, setConfirmAttr] = useState(null);
@@ -86,7 +86,7 @@ export function AttributePage() {
           </Button>
         }
       />
-      <ModuleTabs tabs={MODULE_TABS.products} />
+      <ModuleTabs tabs={MODULE_TABS.master} />
 
       <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-0 md:gap-4 p-3 md:p-6">
         {/* Left: attributes list */}

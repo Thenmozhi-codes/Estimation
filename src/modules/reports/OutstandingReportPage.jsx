@@ -106,7 +106,7 @@ export function OutstandingReportPage() {
                 },
               ]}
               rows={outstandingInvoices}
-              onRowClick={(r) => navigate(`/sales/invoices/${r.id}`)}
+              onRowClick={(r) => navigate(`/bills/invoices/${r.id}`)}
               emptyTitle="No outstanding"
               emptyDescription="All invoices are paid."
             />
