@@ -7,12 +7,9 @@ const load = () => {
     const raw = localStorage.getItem(KEY);
     if (raw) return JSON.parse(raw);
   } catch {}
-  return {
-    mode: window.matchMedia?.("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light",
-    accent: "amber",
-  };
+  // Default: always start in light theme.
+  // The user can switch to dark from the top-bar toggle or Settings → Appearance.
+  return { mode: "light", accent: "amber" };
 };
 
 function applyTheme({ mode }) {
