@@ -10,7 +10,7 @@ import { GlobalSearch } from "@/components/GlobalSearch";
 import { NotificationBell } from "@/components/common/NotificationBell";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { Dropdown, DropdownItem, DropdownDivider } from "@/components/ui/Dropdown";
-import { PageTransition } from "@/components/common/Pagetransition";
+import { PageTransition } from "@/components/common/PageTransition";
 import { useAuthStore } from "@/lib/store/authStore";
 
 const NAV_GROUPS = [
