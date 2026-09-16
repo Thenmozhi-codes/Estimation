@@ -1,0 +1,1 @@
+export { seedIfEmpty } from "./seed";

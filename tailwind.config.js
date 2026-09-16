@@ -1,0 +1,125 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  darkMode: "class",
+  content: ["./index.html", "./src/**/*.{js,jsx}"],
+  theme: {
+    extend: {
+      colors: {
+        bg:       "rgb(var(--bg) / <alpha-value>)",
+        surface:  "rgb(var(--surface) / <alpha-value>)",
+        elevated: "rgb(var(--elevated) / <alpha-value>)",
+        line:     "rgb(var(--line) / <alpha-value>)",
+
+        ink:      "rgb(var(--ink) / <alpha-value>)",
+        muted:    "rgb(var(--muted) / <alpha-value>)",
+        subtle:   "rgb(var(--subtle) / <alpha-value>)",
+
+        // Primary — indigo/violet (matches reference)
+        primary: {
+          50:  "#eef2ff",
+          100: "#e0e7ff",
+          200: "#c7d2fe",
+          300: "#a5b4fc",
+          400: "#818cf8",
+          500: "#6366f1",
+          600: "#4f46e5",
+          700: "#4338ca",
+          800: "#3730a3",
+          900: "#312e81",
+          950: "#1e1b4b",
+        },
+        // Accent — violet (for gradients, chart secondary)
+        accent: {
+          50:  "#f5f3ff",
+          100: "#ede9fe",
+          200: "#ddd6fe",
+          300: "#c4b5fd",
+          400: "#a78bfa",
+          500: "#8b5cf6",
+          600: "#7c3aed",
+          700: "#6d28d9",
+          800: "#5b21b6",
+          900: "#4c1d95",
+        },
+        // Wood brand — kept for logo / timber identity
+        wood: {
+          400: "#ff9c32",
+          500: "#f97d0a",
+          600: "#e05c00",
+          700: "#b94202",
+        },
+        // Status colors
+        ok:     "#10b981",
+        warn:   "#f59e0b",
+        danger: "#ef4444",
+        info:   "#3b82f6",
+        rose:   "#f43f5e",
+        teal:   "#14b8a6",
+      },
+      fontFamily: {
+        sans: [
+          "Inter",
+          "Plus Jakarta Sans",
+          "system-ui",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "Segoe UI",
+          "sans-serif",
+        ],
+        mono: ["JetBrains Mono", "ui-monospace", "monospace"],
+      },
+      fontSize: {
+        "2xs": ["0.6875rem", { lineHeight: "1rem", letterSpacing: "0.01em" }],
+        xs:    ["0.75rem",   { lineHeight: "1.05rem", letterSpacing: "0.005em" }],
+        sm:    ["0.8125rem", { lineHeight: "1.15rem" }],
+        base:  ["0.875rem",  { lineHeight: "1.35rem" }],
+        lg:    ["1rem",      { lineHeight: "1.4rem", letterSpacing: "-0.01em" }],
+        xl:    ["1.125rem",  { lineHeight: "1.4rem", letterSpacing: "-0.015em" }],
+        "2xl": ["1.375rem",  { lineHeight: "1.6rem", letterSpacing: "-0.02em" }],
+        "3xl": ["1.75rem",   { lineHeight: "2rem",   letterSpacing: "-0.025em" }],
+        "4xl": ["2.25rem",   { lineHeight: "2.5rem", letterSpacing: "-0.03em" }],
+      },
+      fontWeight: {
+        normal: "400",
+        medium: "500",
+        semibold: "600",
+        bold: "700",
+        extrabold: "800",
+      },
+      borderRadius: {
+        sm: "0.375rem",
+        md: "0.5rem",
+        lg: "0.75rem",
+        xl: "1rem",
+        "2xl": "1.25rem",
+      },
+      boxShadow: {
+        xs:    "0 1px 2px 0 rgb(15 23 42 / 0.04)",
+        sm:    "0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.06)",
+        md:    "0 4px 12px -2px rgb(15 23 42 / 0.06), 0 2px 4px -2px rgb(15 23 42 / 0.04)",
+        lg:    "0 12px 24px -6px rgb(15 23 42 / 0.08), 0 6px 12px -6px rgb(15 23 42 / 0.04)",
+        xl:    "0 20px 40px -12px rgb(15 23 42 / 0.12)",
+        card:  "0 1px 2px rgb(15 23 42 / 0.04), 0 0 0 1px rgb(15 23 42 / 0.03)",
+        "card-hover": "0 4px 12px -2px rgb(15 23 42 / 0.08), 0 0 0 1px rgb(15 23 42 / 0.05)",
+      },
+      keyframes: {
+        "fade-in":        { from: { opacity: 0 }, to: { opacity: 1 } },
+        "slide-up":       { from: { opacity: 0, transform: "translateY(6px)" }, to: { opacity: 1, transform: "translateY(0)" } },
+        "slide-in-right": { from: { opacity: 0, transform: "translateX(12px)" }, to: { opacity: 1, transform: "translateX(0)" } },
+        "scale-in":       { from: { opacity: 0, transform: "scale(0.98)" }, to: { opacity: 1, transform: "scale(1)" } },
+        "shimmer":        { "0%": { backgroundPosition: "-1000px 0" }, "100%": { backgroundPosition: "1000px 0" } },
+      },
+      animation: {
+        "fade-in":        "fade-in 180ms ease-out",
+        "slide-up":       "slide-up 200ms ease-out",
+        "slide-in-right": "slide-in-right 200ms cubic-bezier(0.22,1,0.36,1)",
+        "scale-in":       "scale-in 160ms ease-out",
+        "shimmer":        "shimmer 1.6s linear infinite",
+      },
+      transitionTimingFunction: {
+        premium: "cubic-bezier(0.22, 1, 0.36, 1)",
+      },
+    },
+  },
+  plugins: [],
+};
