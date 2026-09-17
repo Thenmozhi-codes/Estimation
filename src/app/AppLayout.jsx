@@ -1,205 +1,389 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, Boxes, Receipt, BarChart3, Settings as SettingsIcon,
-  Search, Menu, X, LogOut, User as UserIcon, ChevronDown,
+  LayoutDashboard,
+  Boxes,
+  Receipt,
+  BarChart3,
+  Settings,
+  Search,
+  Menu,
+  X,
+  LogOut,
+  ChevronDown,
+  Command,
 } from "lucide-react";
+
 import { cn } from "@/lib/utils/cn";
+import { SIDEBAR } from "./moduleNav";
+
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { NotificationBell } from "@/components/common/NotificationBell";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
-import { Dropdown, DropdownItem, DropdownDivider } from "@/components/ui/Dropdown";
+import {
+  Dropdown,
+  DropdownItem,
+  DropdownDivider,
+} from "@/components/ui/Dropdown";
 import { PageTransition } from "@/components/common/PageTransition";
+
 import { useAuthStore } from "@/lib/store/authStore";
 
-const NAV = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/master",    label: "Master",    icon: Boxes },
-  { to: "/bills",     label: "Bills",     icon: Receipt },
-  { to: "/reports",   label: "Reports",   icon: BarChart3 },
-  { to: "/settings",  label: "Settings",  icon: SettingsIcon },
-];
+const ICONS = {
+  LayoutDashboard,
+  Boxes,
+  Receipt,
+  BarChart3,
+  Settings,
+};
 
 export function AppLayout() {
   const navigate = useNavigate();
-  const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
+  const location = useLocation();
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
+
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
-    const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
+    const handleKeyboard = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
         setSearchOpen(true);
       }
-      if (e.key === "\\" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        setSidebarOpen((o) => !o);
+
+      if (event.key === "Escape") {
+        setMobileMenuOpen(false);
       }
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+
+    document.addEventListener("keydown", handleKeyboard);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyboard);
+    };
   }, []);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   const handleLogout = () => {
     logout();
     navigate("/login");
   };
 
+  const initials = (user?.name || "Admin")
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
-    <div className="flex h-screen bg-bg text-ink">
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-slate-950/50 backdrop-blur-[2px] z-40 md:hidden animate-fade-in"
-          onClick={() => setSidebarOpen(false)}
+    <div className="min-h-screen bg-bg text-ink">
+      {/* Mobile overlay */}
+      {mobileMenuOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => setMobileMenuOpen(false)}
+          className="fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-[2px] md:hidden"
         />
       )}
 
+      {/* ================= SIDEBAR ================= */}
       <aside
         className={cn(
-          "fixed md:static inset-y-0 left-0 z-50 w-56 flex flex-col bg-surface border-r border-line",
-          "transition-transform duration-200 ease-premium",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 w-[248px]",
+          "bg-surface border-r border-line",
+          "flex flex-col",
+          "transition-transform duration-300 ease-premium",
+          mobileMenuOpen
+            ? "translate-x-0"
+            : "-translate-x-full md:translate-x-0",
         )}
       >
         {/* Brand */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-line">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl gradient-primary flex items-center justify-center shadow-sm shrink-0">
-              <span className="text-base">🪵</span>
+        <div className="h-[76px] px-5 flex items-center border-b border-line">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shadow-sm shrink-0">
+              <span className="text-lg">🪵</span>
             </div>
+
             <div className="min-w-0">
-              <div className="text-xs font-bold text-ink truncate leading-tight tracking-tight">
+              <div className="text-sm font-bold tracking-tight text-ink truncate">
                 Sri Ganesh Timber
               </div>
-              <div className="text-2xs text-muted leading-tight">
+
+              <div className="text-[11px] text-muted mt-0.5 truncate">
                 Business Manager
               </div>
             </div>
           </div>
+
           <button
-            className="md:hidden p-1.5 text-muted hover:text-ink rounded-md"
-            onClick={() => setSidebarOpen(false)}
+            type="button"
+            onClick={() => setMobileMenuOpen(false)}
+            className="md:hidden h-8 w-8 rounded-lg flex items-center justify-center text-muted hover:text-ink hover:bg-bg"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto scrollbar-thin">
-          {NAV.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              onClick={() => setSidebarOpen(false)}
-              className={({ isActive }) =>
-                cn(
-                  "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-150",
-                  isActive
-                    ? "bg-primary-50 text-primary-700 font-semibold dark:bg-primary-950/40 dark:text-primary-300"
-                    : "text-ink/70 hover:text-ink hover:bg-slate-100 dark:hover:bg-slate-800",
-                )
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <Icon
-                    className={cn(
-                      "h-4 w-4 shrink-0 transition-colors",
-                      isActive ? "text-primary-500" : "text-muted group-hover:text-ink",
-                    )}
-                    strokeWidth={isActive ? 2 : 1.75}
-                  />
-                  <span>{label}</span>
-                </>
-              )}
-            </NavLink>
-          ))}
-        </nav>
+        {/* Navigation */}
+        <div className="flex-1 px-3 py-5 overflow-y-auto scrollbar-thin">
+          <div className="px-3 mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-subtle">
+            Workspace
+          </div>
 
+          <nav className="space-y-1">
+            {SIDEBAR.map((item) => {
+              const Icon = ICONS[item.icon];
+
+              return (
+                <NavLink
+                  key={item.key}
+                  to={
+                    item.key === "dashboard"
+                      ? "/dashboard"
+                      : item.path
+                  }
+                  className={({ isActive }) =>
+                    cn(
+                      "group relative flex items-center gap-3",
+                      "h-10 px-3 rounded-xl",
+                      "text-sm font-medium",
+                      "transition-all duration-150",
+                      isActive
+                        ? [
+                            "bg-primary-50 dark:bg-primary-950/35",
+                            "text-primary-700 dark:text-primary-300",
+                            "shadow-xs",
+                          ]
+                        : [
+                            "text-muted",
+                            "hover:text-ink",
+                            "hover:bg-bg",
+                          ],
+                    )
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      {isActive && (
+                        <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary-500" />
+                      )}
+
+                      <Icon
+                        className={cn(
+                          "h-[17px] w-[17px] shrink-0",
+                          isActive
+                            ? "text-primary-500"
+                            : "text-muted group-hover:text-ink",
+                        )}
+                        strokeWidth={isActive ? 2.2 : 1.8}
+                      />
+
+                      <span>{item.label}</span>
+                    </>
+                  )}
+                </NavLink>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Sidebar footer */}
         <div className="p-3 border-t border-line">
-          <div className="flex items-center justify-between text-2xs text-muted">
-            <span className="font-medium">v0.4</span>
-            <kbd className="border border-line rounded px-1.5 py-0.5 bg-bg">
-              ⌘\
-            </kbd>
+          <div className="rounded-xl bg-bg border border-line px-3 py-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider font-semibold text-subtle">
+                  Version
+                </div>
+                <div className="text-xs font-semibold text-ink mt-0.5">
+                  Timber ERP · 0.5
+                </div>
+              </div>
+
+              <kbd className="hidden lg:inline-flex items-center gap-1 text-[10px] text-muted border border-line rounded-md bg-surface px-1.5 py-1">
+                <Command className="h-2.5 w-2.5" /> K
+              </kbd>
+            </div>
           </div>
         </div>
       </aside>
 
-      {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 border-b border-line bg-surface flex items-center px-3 md:px-5 gap-2">
-          <button
-            className="md:hidden p-1.5 text-ink rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <Menu className="h-4.5 w-4.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSearchOpen(true)}
-            className="flex-1 md:flex-none md:w-80 h-9 px-3.5 text-sm rounded-lg bg-bg border border-line text-left text-muted hover:border-muted/40 transition-colors flex items-center gap-2"
-          >
-            <Search className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
-            <span className="hidden sm:inline truncate">Search anything…</span>
-            <span className="sm:hidden truncate">Search…</span>
-            <kbd className="ml-auto hidden md:inline-block text-2xs border border-line rounded px-1.5 py-0.5 bg-surface font-mono">
-              ⌘K
-            </kbd>
-          </button>
-
-          <div className="flex items-center gap-1 ml-auto">
-            <ThemeToggle />
-            <NotificationBell />
-
-            <Dropdown
-              width="w-56"
-              trigger={
-                <button className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                  <div className="w-8 h-8 rounded-full gradient-primary flex items-center justify-center text-white text-xs font-bold shrink-0">
-                    {(user?.name || "?").charAt(0).toUpperCase()}
-                  </div>
-                  <div className="hidden sm:block text-left">
-                    <div className="text-xs font-semibold text-ink leading-tight max-w-[110px] truncate tracking-tight">
-                      {user?.name || "Guest"}
-                    </div>
-                    <div className="text-2xs text-muted capitalize leading-tight">
-                      {user?.role || "—"}
-                    </div>
-                  </div>
-                  <ChevronDown className="h-3.5 w-3.5 text-muted shrink-0" />
-                </button>
-              }
+      {/* ================= MAIN ================= */}
+      <div className="md:pl-[248px] min-h-screen flex flex-col">
+        {/* Topbar */}
+        <header className="sticky top-0 z-30 h-[68px] bg-surface/90 backdrop-blur-xl border-b border-line">
+          <div className="h-full px-4 md:px-6 flex items-center gap-3">
+            {/* Mobile menu */}
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="md:hidden h-9 w-9 rounded-lg flex items-center justify-center text-muted hover:text-ink hover:bg-bg"
             >
-              <div className="px-3 py-2 border-b border-line">
-                <div className="text-xs font-semibold text-ink truncate">
-                  {user?.name}
+              <Menu className="h-5 w-5" />
+            </button>
+
+            {/* Search */}
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              className="
+                group
+                flex-1 md:flex-none
+                md:w-[360px]
+                h-10
+                rounded-xl
+                border border-line
+                bg-bg
+                px-3
+                flex items-center gap-2.5
+                text-left
+                transition-all
+                hover:border-muted/50
+                hover:bg-surface
+              "
+            >
+              <Search className="h-4 w-4 text-muted shrink-0" />
+
+              <span className="text-sm text-muted truncate">
+                Search anything...
+              </span>
+
+              <kbd className="hidden sm:flex ml-auto items-center gap-0.5 text-[10px] text-muted border border-line bg-surface rounded-md px-1.5 py-1">
+                Ctrl K
+              </kbd>
+            </button>
+
+            {/* Right side */}
+            <div className="ml-auto flex items-center gap-1.5">
+              <ThemeToggle />
+              <NotificationBell />
+
+              <div className="hidden sm:block h-6 w-px bg-line mx-1" />
+
+              <Dropdown
+                width="w-64"
+                trigger={
+                  <button
+                    type="button"
+                    className="
+                      flex items-center gap-2.5
+                      h-10
+                      rounded-xl
+                      px-1.5
+                      hover:bg-bg
+                      transition-colors
+                    "
+                  >
+                    <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 text-white flex items-center justify-center text-[11px] font-bold shadow-sm">
+                      {initials}
+                    </div>
+
+                    <div className="hidden lg:block text-left max-w-[120px]">
+                      <div className="text-xs font-semibold text-ink truncate">
+                        {user?.name || "Administrator"}
+                      </div>
+
+                      <div className="text-[10px] text-muted capitalize truncate">
+                        {user?.role || "Admin"}
+                      </div>
+                    </div>
+
+                    <ChevronDown className="hidden lg:block h-3.5 w-3.5 text-muted" />
+                  </button>
+                }
+              >
+                <div className="px-4 py-3 border-b border-line">
+                  <div className="text-sm font-semibold text-ink truncate">
+                    {user?.name || "Administrator"}
+                  </div>
+
+                  <div className="text-xs text-muted mt-0.5 truncate">
+                    {user?.email || "Administrator account"}
+                  </div>
                 </div>
-                <div className="text-2xs text-muted truncate">{user?.email}</div>
-              </div>
-              <DropdownItem icon={SettingsIcon} onClick={() => navigate("/settings/company")}>
-                Settings
-              </DropdownItem>
-              <DropdownDivider />
-              <DropdownItem icon={LogOut} danger onClick={handleLogout}>
-                Sign out
-              </DropdownItem>
-            </Dropdown>
+
+                <DropdownItem
+                  icon={Settings}
+                  onClick={() => navigate("/settings/company")}
+                >
+                  Settings
+                </DropdownItem>
+
+                <DropdownDivider />
+
+                <DropdownItem
+                  icon={LogOut}
+                  danger
+                  onClick={handleLogout}
+                >
+                  Sign out
+                </DropdownItem>
+              </Dropdown>
+            </div>
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto scrollbar-thin">
+        {/* Page content */}
+        <main className="flex-1 min-w-0 overflow-x-hidden">
           <PageTransition>
             <Outlet />
           </PageTransition>
         </main>
       </div>
 
-      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      {/* Mobile bottom navigation */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-surface/95 backdrop-blur-xl border-t border-line px-2 pb-[env(safe-area-inset-bottom)]">
+        <div className="grid grid-cols-5 h-[64px]">
+          {SIDEBAR.map((item) => {
+            const Icon = ICONS[item.icon];
+
+            return (
+              <NavLink
+                key={item.key}
+                to={item.key === "dashboard" ? "/dashboard" : item.path}
+                className={({ isActive }) =>
+                  cn(
+                    "relative flex flex-col items-center justify-center gap-1",
+                    "text-[10px] font-medium",
+                    isActive
+                      ? "text-primary-600 dark:text-primary-400"
+                      : "text-muted",
+                  )
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <Icon
+                      className="h-[18px] w-[18px]"
+                      strokeWidth={isActive ? 2.2 : 1.7}
+                    />
+
+                    <span>{item.label}</span>
+
+                    {isActive && (
+                      <span className="absolute top-0 h-0.5 w-8 rounded-full bg-primary-500" />
+                    )}
+                  </>
+                )}
+              </NavLink>
+            );
+          })}
+        </div>
+      </nav>
+
+      <GlobalSearch
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+      />
     </div>
   );
 }

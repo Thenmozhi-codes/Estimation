@@ -7,6 +7,7 @@ import { LoginPage } from "@/modules/auth/LoginPage";
 import { DashboardPage } from "@/modules/dashboard/DashboardPage";
 
 /* ── Master ── */
+import { MasterOverviewPage } from "@/modules/master/MasterOverviewPage";
 import { ProductTypesPage }  from "@/modules/master/ProductTypesPage";
 import { AttributesPage }    from "@/modules/master/AttributesPage";
 import { ProductsPage }      from "@/modules/master/ProductsPage";
@@ -45,7 +46,7 @@ export function AppRouter() {
         <Route path="/dashboard" element={<DashboardPage />} />
 
         {/* ── Master ── */}
-        <Route path="/master" element={<Navigate to="/master/product-types" replace />} />
+        <Route path="/master" element={<Navigate to="/master/products" replace />} />
         <Route path="/master/product-types" element={<ProductTypesPage />} />
         <Route path="/master/attributes"    element={<AttributesPage />} />
         <Route path="/master/products"      element={<ProductsPage />} />

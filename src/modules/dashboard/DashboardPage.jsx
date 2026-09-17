@@ -1,501 +1,826 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
 import {
-  IndianRupee, FileText, AlertCircle, Clock, TrendingUp, TrendingDown,
-  Plus, ArrowUpRight, ArrowDownRight, Package, Users, Receipt, MoreHorizontal,
-} from "lucide-react";
-import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
-  PieChart, Pie, Cell, Legend,
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from "recharts";
+
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  Clock3,
+  FileText,
+  Package,
+  Plus,
+  Receipt,
+  TrendingUp,
+  Users,
+  Wallet,
+} from "lucide-react";
+
 import { PageHeader } from "@/components/common/PageHeader";
 import { Button } from "@/components/ui/Button";
-import { Card, CardHeader, CardBody } from "@/components/ui/Card";
+import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { ChipToggle } from "@/components/ui/ChipToggle";
 import { SkeletonCard } from "@/components/ui/Skeleton";
-import { EmptyState } from "@/components/ui/EmptyState";
+
 import { formatMoney } from "@/lib/utils/money";
 import { fmtDate } from "@/lib/utils/date";
-import { useInvoices, useQuotations } from "@/hooks/useDocuments";
+
+import {
+  useInvoices,
+  useQuotations,
+} from "@/hooks/useDocuments";
+
 import { useParties } from "@/hooks/useParties";
 import { useStockEnriched } from "@/hooks/useInventory";
 import { useCategories } from "@/hooks/useMasters";
 import { useProducts } from "@/hooks/useProducts";
-import { useThemeStore } from "@/lib/store/themeStore";
 
 const RANGES = [
-  { value: "7",  label: "7d" },
-  { value: "30", label: "30d" },
-  { value: "90", label: "90d" },
+  { value: "7", label: "7D" },
+  { value: "30", label: "30D" },
+  { value: "90", label: "90D" },
 ];
+
+function isValidDocument(document) {
+  return (
+    document?.status !== "draft" &&
+    document?.status !== "cancelled"
+  );
+}
+
+function getInitials(name = "") {
+  return (
+    name
+      .split(" ")
+      .filter(Boolean)
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "—"
+  );
+}
 
 export function DashboardPage() {
   const navigate = useNavigate();
+
   const [range, setRange] = useState("30");
 
-  const { data: invoices = [], isLoading: loadingInv } = useInvoices();
+  const {
+    data: invoices = [],
+    isLoading: loadingInvoices,
+  } = useInvoices();
+
   const { data: quotations = [] } = useQuotations();
   const { data: parties = [] } = useParties();
   const { data: categories = [] } = useCategories();
   const { data: products = [] } = useProducts();
-  const { rows: stockRows } = useStockEnriched();
 
-  const mode = useThemeStore((s) => s.mode);
-  const isDark = mode === "dark";
-
-  const partyById = useMemo(
-    () => Object.fromEntries(parties.map((p) => [p.id, p])),
-    [parties],
-  );
+  const { rows: stockRows = [] } = useStockEnriched();
 
   const days = Number(range);
-  const since = useMemo(() => new Date(Date.now() - days * 86400000), [days]);
 
-  const rangeInvoices = useMemo(
-    () =>
-      invoices.filter(
-        (i) =>
-          new Date(i.date) >= since &&
-          i.status !== "draft" &&
-          i.status !== "cancelled",
-      ),
-    [invoices, since],
-  );
+  const partyById = useMemo(() => {
+    return Object.fromEntries(
+      parties.map((party) => [party.id, party]),
+    );
+  }, [parties]);
 
-  const today = new Date().toDateString();
-  const todaySales = invoices
-    .filter(
-      (i) =>
-        new Date(i.date).toDateString() === today &&
-        i.status !== "draft" &&
-        i.status !== "cancelled",
-    )
-    .reduce((s, i) => s + (i.grandTotal || 0), 0);
+  const since = useMemo(() => {
+    return new Date(
+      Date.now() - days * 24 * 60 * 60 * 1000,
+    );
+  }, [days]);
 
-  const rangeSales = rangeInvoices.reduce((s, i) => s + (i.grandTotal || 0), 0);
-  const outstanding = invoices.reduce(
-    (s, i) =>
-      s + (i.status !== "cancelled" ? Math.max(0, (i.grandTotal || 0) - (i.amountPaid || 0)) : 0),
-    0,
-  );
-  const pendingQuotations = quotations.filter(
-    (q) => q.status === "draft" || q.status === "sent",
-  ).length;
+  const rangeInvoices = useMemo(() => {
+    return invoices.filter(
+      (invoice) =>
+        new Date(invoice.date) >= since &&
+        isValidDocument(invoice),
+    );
+  }, [invoices, since]);
 
-  const prevStart = useMemo(() => new Date(Date.now() - days * 2 * 86400000), [days]);
-  const prevSales = invoices
-    .filter(
-      (i) =>
-        new Date(i.date) >= prevStart &&
-        new Date(i.date) < since &&
-        i.status !== "draft" &&
-        i.status !== "cancelled",
-    )
-    .reduce((s, i) => s + (i.grandTotal || 0), 0);
-  const salesDelta = prevSales ? ((rangeSales - prevSales) / prevSales) * 100 : 0;
+  const todaySales = useMemo(() => {
+    const today = new Date().toDateString();
 
-  /* ─── Bar chart data (monthly buckets) ─── */
+    return invoices
+      .filter(
+        (invoice) =>
+          new Date(invoice.date).toDateString() === today &&
+          isValidDocument(invoice),
+      )
+      .reduce(
+        (total, invoice) =>
+          total + (invoice.grandTotal || 0),
+        0,
+      );
+  }, [invoices]);
+
+  const rangeSales = useMemo(() => {
+    return rangeInvoices.reduce(
+      (total, invoice) =>
+        total + (invoice.grandTotal || 0),
+      0,
+    );
+  }, [rangeInvoices]);
+
+  const outstanding = useMemo(() => {
+    return invoices.reduce((total, invoice) => {
+      if (invoice.status === "cancelled") {
+        return total;
+      }
+
+      return (
+        total +
+        Math.max(
+          0,
+          (invoice.grandTotal || 0) -
+            (invoice.amountPaid || 0),
+        )
+      );
+    }, 0);
+  }, [invoices]);
+
+  const pendingQuotations = useMemo(() => {
+    return quotations.filter(
+      (quotation) =>
+        quotation.status === "draft" ||
+        quotation.status === "sent",
+    ).length;
+  }, [quotations]);
+
+  const previousSince = useMemo(() => {
+    return new Date(
+      Date.now() -
+        days * 2 * 24 * 60 * 60 * 1000,
+    );
+  }, [days]);
+
+  const previousSales = useMemo(() => {
+    return invoices
+      .filter(
+        (invoice) =>
+          new Date(invoice.date) >= previousSince &&
+          new Date(invoice.date) < since &&
+          isValidDocument(invoice),
+      )
+      .reduce(
+        (total, invoice) =>
+          total + (invoice.grandTotal || 0),
+        0,
+      );
+  }, [invoices, previousSince, since]);
+
+  const salesDelta =
+    previousSales > 0
+      ? ((rangeSales - previousSales) /
+          previousSales) *
+        100
+      : null;
+
+  /* ================= REVENUE CHART ================= */
+
   const chartData = useMemo(() => {
-    const buckets = {};
-    const bucketDays = days <= 7 ? 1 : days <= 30 ? 2 : 7;
-    for (let i = days; i >= 0; i -= bucketDays) {
-      const d = new Date(Date.now() - i * 86400000);
-      const key = d.toISOString().slice(0, 10);
-      buckets[key] = { date: key, sales: 0 };
-    }
-    rangeInvoices.forEach((inv) => {
-      const key = new Date(inv.date).toISOString().slice(0, 10);
-      if (buckets[key]) buckets[key].sales += inv.grandTotal || 0;
+    const bucketCount =
+      days <= 7 ? 7 : days <= 30 ? 10 : 12;
+
+    const interval =
+      days / Math.max(1, bucketCount - 1);
+
+    const buckets = Array.from(
+      { length: bucketCount },
+      (_, index) => {
+        const date = new Date(
+          Date.now() -
+            (days - index * interval) *
+              24 *
+              60 *
+              60 *
+              1000,
+        );
+
+        return {
+          date,
+          label: date.toLocaleDateString(
+            "en-IN",
+            {
+              day: "2-digit",
+              month: "short",
+            },
+          ),
+          sales: 0,
+        };
+      },
+    );
+
+    rangeInvoices.forEach((invoice) => {
+      const invoiceDate = new Date(invoice.date);
+
+      let closest = buckets[0];
+
+      let closestDistance = Math.abs(
+        invoiceDate - buckets[0].date,
+      );
+
+      buckets.forEach((bucket) => {
+        const distance = Math.abs(
+          invoiceDate - bucket.date,
+        );
+
+        if (distance < closestDistance) {
+          closest = bucket;
+          closestDistance = distance;
+        }
+      });
+
+      closest.sales += invoice.grandTotal || 0;
     });
-    return Object.values(buckets).map((b) => ({
-      ...b,
-      label: new Date(b.date).toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "short",
-      }),
-    }));
-  }, [rangeInvoices, days]);
 
-  /* ─── Category distribution ─── */
-  const categoryData = useMemo(() => {
-    const counts = {};
-    products.forEach((p) => {
-      const cat = categories.find((c) => c.id === p.categoryId);
-      const name = cat?.name || "Other";
-      counts[name] = (counts[name] || 0) + 1;
-    });
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [products, categories]);
+    return buckets;
+  }, [days, rangeInvoices]);
 
-  const DONUT_COLORS = ["#6366f1", "#8b5cf6", "#a5b4fc", "#14b8a6", "#f59e0b", "#f43f5e"];
+  /* ================= RECENT ACTIVITY ================= */
 
-  /* ─── Recent transactions ─── */
   const recent = useMemo(() => {
-    const inv = invoices.map((i) => ({
-      id: i.id, kind: "invoice", number: i.number,
-      partyName: partyById[i.partyId]?.name || "—",
-      date: i.date, amount: i.grandTotal, status: i.status,
+    const invoiceItems = invoices.map((invoice) => ({
+      id: invoice.id,
+      kind: "invoice",
+      number: invoice.number,
+      partyName:
+        partyById[invoice.partyId]?.name || "Unknown customer",
+      date: invoice.date,
+      amount: invoice.grandTotal || 0,
+      status: invoice.status,
     }));
-    const quo = quotations.map((q) => ({
-      id: q.id, kind: "quotation", number: q.number,
-      partyName: partyById[q.partyId]?.name || "—",
-      date: q.date, amount: q.grandTotal, status: q.status,
-    }));
-    return [...inv, ...quo]
-      .sort((a, b) => new Date(b.date) - new Date(a.date))
+
+    const quotationItems = quotations.map(
+      (quotation) => ({
+        id: quotation.id,
+        kind: "quotation",
+        number: quotation.number,
+        partyName:
+          partyById[quotation.partyId]?.name ||
+          "Unknown customer",
+        date: quotation.date,
+        amount: quotation.grandTotal || 0,
+        status: quotation.status,
+      }),
+    );
+
+    return [...invoiceItems, ...quotationItems]
+      .sort(
+        (a, b) =>
+          new Date(b.date) - new Date(a.date),
+      )
       .slice(0, 6);
   }, [invoices, quotations, partyById]);
 
-  /* ─── Top customers ─── */
+  /* ================= TOP CUSTOMERS ================= */
+
   const topCustomers = useMemo(() => {
-    const map = {};
-    rangeInvoices.forEach((i) => {
-      const name = partyById[i.partyId]?.name || "—";
-      if (!map[name]) map[name] = { name, total: 0, count: 0 };
-      map[name].total += i.grandTotal || 0;
-      map[name].count += 1;
+    const customerMap = {};
+
+    rangeInvoices.forEach((invoice) => {
+      const name =
+        partyById[invoice.partyId]?.name ||
+        "Unknown customer";
+
+      if (!customerMap[name]) {
+        customerMap[name] = {
+          name,
+          total: 0,
+          count: 0,
+        };
+      }
+
+      customerMap[name].total +=
+        invoice.grandTotal || 0;
+
+      customerMap[name].count += 1;
     });
-    return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 5);
+
+    return Object.values(customerMap)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
   }, [rangeInvoices, partyById]);
 
-  const lowStock = stockRows.filter((r) => r.lowStock);
+  /* ================= LOW STOCK ================= */
 
-  if (loadingInv) {
+  const lowStock = useMemo(() => {
+    return stockRows
+      .filter((row) => row.lowStock)
+      .slice(0, 5);
+  }, [stockRows]);
+
+  /* ================= CATEGORY SUMMARY ================= */
+
+  const categorySummary = useMemo(() => {
+    const counts = {};
+
+    products.forEach((product) => {
+      const category =
+        categories.find(
+          (item) => item.id === product.categoryId,
+        )?.name || "Other";
+
+      counts[category] =
+        (counts[category] || 0) + 1;
+    });
+
+    return Object.entries(counts)
+      .map(([name, value]) => ({
+        name,
+        value,
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+  }, [products, categories]);
+
+  if (loadingInvoices) {
     return (
-      <>
-        <PageHeader title="Dashboard" description="Loading…" />
-        <div className="p-4 md:p-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => <SkeletonCard key={i} />)}
+      <div className="page-container">
+        <PageHeader
+          title="Dashboard"
+          description="Loading your business overview..."
+        />
+
+        <div className="p-4 md:p-6 grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          {Array.from({ length: 4 }).map(
+            (_, index) => (
+              <SkeletonCard key={index} />
+            ),
+          )}
         </div>
-      </>
+      </div>
     );
   }
 
-  const chartTickColor = isDark ? "#64748b" : "#94a3b8";
-  const chartGridColor = isDark ? "#1e293b" : "#e2e8f0";
-
   return (
-    <>
+    <div className="page-container">
       <PageHeader
         title="Dashboard"
-        description="Live pulse of your business"
-        actions={<ChipToggle value={range} onChange={setRange} options={RANGES} />}
+        description="A quick view of your business performance."
+        actions={
+          <div className="flex items-center gap-1 p-1 bg-bg border border-line rounded-xl">
+            {RANGES.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() =>
+                  setRange(item.value)
+                }
+                className={`
+                  h-7
+                  px-2.5
+                  rounded-lg
+                  text-[11px]
+                  font-semibold
+                  transition-all
+                  ${
+                    range === item.value
+                      ? "bg-surface text-ink shadow-xs"
+                      : "text-muted hover:text-ink"
+                  }
+                `}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        }
       />
 
-      <div className="p-4 md:p-6 space-y-4 md:space-y-5 max-w-[1500px]">
+      <div className="p-4 md:p-6 space-y-5 pb-24 md:pb-8">
+        {/* ================= KPI ================= */}
 
-        {/* ─── KPI row ─── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <KPI
-            label="Today's Sales"
+       <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <MetricCard
+            label="Today's sales"
             value={formatMoney(todaySales)}
-            icon={IndianRupee}
+            icon={Wallet}
             tone="primary"
           />
-          <KPI
-            label={`Sales (${days}d)`}
+
+          <MetricCard
+            label={`Sales · ${days} days`}
             value={formatMoney(rangeSales)}
-            delta={salesDelta}
             icon={TrendingUp}
             tone="success"
+            delta={salesDelta}
           />
-          <KPI
+
+          <MetricCard
             label="Outstanding"
             value={formatMoney(outstanding)}
-            icon={AlertCircle}
-            tone={outstanding > 0 ? "danger" : "success"}
-            onClick={() => navigate("/reports/outstanding")}
+            icon={Receipt}
+            tone={
+              outstanding > 0
+                ? "warning"
+                : "success"
+            }
+            onClick={() =>
+              navigate("/reports/outstanding")
+            }
           />
-          <KPI
-            label="Pending Quotes"
+
+          <MetricCard
+            label="Pending quotations"
             value={pendingQuotations}
-            icon={Clock}
-            tone={pendingQuotations > 0 ? "warning" : "success"}
-            onClick={() => navigate("/sales/quotations")}
+            icon={Clock3}
+            tone={
+              pendingQuotations > 0
+                ? "warning"
+                : "success"
+            }
+            onClick={() =>
+              navigate("/bills/quotations")
+            }
           />
-        </div>
+        </section>
 
-        {/* ─── Main grid: chart | donut | KPIs ─── */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* ================= MAIN CHART ================= */}
 
-          {/* Bar chart */}
-          <Card className="lg:col-span-7 xl:col-span-8">
+        <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-4">
+          <Card className="overflow-hidden">
             <CardHeader
-              title="Sales Overview"
-              subtitle={`${days} day performance`}
+              title="Revenue"
+              subtitle={`Performance over the last ${days} days`}
               actions={
-                <div className="flex items-center gap-3 text-2xs">
-                  <div className="flex items-center gap-1.5 text-muted">
-                    <span className="w-2 h-2 rounded-full bg-primary-500" />
-                    <span>Revenue</span>
+                salesDelta !== null && (
+                  <div
+                    className={`
+                      inline-flex
+                      items-center
+                      gap-1
+                      px-2
+                      py-1
+                      rounded-lg
+                      text-[11px]
+                      font-bold
+                      ${
+                        salesDelta >= 0
+                          ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30"
+                          : "bg-red-50 text-red-600 dark:bg-red-950/30"
+                      }
+                    `}
+                  >
+                    {salesDelta >= 0 ? (
+                      <ArrowUpRight className="h-3 w-3" />
+                    ) : (
+                      <ArrowDownRight className="h-3 w-3" />
+                    )}
+
+                    {Math.abs(
+                      salesDelta,
+                    ).toFixed(1)}
+                    %
                   </div>
-                </div>
+                )
               }
             />
-            <CardBody className="pt-2">
-              <div className="h-72 -ml-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} barCategoryGap={4}>
+
+            <CardBody className="pt-1">
+              <div className="mb-4">
+                <div className="text-2xl md:text-3xl font-bold tracking-[-0.04em] tabular-nums text-ink">
+                  {formatMoney(rangeSales)}
+                </div>
+
+                <div className="text-xs text-muted mt-1">
+                  Total invoiced revenue
+                </div>
+              </div>
+
+              <div className="h-[280px]">
+                <ResponsiveContainer
+                  width="100%"
+                  height="100%"
+                >
+                  <AreaChart
+                    data={chartData}
+                    margin={{
+                      top: 8,
+                      right: 4,
+                      left: -18,
+                      bottom: 0,
+                    }}
+                  >
+                    <defs>
+                      <linearGradient
+                        id="revenueFill"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="0%"
+                          stopColor="#6366f1"
+                          stopOpacity={0.22}
+                        />
+                        <stop
+                          offset="100%"
+                          stopColor="#6366f1"
+                          stopOpacity={0.01}
+                        />
+                      </linearGradient>
+                    </defs>
+
                     <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke={chartGridColor}
                       vertical={false}
+                      stroke="rgb(148 163 184 / 0.12)"
                     />
+
                     <XAxis
                       dataKey="label"
-                      tick={{ fontSize: 10, fill: chartTickColor }}
                       axisLine={false}
                       tickLine={false}
-                      interval="preserveStartEnd"
-                    />
-                    <YAxis
-                      tick={{ fontSize: 10, fill: chartTickColor }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={50}
-                      tickFormatter={(v) =>
-                        v >= 100000
-                          ? `₹${(v / 100000).toFixed(1)}L`
-                          : v >= 1000
-                          ? `₹${(v / 1000).toFixed(0)}k`
-                          : `₹${v}`
-                      }
-                    />
-                    <Tooltip
-                      cursor={{ fill: isDark ? "#1e293b" : "#f1f5f9", opacity: 0.5 }}
-                      contentStyle={{
-                        background: isDark ? "#0f1420" : "#ffffff",
-                        border: `1px solid ${isDark ? "#262f42" : "#e2e8f0"}`,
-                        borderRadius: 8,
-                        fontSize: 12,
-                        boxShadow: "0 10px 24px -6px rgb(15 23 42 / 0.15)",
-                        padding: "6px 10px",
+                      tick={{
+                        fontSize: 10,
+                        fill: "#94a3b8",
                       }}
-                      labelStyle={{ color: isDark ? "#94a3b8" : "#64748b", fontSize: 11, fontWeight: 500 }}
-                      itemStyle={{ color: "#6366f1", fontWeight: 600 }}
-                      formatter={(v) => [formatMoney(v), "Sales"]}
                     />
-                    <Bar
+
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      width={52}
+                      tick={{
+                        fontSize: 10,
+                        fill: "#94a3b8",
+                      }}
+                      tickFormatter={(value) => {
+                        if (value >= 100000) {
+                          return `₹${(
+                            value / 100000
+                          ).toFixed(1)}L`;
+                        }
+
+                        if (value >= 1000) {
+                          return `₹${(
+                            value / 1000
+                          ).toFixed(0)}k`;
+                        }
+
+                        return `₹${value}`;
+                      }}
+                    />
+
+                    <Tooltip
+                      contentStyle={{
+                        background:
+                          "rgb(var(--surface))",
+                        border:
+                          "1px solid rgb(var(--line))",
+                        borderRadius: 12,
+                        fontSize: 12,
+                        boxShadow:
+                          "0 14px 35px rgb(15 23 42 / 0.12)",
+                      }}
+                      labelStyle={{
+                        color:
+                          "rgb(var(--muted))",
+                        marginBottom: 4,
+                      }}
+                      formatter={(value) => [
+                        formatMoney(value),
+                        "Revenue",
+                      ]}
+                    />
+
+                    <Area
+                      type="monotone"
                       dataKey="sales"
-                      fill="#6366f1"
-                      radius={[6, 6, 0, 0]}
-                      maxBarSize={32}
+                      stroke="#6366f1"
+                      strokeWidth={2.5}
+                      fill="url(#revenueFill)"
+                      dot={false}
+                      activeDot={{
+                        r: 4,
+                        strokeWidth: 2,
+                        stroke: "#6366f1",
+                        fill: "rgb(var(--surface))",
+                      }}
                     />
-                  </BarChart>
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
             </CardBody>
           </Card>
 
-          {/* Right rail KPIs */}
-          <div className="lg:col-span-5 xl:col-span-4 space-y-4">
-            {/* Net position card */}
-            <Card className="overflow-hidden">
-              <CardBody className="p-5">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="text-2xs font-semibold text-muted uppercase tracking-wider">
-                      Net Position
-                    </div>
-                    <div className="text-2xl md:text-3xl font-bold text-ink tracking-tight mt-1.5 tabular-nums">
-                      {formatMoney(rangeSales - outstanding)}
-                    </div>
-                    <div className="text-2xs text-muted mt-1">
-                      From {new Date(since).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })} to today
-                    </div>
-                  </div>
-                  <div className="w-9 h-9 rounded-lg gradient-primary-soft dark:bg-primary-950/40 flex items-center justify-center">
-                    <TrendingUp className="h-4 w-4 text-primary-600" />
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
+          {/* ================= BUSINESS SNAPSHOT ================= */}
 
-            {/* Receivable / Payable */}
-            <div className="grid grid-cols-2 gap-3">
-              <Card>
-                <CardBody className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-2xs font-semibold text-muted uppercase tracking-wider">
-                      Receivable
-                    </div>
-                    <ArrowUpRight className="h-3.5 w-3.5 text-emerald-500" />
-                  </div>
-                  <div className="text-lg font-bold text-ink mt-2 tabular-nums">
-                    {formatMoney(outstanding)}
-                  </div>
-                  <div className="text-2xs text-emerald-600 mt-1 font-medium">
-                    Awaiting collection
-                  </div>
-                </CardBody>
-              </Card>
-              <Card>
-                <CardBody className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-2xs font-semibold text-muted uppercase tracking-wider">
-                      Collected
-                    </div>
-                    <ArrowDownRight className="h-3.5 w-3.5 text-primary-500" />
-                  </div>
-                  <div className="text-lg font-bold text-ink mt-2 tabular-nums">
-                    {formatMoney(invoices.reduce((s, i) => s + (i.amountPaid || 0), 0))}
-                  </div>
-                  <div className="text-2xs text-muted mt-1 font-medium">
-                    All time
-                  </div>
-                </CardBody>
-              </Card>
-            </div>
+          <Card>
+            <CardHeader
+              title="Business snapshot"
+              subtitle="Current activity"
+            />
 
-            {/* Category donut */}
-            <Card>
-              <CardHeader
-                title="Products by category"
-                dense
-                actions={
-                  <button className="p-1 rounded-md text-muted hover:text-ink hover:bg-slate-100 dark:hover:bg-slate-800">
-                    <MoreHorizontal className="h-3.5 w-3.5" />
-                  </button>
-                }
+            <CardBody className="space-y-5">
+              <SnapshotRow
+                label="Invoices"
+                value={invoices.length}
+                helper={`${rangeInvoices.length} in selected period`}
+                icon={Receipt}
               />
-              <CardBody className="pt-3">
-                {categoryData.length === 0 ? (
-                  <EmptyState compact title="No products" description="Add products to see this breakdown." />
-                ) : (
-                  <div>
-                    <div className="h-44">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={categoryData}
-                            dataKey="value"
-                            nameKey="name"
-                            innerRadius={44}
-                            outerRadius={70}
-                            paddingAngle={3}
-                            stroke="none"
-                          >
-                            {categoryData.map((_, i) => (
-                              <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />
-                            ))}
-                          </Pie>
-                          <Tooltip
-                            contentStyle={{
-                              background: isDark ? "#0f1420" : "#ffffff",
-                              border: `1px solid ${isDark ? "#262f42" : "#e2e8f0"}`,
-                              borderRadius: 8,
-                              fontSize: 12,
-                              boxShadow: "0 10px 24px -6px rgb(15 23 42 / 0.15)",
-                              padding: "6px 10px",
-                            }}
-                            formatter={(v, n) => [`${v} products`, n]}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="mt-3 space-y-1.5">
-                      {categoryData.map((c, i) => (
-                        <div key={c.name} className="flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span
-                              className="w-2 h-2 rounded-full shrink-0"
-                              style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }}
-                            />
-                            <span className="text-ink truncate font-medium">{c.name}</span>
-                          </div>
-                          <span className="text-muted font-semibold tabular-nums">
-                            {c.value}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </CardBody>
-            </Card>
-          </div>
-        </div>
 
-        {/* ─── Quick actions ─── */}
+              <SnapshotRow
+                label="Quotations"
+                value={quotations.length}
+                helper={`${pendingQuotations} awaiting action`}
+                icon={FileText}
+              />
+
+              <SnapshotRow
+                label="Products"
+                value={products.length}
+                helper={`${lowStock.length} low stock`}
+                icon={Package}
+              />
+
+              <SnapshotRow
+                label="Customers"
+                value={parties.length}
+                helper="Registered parties"
+                icon={Users}
+              />
+
+              <div className="pt-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="w-full"
+                  onClick={() =>
+                    navigate("/master/products")
+                  }
+                >
+                  View products
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
+        </section>
+
+        {/* ================= QUICK ACTIONS ================= */}
+
         <Card>
           <CardHeader
             title="Quick actions"
-            dense
-            actions={<span className="text-2xs text-muted">Shortcuts</span>}
+            subtitle="Start common tasks without leaving the dashboard"
           />
-          <CardBody className="p-3">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <QuickAction icon={Receipt} label="New Quotation" onClick={() => navigate("/sales/quotations/new")} />
-              <QuickAction icon={FileText} label="New Invoice" onClick={() => navigate("/sales/invoices/new")} />
-              <QuickAction icon={Package} label="New Product" onClick={() => navigate("/products/new")} />
-              <QuickAction icon={Users} label="Add Customer" onClick={() => navigate("/parties/customers")} />
+
+          <CardBody className="pt-1">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+              <QuickAction
+                icon={FileText}
+                label="New quotation"
+                onClick={() =>
+                  navigate("/bills/quotations/new")
+                }
+              />
+
+              <QuickAction
+                icon={Receipt}
+                label="New invoice"
+                onClick={() =>
+                  navigate("/bills/invoices/new")
+                }
+              />
+
+              <QuickAction
+                icon={Package}
+                label="New product"
+                onClick={() =>
+                  navigate("/master/products/new")
+                }
+              />
+
+              <QuickAction
+                icon={Users}
+                label="Add customer"
+                onClick={() =>
+                  navigate("/master/customers")
+                }
+              />
             </div>
           </CardBody>
         </Card>
 
-        {/* ─── Bottom grid ─── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* ================= LOWER GRID ================= */}
+
+        <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Recent transactions */}
-          <Card className="lg:col-span-2">
+
+          <Card className="lg:col-span-2 overflow-hidden">
             <CardHeader
-              title="Transaction History"
-              subtitle={`${recent.length} recent entries`}
+              title="Recent transactions"
+              subtitle={`${recent.length} latest entries`}
               actions={
-                <Button size="xs" variant="ghost" onClick={() => navigate("/sales/invoices")}>
-                  View all <ArrowUpRight className="h-3 w-3" />
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() =>
+                    navigate("/bills/invoices")
+                  }
+                >
+                  View all
+                  <ArrowUpRight className="h-3 w-3" />
                 </Button>
               }
             />
+
             {recent.length === 0 ? (
-              <EmptyState
-                compact
+              <EmptyDashboardState
                 icon={Receipt}
                 title="No transactions yet"
-                description="Create your first quotation to get started."
+                description="Create your first quotation or invoice."
                 action={
-                  <Button size="sm" onClick={() => navigate("/sales/quotations/new")}>
-                    <Plus className="h-3.5 w-3.5" /> New Quotation
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      navigate(
+                        "/bills/quotations/new",
+                      )
+                    }
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    New quotation
                   </Button>
                 }
               />
             ) : (
               <div className="divide-y divide-line">
-                {recent.map((r) => (
+                {recent.map((item) => (
                   <button
-                    key={r.kind + r.id}
+                    key={`${item.kind}-${item.id}`}
+                    type="button"
                     onClick={() =>
                       navigate(
-                        r.kind === "invoice"
-                          ? `/sales/invoices/${r.id}`
-                          : `/sales/quotations/${r.id}`,
+                        item.kind === "invoice"
+                          ? `/bills/invoices/${item.id}`
+                          : `/bills/quotations/${item.id}`,
                       )
                     }
-                    className="w-full text-left px-5 py-3 hover:bg-bg transition-colors flex items-center justify-between gap-3 group"
+                    className="
+                      w-full
+                      px-4 md:px-5
+                      py-3.5
+                      flex
+                      items-center
+                      gap-3
+                      text-left
+                      hover:bg-bg
+                      transition-colors
+                      group
+                    "
                   >
-                    <div className="min-w-0 flex items-center gap-3 flex-1">
-                      <div className="w-8 h-8 rounded-lg gradient-primary-soft dark:bg-primary-950/40 flex items-center justify-center shrink-0">
-                        {r.kind === "invoice"
-                          ? <Receipt className="h-4 w-4 text-primary-600" />
-                          : <FileText className="h-4 w-4 text-primary-600" />}
+                    <div
+                      className="
+                        h-9
+                        w-9
+                        rounded-xl
+                        bg-primary-50
+                        dark:bg-primary-950/30
+                        flex
+                        items-center
+                        justify-center
+                        shrink-0
+                      "
+                    >
+                      {item.kind === "invoice" ? (
+                        <Receipt className="h-4 w-4 text-primary-600" />
+                      ) : (
+                        <FileText className="h-4 w-4 text-primary-600" />
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs md:text-sm font-semibold text-ink truncate group-hover:text-primary-600">
+                        {item.number}
                       </div>
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-ink truncate tracking-tight group-hover:text-primary-600 transition-colors">
-                          {r.number}
-                        </div>
-                        <div className="text-2xs text-muted truncate">
-                          {r.partyName}
-                        </div>
+
+                      <div className="text-[11px] text-muted truncate mt-0.5">
+                        {item.partyName}
                       </div>
                     </div>
-                    <div className="text-2xs text-muted hidden sm:block tabular-nums">
-                      {fmtDate(r.date)}
+
+                    <div className="hidden md:block text-[11px] text-muted tabular-nums">
+                      {fmtDate(item.date)}
                     </div>
-                    <div className="text-sm font-bold text-ink tabular-nums shrink-0">
-                      {formatMoney(r.amount)}
+
+                    <div className="text-xs md:text-sm font-bold text-ink tabular-nums shrink-0">
+                      {formatMoney(item.amount)}
                     </div>
-                    <div className="hidden sm:block shrink-0">
-                      <StatusBadge status={r.status} />
+
+                    <div className="hidden sm:block">
+                      <StatusBadge status={item.status} />
                     </div>
                   </button>
                 ))}
@@ -504,150 +829,441 @@ export function DashboardPage() {
           </Card>
 
           {/* Right column */}
+
           <div className="space-y-4">
             {/* Low stock */}
-            <Card>
+
+            <Card className="overflow-hidden">
               <CardHeader
-                title={`Low Stock (${lowStock.length})`}
-                dense
+                title="Low stock"
+                subtitle={
+                  lowStock.length
+                    ? `${lowStock.length} items need attention`
+                    : "Inventory looks healthy"
+                }
                 actions={
-                  <Button size="xs" variant="ghost" onClick={() => navigate("/inventory")}>
-                    Manage
-                  </Button>
+                  <Package className="h-4 w-4 text-muted" />
                 }
               />
-              {lowStock.length === 0 ? (
-                <div className="p-6 text-center text-xs text-muted">
-                  All good — nothing below reorder level.
-                </div>
-              ) : (
-                <div className="divide-y divide-line max-h-64 overflow-y-auto scrollbar-thin">
-                  {lowStock.slice(0, 5).map((r) => (
-                    <div key={r.id} className="px-5 py-3 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold text-ink truncate tracking-tight">
-                          {r.productName}
-                        </div>
-                        <div className="text-2xs text-muted tabular-nums">
-                          {r.variantSku}
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-danger font-bold text-sm tabular-nums">
-                          {r.quantity}
-                        </div>
-                        <div className="text-2xs text-muted tabular-nums">
-                          / {r.reorderLevel}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
 
-            {/* Top customers */}
-            <Card>
-              <CardHeader
-                title="Top Customers"
-                subtitle={`Last ${days} days`}
-                dense
-              />
-              {topCustomers.length === 0 ? (
-                <div className="p-6 text-center text-xs text-muted">
-                  No sales in this period.
+              {lowStock.length === 0 ? (
+                <div className="px-5 py-8 text-center">
+                  <div className="mx-auto h-9 w-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center">
+                    <Package className="h-4 w-4 text-emerald-600" />
+                  </div>
+
+                  <div className="text-xs font-medium text-ink mt-3">
+                    All stock levels are healthy
+                  </div>
                 </div>
               ) : (
                 <div className="divide-y divide-line">
-                  {topCustomers.map((c, i) => (
-                    <div key={c.name} className="px-5 py-2.5 flex items-center gap-3">
-                      <div className="w-6 h-6 rounded-full gradient-primary-soft dark:bg-primary-950/40 text-primary-700 dark:text-primary-300 text-2xs font-bold flex items-center justify-center shrink-0">
-                        {i + 1}
+                  {lowStock.map((row) => (
+                    <button
+                      key={row.id}
+                      type="button"
+                      onClick={() =>
+                        navigate(
+                          "/master/products",
+                        )
+                      }
+                      className="
+                        w-full
+                        px-5
+                        py-3
+                        text-left
+                        flex
+                        items-center
+                        gap-3
+                        hover:bg-bg
+                      "
+                    >
+                      <div className="h-8 w-8 rounded-lg bg-red-50 dark:bg-red-950/30 flex items-center justify-center shrink-0">
+                        <Package className="h-3.5 w-3.5 text-red-600" />
                       </div>
+
                       <div className="min-w-0 flex-1">
-                        <div className="text-xs font-semibold text-ink truncate tracking-tight">
-                          {c.name}
+                        <div className="text-xs font-semibold text-ink truncate">
+                          {row.productName}
                         </div>
-                        <div className="text-2xs text-muted">
-                          {c.count} invoice{c.count !== 1 ? "s" : ""}
+
+                        <div className="text-[10px] text-muted truncate mt-0.5">
+                          {row.variantSku}
                         </div>
                       </div>
-                      <div className="text-xs font-bold text-ink tabular-nums shrink-0">
-                        {formatMoney(c.total)}
+
+                      <div className="text-right">
+                        <div className="text-xs font-bold text-red-600 tabular-nums">
+                          {row.quantity}
+                        </div>
+
+                        <div className="text-[10px] text-muted">
+                          / {row.reorderLevel}
+                        </div>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
             </Card>
+
+            {/* Category breakdown */}
+
+            <Card>
+              <CardHeader
+                title="Product mix"
+                subtitle="Products by category"
+              />
+
+              <CardBody>
+                {categorySummary.length === 0 ? (
+                  <div className="py-6 text-center text-xs text-muted">
+                    No category data available.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {categorySummary.map(
+                      (category, index) => {
+                        const total =
+                          products.length || 1;
+
+                        const percentage =
+                          (category.value /
+                            total) *
+                          100;
+
+                        return (
+                          <div key={category.name}>
+                            <div className="flex items-center justify-between gap-3 mb-1.5">
+                              <span className="text-xs font-medium text-ink truncate">
+                                {category.name}
+                              </span>
+
+                              <span className="text-[11px] text-muted tabular-nums">
+                                {category.value}
+                              </span>
+                            </div>
+
+                            <div className="h-1.5 rounded-full bg-bg overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-primary-500"
+                                style={{
+                                  width: `${Math.min(
+                                    100,
+                                    percentage,
+                                  )}%`,
+                                  opacity:
+                                    1 -
+                                    index * 0.12,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      },
+                    )}
+                  </div>
+                )}
+              </CardBody>
+            </Card>
           </div>
-        </div>
+        </section>
+
+        {/* ================= TOP CUSTOMERS ================= */}
+
+        {topCustomers.length > 0 && (
+          <Card>
+            <CardHeader
+              title="Top customers"
+              subtitle={`Highest value customers · last ${days} days`}
+            />
+
+            <CardBody className="pt-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2">
+                {topCustomers.map(
+                  (customer, index) => (
+                    <div
+                      key={customer.name}
+                      className="
+                        rounded-xl
+                        border border-line
+                        bg-bg
+                        px-3
+                        py-3
+                        flex
+                        items-center
+                        gap-3
+                      "
+                    >
+                      <div className="h-8 w-8 rounded-full bg-primary-50 dark:bg-primary-950/30 text-primary-600 flex items-center justify-center text-[10px] font-bold shrink-0">
+                        {getInitials(
+                          customer.name,
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-semibold text-ink truncate">
+                          {customer.name}
+                        </div>
+
+                        <div className="text-[10px] text-muted mt-0.5">
+                          {customer.count} invoice
+                          {customer.count !== 1
+                            ? "s"
+                            : ""}
+                        </div>
+                      </div>
+
+                      <div className="text-xs font-bold text-ink tabular-nums">
+                        {formatMoney(
+                          customer.total,
+                        )}
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
+            </CardBody>
+          </Card>
+        )}
       </div>
-    </>
+    </div>
   );
 }
 
-/* ─── KPI Card ─── */
-function KPI({ label, value, delta, icon: Icon, tone = "primary", onClick }) {
-  const tones = {
-    primary: { bg: "gradient-primary-soft dark:bg-primary-950/40", fg: "text-primary-600" },
-    success: { bg: "bg-emerald-50 dark:bg-emerald-950/40", fg: "text-emerald-600" },
-    danger:  { bg: "bg-red-50 dark:bg-red-950/40",         fg: "text-red-600" },
-    warning: { bg: "bg-amber-50 dark:bg-amber-950/40",     fg: "text-amber-600" },
-  }[tone];
+/* =========================================================
+   METRIC CARD
+========================================================= */
 
-  return (
-    <Card interactive={!!onClick} className="overflow-hidden">
-      <button
-        onClick={onClick}
-        className="w-full text-left p-4 md:p-5"
-        disabled={!onClick}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="text-2xs font-semibold text-muted uppercase tracking-wider">
+function MetricCard({
+  label,
+  value,
+  icon: Icon,
+  tone = "primary",
+  delta,
+  onClick,
+}) {
+  const tones = {
+    primary: {
+      icon: "bg-primary-50 dark:bg-primary-950/30 text-primary-600",
+    },
+
+    success: {
+      icon: "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600",
+    },
+
+    warning: {
+      icon: "bg-amber-50 dark:bg-amber-950/30 text-amber-600",
+    },
+  };
+
+  const style = tones[tone] || tones.primary;
+
+  const content = (
+    <div className="p-4 md:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[11px] font-medium text-muted">
             {label}
           </div>
-          {Icon && (
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${tones.bg}`}>
-              <Icon className={`h-4 w-4 ${tones.fg}`} strokeWidth={2} />
-            </div>
-          )}
-        </div>
-        <div className="mt-3 flex items-baseline gap-2 flex-wrap">
-          <div className="text-xl md:text-2xl font-bold text-ink tracking-tight tabular-nums">
+
+          <div className="mt-2 text-xl md:text-[25px] leading-none font-bold tracking-[-0.04em] text-ink tabular-nums">
             {value}
           </div>
-          {delta != null && isFinite(delta) && delta !== 0 && (
-            <span
-              className={
-                "inline-flex items-center gap-0.5 text-2xs font-bold " +
-                (delta > 0 ? "text-emerald-600" : "text-danger")
-              }
-            >
-              {delta > 0
-                ? <ArrowUpRight className="h-3 w-3" />
-                : <ArrowDownRight className="h-3 w-3" />}
-              {Math.abs(delta).toFixed(1)}%
-            </span>
-          )}
         </div>
+
+        <div
+          className={`
+            h-9
+            w-9
+            rounded-xl
+            flex
+            items-center
+            justify-center
+            shrink-0
+            ${style.icon}
+          `}
+        >
+          <Icon className="h-[17px] w-[17px]" />
+        </div>
+      </div>
+
+      {delta !== null &&
+        delta !== undefined && (
+          <div
+            className={`
+              mt-3
+              inline-flex
+              items-center
+              gap-1
+              text-[10px]
+              font-bold
+              ${
+                delta >= 0
+                  ? "text-emerald-600"
+                  : "text-red-600"
+              }
+            `}
+          >
+            {delta >= 0 ? (
+              <ArrowUpRight className="h-3 w-3" />
+            ) : (
+              <ArrowDownRight className="h-3 w-3" />
+            )}
+
+            {Math.abs(delta).toFixed(1)}%
+            <span className="font-medium text-muted ml-0.5">
+              vs previous period
+            </span>
+          </div>
+        )}
+    </div>
+  );
+
+  if (!onClick) {
+    return <Card>{content}</Card>;
+  }
+
+  return (
+    <Card interactive>
+      <button
+        type="button"
+        onClick={onClick}
+        className="w-full text-left"
+      >
+        {content}
       </button>
     </Card>
   );
 }
 
-function QuickAction({ icon: Icon, label, onClick }) {
+/* =========================================================
+   SNAPSHOT
+========================================================= */
+
+function SnapshotRow({
+  label,
+  value,
+  helper,
+  icon: Icon,
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="h-9 w-9 rounded-xl bg-bg border border-line flex items-center justify-center shrink-0">
+        <Icon className="h-4 w-4 text-muted" />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="text-xs font-semibold text-ink">
+          {label}
+        </div>
+
+        <div className="text-[10px] text-muted mt-0.5 truncate">
+          {helper}
+        </div>
+      </div>
+
+      <div className="text-sm font-bold text-ink tabular-nums">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   QUICK ACTION
+========================================================= */
+
+function QuickAction({
+  icon: Icon,
+  label,
+  onClick,
+}) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className="flex items-center gap-2.5 p-3 rounded-lg border border-line bg-bg hover:border-primary-300 hover:bg-primary-50/40 dark:hover:bg-primary-950/20 transition-all duration-150 group text-left"
+      className="
+        group
+        flex
+        items-center
+        gap-3
+        p-3
+        rounded-xl
+        border border-line
+        bg-bg
+        text-left
+        transition-all
+        hover:bg-surface
+        hover:border-primary-200
+        dark:hover:border-primary-900
+        hover:shadow-xs
+      "
     >
-      <div className="w-8 h-8 rounded-lg bg-surface border border-line group-hover:border-primary-400 group-hover:gradient-primary group-hover:text-white transition-all flex items-center justify-center shrink-0">
-        <Icon className="h-4 w-4 text-primary-600 group-hover:text-white transition-colors" strokeWidth={2} />
+      <div
+        className="
+          h-8
+          w-8
+          rounded-lg
+          bg-surface
+          border border-line
+          flex
+          items-center
+          justify-center
+          shrink-0
+          transition-all
+          group-hover:bg-primary-600
+          group-hover:border-primary-600
+        "
+      >
+        <Icon
+          className="
+            h-4
+            w-4
+            text-primary-600
+            group-hover:text-white
+          "
+        />
       </div>
-      <span className="text-xs font-semibold text-ink truncate tracking-tight">
+
+      <span className="text-xs font-semibold text-ink truncate">
         {label}
       </span>
+
+      <ArrowUpRight className="h-3.5 w-3.5 text-subtle ml-auto group-hover:text-primary-500" />
     </button>
+  );
+}
+
+/* =========================================================
+   EMPTY STATE
+========================================================= */
+
+function EmptyDashboardState({
+  icon: Icon,
+  title,
+  description,
+  action,
+}) {
+  return (
+    <div className="px-5 py-12 text-center">
+      <div className="mx-auto h-10 w-10 rounded-xl bg-bg flex items-center justify-center">
+        <Icon className="h-4 w-4 text-muted" />
+      </div>
+
+      <div className="text-sm font-semibold text-ink mt-3">
+        {title}
+      </div>
+
+      <div className="text-xs text-muted mt-1">
+        {description}
+      </div>
+
+      {action && (
+        <div className="mt-4">
+          {action}
+        </div>
+      )}
+    </div>
   );
 }

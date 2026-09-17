@@ -1,7 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Plus, Trash2, Save, Wand2 } from "lucide-react";
+import ProductTypeConfigurator from "@/components/master/ProductTypeConfigurator";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Package,
+  Plus,
+  Save,
+  Settings2,
+  Trash2,
+  Wand2,
+} from "lucide-react";
+
 import { useQueryClient } from "@tanstack/react-query";
+
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
 import { Button } from "@/components/ui/Button";
@@ -11,37 +25,68 @@ import { Select } from "@/components/ui/Select";
 import { Field } from "@/components/ui/Field";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { Switch } from "@/components/ui/Switch";
-import { Card, CardHeader, CardBody } from "@/components/ui/Card";
+import {
+  Card,
+  CardHeader,
+  CardBody,
+} from "@/components/ui/Card";
 import { FormGrid } from "@/components/ui/FormGrid";
+
 import { toast } from "@/lib/toast";
 import { toCode } from "@/lib/utils/code";
 import { newId } from "@/lib/utils/id";
+
 import {
   useCategories,
   useBrands,
   useAttributes,
   useCategoryAttributes,
   useAttributeValues,
+  useUpsertCategoryAttribute,
+  useRemoveCategoryAttribute,
 } from "@/hooks/useMasters";
+
 import {
   useProduct,
   useProductVariants,
   useCreateProduct,
   useUpdateProduct,
 } from "@/hooks/useProducts";
+
 import {
   variantRepo,
   variantAttributeRepo,
   priceRepo,
 } from "@/lib/api/repos";
+
 import { MODULE_TABS } from "@/app/moduleNav";
 
 const PRICE_TYPES = [
-  { key: "purchase",  label: "Purchase" },
-  { key: "selling",   label: "Selling" },
-  { key: "wholesale", label: "Wholesale" },
-  { key: "retail",    label: "Retail" },
-  { key: "minimum",   label: "Minimum" },
+  {
+    key: "purchase",
+    label: "Purchase",
+    description: "Your buying price",
+  },
+  {
+    key: "selling",
+    label: "Selling",
+    description: "Default selling price",
+  },
+  {
+    key: "wholesale",
+    label: "Wholesale",
+    description: "Wholesale customers",
+  },
+  {
+    key: "retail",
+    label: "Retail",
+    description: "Retail customers",
+  },
+  {
+    key: "minimum",
+    label: "Minimum",
+    description: "Lowest allowed price",
+  },
 ];
 
 const emptyVariant = () => ({
@@ -60,17 +105,17 @@ const emptyVariant = () => ({
   isDefault: false,
 });
 
-/* ─────────────────────────────────────────────────────────────
-   SKU builder
-   - prefix from category (first 4 letters of first word), fallback "PRD"
-   - initials from product name (first letter of each word)
-   - result like "PLYW-SGP"
-   ───────────────────────────────────────────────────────────── */
+/* -------------------------------------------------------------
+   SKU helpers
+------------------------------------------------------------- */
+
 function buildProductSku(name, categoryName) {
   const cleanName = String(name || "").trim();
+
   if (!cleanName) return "";
 
   let prefix = "PRD";
+
   if (categoryName) {
     const first = toCode(categoryName).split("_")[0];
     prefix = (first || "PRD").slice(0, 4);
@@ -79,79 +124,292 @@ function buildProductSku(name, categoryName) {
   const initials = cleanName
     .split(/\s+/)
     .filter(Boolean)
-    .map((w) => w[0])
+    .map((word) => word[0])
     .join("")
     .toUpperCase()
     .slice(0, 3);
 
-  return initials ? `${prefix}-${initials}` : `${prefix}-ITEM`;
+  return initials
+    ? `${prefix}-${initials}`
+    : `${prefix}-ITEM`;
 }
 
-/* Variant SKU: product SKU + numeric suffix if missing */
-function buildVariantSku(productSku, existingVariantSkus, index) {
+function buildVariantSku(
+  productSku,
+  existingVariantSkus,
+  index,
+) {
   const base = (productSku || "VAR").toUpperCase();
+
   let n = index + 1;
-  let candidate = `${base}-${String(n).padStart(2, "0")}`;
+
+  let candidate = `${base}-${String(n).padStart(
+    2,
+    "0",
+  )}`;
+
   while (existingVariantSkus.includes(candidate)) {
     n += 1;
-    candidate = `${base}-${String(n).padStart(2, "0")}`;
+
+    candidate = `${base}-${String(n).padStart(
+      2,
+      "0",
+    )}`;
   }
+
   return candidate;
 }
 
+/* -------------------------------------------------------------
+   Main
+------------------------------------------------------------- */
+
 export function ProductFormPage() {
   const { id } = useParams();
+
   const isEdit = !!id;
+
   const navigate = useNavigate();
+
   const qc = useQueryClient();
 
-  const { data: categories = [] } = useCategories();
-  const { data: brands = [] } = useBrands();
+  /* -----------------------------------------------------------
+     Master data
+  ----------------------------------------------------------- */
 
-  /* Identity */
+  const {
+    data: categories = [],
+  } = useCategories();
+
+  const {
+    data: brands = [],
+  } = useBrands();
+
+  const {
+    data: allAttrs = [],
+  } = useAttributes();
+
+  /* -----------------------------------------------------------
+     Product identity
+  ----------------------------------------------------------- */
+
   const [name, setName] = useState("");
+
   const [sku, setSku] = useState("");
-  const [skuLocked, setSkuLocked] = useState(false); // true once user types manually
-  const [categoryId, setCategoryId] = useState("");
-  const [brandId, setBrandId] = useState("");
-  const [description, setDescription] = useState("");
-  const [status, setStatus] = useState("active");
 
-  /* Variants */
-  const [variants, setVariants] = useState([emptyVariant()]);
-  const [existingMap, setExistingMap] = useState({});
-  const [loaded, setLoaded] = useState(!isEdit);
+  const [skuLocked, setSkuLocked] =
+    useState(false);
 
-  /* Load for edit */
+  const [categoryId, setCategoryId] =
+    useState("");
+
+  const [brandId, setBrandId] =
+    useState("");
+
+  const [description, setDescription] =
+    useState("");
+
+  const [status, setStatus] =
+    useState("active");
+
+  /* -----------------------------------------------------------
+     Variants
+  ----------------------------------------------------------- */
+
+  const [variants, setVariants] = useState([
+    emptyVariant(),
+  ]);
+
+  const [existingMap, setExistingMap] =
+    useState({});
+
+  const [loaded, setLoaded] =
+    useState(!isEdit);
+
+  const [openVariant, setOpenVariant] =
+    useState(0);
+
+  /* -----------------------------------------------------------
+     Product type configurator
+  ----------------------------------------------------------- */
+
+  const [configuratorOpen, setConfiguratorOpen] =
+    useState(false);
+
+  /*
+   * categoryAttrs is the saved product-type configuration.
+   * configuredCategoryAttrs lets the current product form temporarily
+   * use the configuration selected from the Configure drawer.
+   */
+  const [configuredCategoryAttrs, setConfiguredCategoryAttrs] =
+    useState([]);
+
+  /* -----------------------------------------------------------
+     Queries
+  ----------------------------------------------------------- */
+
   const productQ = useProduct(id);
-  const variantsQ = useProductVariants(id);
+
+  const variantsQ =
+    useProductVariants(id);
+
+  const {
+    data: categoryAttrs = [],
+  } =
+    useCategoryAttributes(categoryId);
+
+  /* -----------------------------------------------------------
+     Dynamic attributes
+  ----------------------------------------------------------- */
+
+  /*
+   * Whenever a product type is selected, load its configured fields.
+   * The configurator can then adjust the fields for the current
+   * product form without changing the existing master data layer.
+   */
+  useEffect(() => {
+    if (!categoryId) {
+      setConfiguredCategoryAttrs([]);
+      return;
+    }
+
+    setConfiguredCategoryAttrs(categoryAttrs || []);
+  }, [
+    categoryId,
+    categoryAttrs,
+  ]);
+
+  const activeAttrs = useMemo(() => {
+    return configuredCategoryAttrs
+      .map((ca) => {
+        const attribute =
+          allAttrs.find(
+            (item) =>
+              item.id === ca.attributeId,
+          );
+
+        if (!attribute) return null;
+
+        return {
+          ...attribute,
+          isRequired:
+            ca.isRequired !== false,
+          sortOrder:
+            ca.sortOrder ?? 0,
+        };
+      })
+      .filter(Boolean)
+      .sort(
+        (a, b) =>
+          (a.sortOrder ?? 0) -
+          (b.sortOrder ?? 0),
+      );
+  }, [
+    configuredCategoryAttrs,
+    allAttrs,
+  ]);
+
+  /* -----------------------------------------------------------
+     Mutations
+  ----------------------------------------------------------- */
+
+  const createMut =
+    useCreateProduct();
+
+  const updateMut =
+    useUpdateProduct();
+
+  const upsertCategoryAttributeMut =
+    useUpsertCategoryAttribute();
+
+  const removeCategoryAttributeMut =
+    useRemoveCategoryAttribute();
+
+  const saving =
+    createMut.isPending ||
+    updateMut.isPending;
+
+  /* -----------------------------------------------------------
+     Load existing product
+  ----------------------------------------------------------- */
 
   useEffect(() => {
     if (!isEdit || loaded) return;
-    if (!productQ.data || !variantsQ.data) return;
 
-    const p = productQ.data;
-    setName(p.name);
-    setSku(p.sku);
-    setSkuLocked(true); // editing an existing product — don't auto-overwrite its SKU
-    setCategoryId(p.categoryId);
-    setBrandId(p.brandId || "");
-    setDescription(p.description || "");
-    setStatus(p.status || "active");
+    if (
+      !productQ.data ||
+      !variantsQ.data
+    ) {
+      return;
+    }
+
+    const product =
+      productQ.data;
+
+    setName(product.name || "");
+
+    setSku(product.sku || "");
+
+    setSkuLocked(true);
+
+    setCategoryId(
+      product.categoryId || "",
+    );
+
+    setBrandId(
+      product.brandId || "",
+    );
+
+    setDescription(
+      product.description || "",
+    );
+
+    setStatus(
+      product.status || "active",
+    );
 
     (async () => {
       const map = {};
+
       const loadedVariants = [];
-      for (const v of variantsQ.data) {
-        const [attrs, prices] = await Promise.all([
-          variantAttributeRepo.list({ variantId: v.id }),
-          priceRepo.list({ variantId: v.id }),
+
+      for (const variant of variantsQ.data) {
+        const [
+          attrs,
+          prices,
+        ] = await Promise.all([
+          variantAttributeRepo.list({
+            variantId:
+              variant.id,
+          }),
+
+          priceRepo.list({
+            variantId:
+              variant.id,
+          }),
         ]);
-        const attributeValues = {};
-        for (const a of attrs) {
-          if (a.attributeValueId) attributeValues[a.attributeId] = a.attributeValueId;
-          else if (a.rawValue != null) attributeValues[a.attributeId] = a.rawValue;
+
+        const attributeValues =
+          {};
+
+        for (const attr of attrs) {
+          if (
+            attr.attributeValueId
+          ) {
+            attributeValues[
+              attr.attributeId
+            ] =
+              attr.attributeValueId;
+          } else if (
+            attr.rawValue != null
+          ) {
+            attributeValues[
+              attr.attributeId
+            ] =
+              attr.rawValue;
+          }
         }
+
         const priceMap = {
           purchase: "",
           selling: "",
@@ -159,640 +417,2043 @@ export function ProductFormPage() {
           retail: "",
           minimum: "",
         };
-        for (const pr of prices) {
-          if (pr.amount != null) priceMap[pr.priceType] = String(pr.amount);
+
+        for (const price of prices) {
+          if (
+            price.amount != null
+          ) {
+            priceMap[
+              price.priceType
+            ] = String(
+              price.amount,
+            );
+          }
         }
+
         const tempId = newId();
-        map[tempId] = { variantId: v.id };
+
+        map[tempId] = {
+          variantId:
+            variant.id,
+        };
+
         loadedVariants.push({
           tempId,
-          sku: v.sku,
+          sku: variant.sku || "",
           attributeValues,
           prices: priceMap,
           openingStock: "",
           reorderLevel: "",
-          isDefault: !!v.isDefault,
+          isDefault:
+            !!variant.isDefault,
         });
       }
+
       setExistingMap(map);
-      setVariants(loadedVariants.length ? loadedVariants : [emptyVariant()]);
+
+      setVariants(
+        loadedVariants.length
+          ? loadedVariants
+          : [emptyVariant()],
+      );
+
       setLoaded(true);
+
+      setOpenVariant(0);
     })();
-  }, [isEdit, loaded, productQ.data, variantsQ.data]);
+  }, [
+    isEdit,
+    loaded,
+    productQ.data,
+    variantsQ.data,
+  ]);
 
-  /* Category attributes (dynamic) */
-  const { data: categoryAttrs = [] } = useCategoryAttributes(categoryId);
-  const { data: allAttrs = [] } = useAttributes();
+  /* -----------------------------------------------------------
+     SKU
+  ----------------------------------------------------------- */
 
-  const activeAttrs = useMemo(() => {
-    return categoryAttrs
-      .map((ca) => {
-        const a = allAttrs.find((x) => x.id === ca.attributeId);
-        return a
-          ? { ...a, isRequired: ca.isRequired, sortOrder: ca.sortOrder }
-          : null;
-      })
-      .filter(Boolean)
-      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-  }, [categoryAttrs, allAttrs]);
-
-  /* Mutations */
-  const createMut = useCreateProduct();
-  const updateMut = useUpdateProduct();
-
-  /* ───── Auto SKU (product + first empty variant) ───── */
   const handleAutoSku = () => {
-    const cleanName = name.trim();
+    const cleanName =
+      name.trim();
+
     if (!cleanName) {
-      toast.error("Enter a product name first");
+      toast.error(
+        "Enter a product name first",
+      );
+
       return;
     }
 
-    const cat = categories.find((c) => c.id === categoryId);
-    const suggested = buildProductSku(cleanName, cat?.name);
+    const category =
+      categories.find(
+        (item) =>
+          item.id === categoryId,
+      );
+
+    const suggested =
+      buildProductSku(
+        cleanName,
+        category?.name,
+      );
+
     if (!suggested) {
-      toast.error("Could not build SKU");
+      toast.error(
+        "Could not build SKU",
+      );
+
       return;
     }
 
     setSku(suggested);
+
     setSkuLocked(true);
 
-    // Auto-fill any empty variant SKUs based on the new product SKU
     setVariants((current) => {
-      const used = current.map((v) => v.sku).filter(Boolean);
-      let idx = 0;
-      return current.map((v) => {
-        if (v.sku && v.sku.trim()) return v; // keep existing
-        idx += 1;
-        const nextSku = buildVariantSku(suggested, used, idx - 1);
-        used.push(nextSku);
-        return { ...v, sku: nextSku };
-      });
+      const used = current
+        .map((variant) =>
+          variant.sku,
+        )
+        .filter(Boolean);
+
+      let index = 0;
+
+      return current.map(
+        (variant) => {
+          if (
+            variant.sku &&
+            variant.sku.trim()
+          ) {
+            return variant;
+          }
+
+          const nextSku =
+            buildVariantSku(
+              suggested,
+              used,
+              index,
+            );
+
+          index += 1;
+
+          used.push(nextSku);
+
+          return {
+            ...variant,
+            sku: nextSku,
+          };
+        },
+      );
     });
 
-    toast.success(`SKU suggested: ${suggested}`);
+    toast.success(
+      `SKU suggested: ${suggested}`,
+    );
   };
 
-  /* ───── Manual SKU ───── */
-  const handleManualSku = (value) => {
-    setSku(value.toUpperCase());
+  const handleManualSku = (
+    value,
+  ) => {
+    setSku(
+      value.toUpperCase(),
+    );
+
     setSkuLocked(true);
   };
 
   const handleClearSku = () => {
     setSku("");
+
     setSkuLocked(false);
   };
 
-  /* Variant helpers */
-  const addVariant = () =>
-    setVariants((v) => {
-      const used = v.map((x) => x.sku).filter(Boolean);
+  /* -----------------------------------------------------------
+     Variant helpers
+  ----------------------------------------------------------- */
+
+  const addVariant = () => {
+    setVariants((current) => {
+      const used = current
+        .map((variant) =>
+          variant.sku,
+        )
+        .filter(Boolean);
+
       const newSku = sku
-        ? buildVariantSku(sku, used, used.length)
+        ? buildVariantSku(
+            sku,
+            used,
+            used.length,
+          )
         : "";
+
       return [
-        ...v,
-        { ...emptyVariant(), sku: newSku, isDefault: v.length === 0 },
+        ...current,
+        {
+          ...emptyVariant(),
+          sku: newSku,
+          isDefault:
+            current.length === 0,
+        },
       ];
     });
 
-  const removeVariant = (tempId) =>
-    setVariants((v) => v.filter((x) => x.tempId !== tempId));
-
-  const updateVariant = (tempId, patch) =>
-    setVariants((v) =>
-      v.map((x) => (x.tempId === tempId ? { ...x, ...patch } : x)),
+    setOpenVariant(
+      variants.length,
     );
-
-  const setVariantAttr = (tempId, attributeId, value) =>
-    setVariants((v) =>
-      v.map((x) =>
-        x.tempId === tempId
-          ? {
-              ...x,
-              attributeValues: { ...x.attributeValues, [attributeId]: value },
-            }
-          : x,
-      ),
-    );
-
-  const setVariantPrice = (tempId, priceType, value) =>
-    setVariants((v) =>
-      v.map((x) =>
-        x.tempId === tempId
-          ? { ...x, prices: { ...x.prices, [priceType]: value } }
-          : x,
-      ),
-    );
-
-  const suggestVariantSku = (tempId) => {
-    const current = variants.find((v) => v.tempId === tempId);
-    if (!current) return;
-    const used = variants
-      .filter((v) => v.tempId !== tempId)
-      .map((v) => v.sku)
-      .filter(Boolean);
-    const base = sku || "VAR";
-    // Try to make the variant SKU informative: use the numeric piece if present
-    const next = buildVariantSku(base, used, used.length);
-    updateVariant(tempId, { sku: next });
   };
 
-  /* Validate */
+  const removeVariant = (
+    tempId,
+  ) => {
+    setVariants((current) => {
+      const next =
+        current.filter(
+          (variant) =>
+            variant.tempId !==
+            tempId,
+        );
+
+      return next.length
+        ? next
+        : [emptyVariant()];
+    });
+
+    setOpenVariant(0);
+  };
+
+  const updateVariant = (
+    tempId,
+    patch,
+  ) => {
+    setVariants((current) =>
+      current.map((variant) =>
+        variant.tempId ===
+        tempId
+          ? {
+              ...variant,
+              ...patch,
+            }
+          : variant,
+      ),
+    );
+  };
+
+  const setVariantAttr = (
+    tempId,
+    attributeId,
+    value,
+  ) => {
+    setVariants((current) =>
+      current.map((variant) =>
+        variant.tempId ===
+        tempId
+          ? {
+              ...variant,
+              attributeValues: {
+                ...variant.attributeValues,
+                [attributeId]:
+                  value,
+              },
+            }
+          : variant,
+      ),
+    );
+  };
+
+  const setVariantPrice = (
+    tempId,
+    priceType,
+    value,
+  ) => {
+    setVariants((current) =>
+      current.map((variant) =>
+        variant.tempId ===
+        tempId
+          ? {
+              ...variant,
+              prices: {
+                ...variant.prices,
+                [priceType]:
+                  value,
+              },
+            }
+          : variant,
+      ),
+    );
+  };
+
+  const suggestVariantSku = (
+    tempId,
+  ) => {
+    const current =
+      variants.find(
+        (variant) =>
+          variant.tempId ===
+          tempId,
+      );
+
+    if (!current) return;
+
+    const used = variants
+      .filter(
+        (variant) =>
+          variant.tempId !==
+          tempId,
+      )
+      .map((variant) =>
+        variant.sku,
+      )
+      .filter(Boolean);
+
+    const next =
+      buildVariantSku(
+        sku || "VAR",
+        used,
+        used.length,
+      );
+
+    updateVariant(
+      tempId,
+      {
+        sku: next,
+      },
+    );
+  };
+
+  /* -----------------------------------------------------------
+     Validation
+  ----------------------------------------------------------- */
+
   const validate = () => {
-    if (!name.trim()) return "Product name is required";
-    if (!sku.trim()) return "Product SKU is required";
-    if (!categoryId) return "Category is required";
-    if (!variants.length) return "Add at least one variant";
-    for (const v of variants) {
-      if (!v.sku.trim()) return "Every variant needs a SKU";
-      for (const a of activeAttrs) {
-        if (a.isRequired) {
-          const val = v.attributeValues[a.id];
-          if (val == null || val === "")
-            return `${a.name} is required on every variant`;
+    if (!name.trim()) {
+      return "Product name is required";
+    }
+
+    if (!sku.trim()) {
+      return "Product SKU is required";
+    }
+
+    if (!categoryId) {
+      return "Product type is required";
+    }
+
+    if (!variants.length) {
+      return "Add at least one variant";
+    }
+
+    for (const variant of variants) {
+      if (!variant.sku.trim()) {
+        return "Every variant needs a SKU";
+      }
+
+      for (const attribute of activeAttrs) {
+        if (
+          attribute.isRequired
+        ) {
+          const value =
+            variant.attributeValues[
+              attribute.id
+            ];
+
+          if (
+            value == null ||
+            value === ""
+          ) {
+            return `${attribute.name} is required on every variant`;
+          }
         }
       }
     }
+
     return null;
   };
 
-  /* Submit */
+  /* -----------------------------------------------------------
+     Save
+  ----------------------------------------------------------- */
+
+  const persistProductTypeConfiguration = async (fields) => {
+    if (!categoryId) {
+      toast.error("Select a product type first");
+      return;
+    }
+
+    const next = (fields || []).map((field, index) => ({
+      attributeId: field.attributeId ?? field.id,
+      isRequired: field.required !== false,
+      sortOrder: index,
+    }));
+
+    const nextIds = new Set(next.map((field) => field.attributeId));
+    const currentMappings = categoryAttrs || [];
+
+    try {
+      for (const mapping of currentMappings) {
+        if (!nextIds.has(mapping.attributeId)) {
+          await removeCategoryAttributeMut.mutateAsync({ id: mapping.id });
+        }
+      }
+
+      for (const field of next) {
+        await upsertCategoryAttributeMut.mutateAsync({
+          categoryId,
+          attributeId: field.attributeId,
+          isRequired: field.isRequired,
+          sortOrder: field.sortOrder,
+        });
+      }
+
+      setConfiguredCategoryAttrs(next);
+      toast.success(`${next.length} field${next.length === 1 ? "" : "s"} saved for ${selectedCategory?.name || "this product type"}`);
+    } catch (error) {
+      console.error(error);
+      toast.error(error?.message || "Could not save product type configuration");
+      throw error;
+    }
+  };
+
   const handleSave = async () => {
-    const err = validate();
-    if (err) return toast.error(err);
+    const error =
+      validate();
+
+    if (error) {
+      toast.error(error);
+      return;
+    }
 
     try {
       if (!isEdit) {
         const payload = {
           name: name.trim(),
+
+          sku: sku.trim(),
+
+          categoryId,
+
+          brandId:
+            brandId || null,
+
+          description,
+
+          status,
+
+          variants:
+            variants.map(
+              (
+                variant,
+                index,
+              ) => ({
+                sku:
+                  variant.sku.trim(),
+
+                isDefault:
+                  index === 0,
+
+                attributes:
+                  activeAttrs.map(
+                    (attribute) => {
+                      const value =
+                        variant
+                          .attributeValues[
+                          attribute.id
+                        ];
+
+                      const isSelect =
+                        attribute.dataType ===
+                        "select";
+
+                      return {
+                        attributeId:
+                          attribute.id,
+
+                        attributeValueId:
+                          isSelect
+                            ? value ||
+                              null
+                            : null,
+
+                        rawValue:
+                          isSelect
+                            ? null
+                            : value ===
+                                "" ||
+                              value ==
+                                null
+                            ? null
+                            : attribute.dataType ===
+                                "number"
+                              ? Number(
+                                  value,
+                                )
+                              : attribute.dataType ===
+                                  "boolean"
+                                ? Boolean(
+                                    value,
+                                  )
+                                : value,
+                      };
+                    },
+                  ),
+
+                prices:
+                  PRICE_TYPES.map(
+                    (priceType) => ({
+                      priceType:
+                        priceType.key,
+
+                      amount:
+                        variant
+                          .prices[
+                          priceType
+                            .key
+                        ] ===
+                        ""
+                          ? null
+                          : Number(
+                              variant
+                                .prices[
+                                priceType
+                                  .key
+                              ],
+                            ),
+                    }),
+                  ),
+
+                openingStock:
+                  variant
+                    .openingStock ===
+                  ""
+                    ? 0
+                    : Number(
+                        variant.openingStock,
+                      ),
+
+                reorderLevel:
+                  variant
+                    .reorderLevel ===
+                  ""
+                    ? 0
+                    : Number(
+                        variant.reorderLevel,
+                      ),
+              }),
+            ),
+        };
+
+        const created =
+          await createMut.mutateAsync(
+            payload,
+          );
+
+        toast.success(
+          "Product created",
+        );
+
+        navigate(
+          `/master/products/${created.id}`,
+        );
+
+        return;
+      }
+
+      await updateMut.mutateAsync({
+        id,
+
+        patch: {
+          name: name.trim(),
           sku: sku.trim(),
           categoryId,
-          brandId: brandId || null,
+          brandId:
+            brandId || null,
           description,
           status,
-          variants: variants.map((v, idx) => ({
-            sku: v.sku.trim(),
-            isDefault: idx === 0,
-            attributes: activeAttrs.map((a) => {
-              const val = v.attributeValues[a.id];
-              const isSelect = a.dataType === "select";
-              return {
-                attributeId: a.id,
-                attributeValueId: isSelect ? val || null : null,
-                rawValue: isSelect
-                  ? null
-                  : val === "" || val == null
-                  ? null
-                  : a.dataType === "number"
-                  ? Number(val)
-                  : a.dataType === "boolean"
-                  ? Boolean(val)
-                  : val,
-              };
-            }),
-            prices: PRICE_TYPES.map((pt) => ({
-              priceType: pt.key,
-              amount:
-                v.prices[pt.key] === "" ? null : Number(v.prices[pt.key]),
-            })),
-            openingStock:
-              v.openingStock === "" ? 0 : Number(v.openingStock),
-            reorderLevel:
-              v.reorderLevel === "" ? 0 : Number(v.reorderLevel),
-          })),
-        };
-        const created = await createMut.mutateAsync(payload);
-        toast.success("Product created");
-        navigate(`/master/products/${created.id}`);
-      } else {
-        await updateMut.mutateAsync({
-          id,
-          patch: {
-            name: name.trim(),
-            sku: sku.trim(),
-            categoryId,
-            brandId: brandId || null,
-            description,
-            status,
+        },
+      });
+
+      for (const variant of variants) {
+        const existing =
+          existingMap[
+            variant.tempId
+          ];
+
+        const variantId =
+          existing?.variantId;
+
+        if (!variantId) {
+          continue;
+        }
+
+        await variantRepo.update(
+          variantId,
+          {
+            sku: variant.sku.trim(),
           },
-        });
+        );
 
-        for (const v of variants) {
-          const existing = existingMap[v.tempId];
-          const variantId = existing?.variantId;
-          if (!variantId) continue;
+        const existingAttrs =
+          await variantAttributeRepo.list(
+            {
+              variantId,
+            },
+          );
 
-          await variantRepo.update(variantId, { sku: v.sku.trim() });
+        for (const attribute of activeAttrs) {
+          const value =
+            variant.attributeValues[
+              attribute.id
+            ];
 
-          const existingAttrs = await variantAttributeRepo.list({ variantId });
-          for (const a of activeAttrs) {
-            const val = v.attributeValues[a.id];
-            const isSelect = a.dataType === "select";
-            const row = existingAttrs.find((x) => x.attributeId === a.id);
-            const payload = {
-              attributeValueId: isSelect ? val || null : null,
-              rawValue: isSelect
+          const isSelect =
+            attribute.dataType ===
+            "select";
+
+          const row =
+            existingAttrs.find(
+              (item) =>
+                item.attributeId ===
+                attribute.id,
+            );
+
+          const payload = {
+            attributeValueId:
+              isSelect
+                ? value || null
+                : null,
+
+            rawValue:
+              isSelect
                 ? null
-                : val === "" || val == null
-                ? null
-                : a.dataType === "number"
-                ? Number(val)
-                : a.dataType === "boolean"
-                ? Boolean(val)
-                : val,
-            };
-            if (row) await variantAttributeRepo.update(row.id, payload);
-            else
-              await variantAttributeRepo.create({
+                : value === "" ||
+                    value == null
+                  ? null
+                  : attribute.dataType ===
+                      "number"
+                    ? Number(value)
+                    : attribute.dataType ===
+                        "boolean"
+                      ? Boolean(value)
+                      : value,
+          };
+
+          if (row) {
+            await variantAttributeRepo.update(
+              row.id,
+              payload,
+            );
+          } else {
+            await variantAttributeRepo.create(
+              {
                 variantId,
-                attributeId: a.id,
+                attributeId:
+                  attribute.id,
                 ...payload,
-              });
-          }
-
-          const existingPrices = await priceRepo.list({ variantId });
-          for (const pt of PRICE_TYPES) {
-            const raw = v.prices[pt.key];
-            const amount = raw === "" ? null : Number(raw);
-            const row = existingPrices.find((p) => p.priceType === pt.key);
-            if (row) await priceRepo.update(row.id, { amount });
-            else if (amount != null)
-              await priceRepo.create({
-                variantId,
-                priceType: pt.key,
-                amount,
-                currency: "INR",
-                effectiveFrom: new Date().toISOString(),
-              });
+              },
+            );
           }
         }
 
-        toast.success("Product updated");
-        qc.invalidateQueries({ queryKey: ["products"] });
-        qc.invalidateQueries({ queryKey: ["product", id] });
-        qc.invalidateQueries({ queryKey: ["variants", id] });
-        navigate(`/master/products/${id}`);
+        const existingPrices =
+          await priceRepo.list({
+            variantId,
+          });
+
+        for (const priceType of PRICE_TYPES) {
+          const raw =
+            variant.prices[
+              priceType.key
+            ];
+
+          const amount =
+            raw === ""
+              ? null
+              : Number(raw);
+
+          const row =
+            existingPrices.find(
+              (price) =>
+                price.priceType ===
+                priceType.key,
+            );
+
+          if (row) {
+            await priceRepo.update(
+              row.id,
+              {
+                amount,
+              },
+            );
+          } else if (
+            amount != null
+          ) {
+            await priceRepo.create(
+              {
+                variantId,
+                priceType:
+                  priceType.key,
+                amount,
+                currency: "INR",
+                effectiveFrom:
+                  new Date().toISOString(),
+              },
+            );
+          }
+        }
       }
-    } catch (e) {
-      console.error(e);
-      toast.error(e?.message || "Save failed");
+
+      toast.success(
+        "Product updated",
+      );
+
+      qc.invalidateQueries({
+        queryKey: ["products"],
+      });
+
+      qc.invalidateQueries({
+        queryKey: [
+          "product",
+          id,
+        ],
+      });
+
+      qc.invalidateQueries({
+        queryKey: [
+          "variants",
+          id,
+        ],
+      });
+
+      navigate(
+        `/master/products/${id}`,
+      );
+    } catch (error) {
+      console.error(error);
+
+      toast.error(
+        error?.message ||
+          "Save failed",
+      );
     }
   };
 
+  /* -----------------------------------------------------------
+     Loading
+  ----------------------------------------------------------- */
+
   if (isEdit && !loaded) {
     return (
-      <>
-        <PageHeader title="Edit Product" />
-        <div className="p-6 text-sm text-muted">Loading product…</div>
-      </>
+      <div className="page-container">
+        <PageHeader
+          title="Edit Product"
+        />
+
+        <div className="p-6">
+          <Card>
+            <CardBody className="py-12 text-center">
+              <div className="text-sm font-semibold text-ink">
+                Loading product
+              </div>
+
+              <div className="text-xs text-muted mt-1">
+                Preparing product details…
+              </div>
+            </CardBody>
+          </Card>
+        </div>
+      </div>
     );
   }
 
+  const selectedCategory =
+    categories.find(
+      (category) =>
+        category.id ===
+        categoryId,
+    );
+
   return (
-    <>
+    <div className="page-container">
       <PageHeader
-        title={isEdit ? "Edit Product" : "New Product"}
-        description="Enter product identity, then add variants with attributes and prices"
+        title={
+          isEdit
+            ? "Edit Product"
+            : "New Product"
+        }
+        description={
+          isEdit
+            ? "Update product details, attributes, pricing and stock."
+            : "Create a product using the fields defined for its product type."
+        }
         actions={
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate("/master/products")}
+              onClick={() =>
+                navigate(
+                  "/master/products",
+                )
+              }
             >
-              Cancel
+              <ArrowLeft className="h-4 w-4" />
+              <span className="hidden sm:inline">
+                Cancel
+              </span>
             </Button>
+
             <Button
               size="sm"
               onClick={handleSave}
-              disabled={createMut.isPending || updateMut.isPending}
+              disabled={saving}
             >
               <Save className="h-4 w-4" />
-              {isEdit ? "Save changes" : "Create product"}
+
+              {isEdit
+                ? "Save changes"
+                : "Create product"}
             </Button>
           </div>
         }
       />
-      <ModuleTabs tabs={MODULE_TABS.master} />
 
-      <div className="p-3 md:p-6 space-y-4 max-w-6xl">
-        {/* ───── Basic Information ───── */}
-        <Card>
-          <CardHeader title="Basic Information" />
-          <CardBody>
-            <FormGrid cols={2}>
-              <Field label="Product name" required>
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Sharon Gold Plywood"
-                />
-              </Field>
+      <ModuleTabs
+        tabs={MODULE_TABS.master}
+      />
 
-              <Field
-                label="Product SKU"
-                required
-                hint={
-                  skuLocked && sku
-                    ? "Manual entry — clear the field to re-enable Auto"
-                    : !isEdit
-                    ? "Type your own, or click Auto to generate"
-                    : undefined
-                }
-              >
-                <div className="flex gap-2">
-                  <Input
-                    value={sku}
-                    onChange={(e) => handleManualSku(e.target.value)}
-                    placeholder="e.g. PLYW-SGP"
-                  />
-                  {!isEdit && (
-                    <>
-                      <Button
-                        variant="subtle"
-                        size="md"
-                        onClick={handleAutoSku}
-                        title="Generate SKU from name and category"
-                      >
-                        <Wand2 className="h-4 w-4" />
-                        <span className="hidden sm:inline">Auto</span>
-                      </Button>
-                      {sku && (
-                        <Button
-                          variant="ghost"
-                          size="md"
-                          onClick={handleClearSku}
-                          title="Clear and re-enable Auto"
-                        >
-                          Clear
-                        </Button>
-                      )}
-                    </>
-                  )}
+      <div className="p-4 md:p-6 pb-28">
+        <div className="max-w-7xl mx-auto">
+          {/* -------------------------------------------------
+              Progress / context
+          ------------------------------------------------- */}
+
+          <ProductProgress
+            hasType={!!categoryId}
+            hasInfo={!!name.trim()}
+            hasVariants={
+              variants.length > 0
+            }
+          />
+
+          {/* -------------------------------------------------
+              Product Type
+          ------------------------------------------------- */}
+
+          <Card className="mb-4 overflow-hidden">
+            <div className="px-5 py-4 border-b border-line flex items-center gap-3">
+              <StepNumber number="01" />
+
+              <div>
+                <div className="text-sm font-bold text-ink">
+                  Product type
                 </div>
-              </Field>
 
-             <Field label="Product Type" required>
-  <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-    <option value="">Select a product type…</option>
-    {categories.map((c) => (
-      <option key={c.id} value={c.id}>{c.name}</option>
-    ))}
-  </Select>
-</Field>
-
-              <Field label="Brand">
-                <Select
-                  value={brandId}
-                  onChange={(e) => setBrandId(e.target.value)}
-                >
-                  <option value="">No brand</option>
-                  {brands.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-
-              <Field label="Description" className="sm:col-span-2">
-                <Textarea
-                  rows={2}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Optional notes about this product"
-                />
-              </Field>
-
-              <Field label="Status">
-                <div className="flex items-center h-9">
-                  <Switch
-                    checked={status === "active"}
-                    onChange={(v) => setStatus(v ? "active" : "inactive")}
-                    label={status === "active" ? "Active" : "Inactive"}
-                  />
+                <div className="text-xs text-muted mt-0.5">
+                  Choose the kind of product you're creating.
                 </div>
-              </Field>
-            </FormGrid>
-          </CardBody>
-        </Card>
-
-        {/* Prompt until category chosen */}
-        {!categoryId && (
-          <Card>
-            <CardBody>
-              <div className="text-sm text-muted">
-                Pick a category to load its attributes and build variants.
               </div>
-            </CardBody>
-          </Card>
-        )}
 
-        {/* ───── Variants ───── */}
-        {categoryId && (
-          <Card>
-            <CardHeader
-              title={`Variants (${variants.length})`}
-              subtitle={
-                activeAttrs.length
-                  ? `Attributes: ${activeAttrs.map((a) => a.name).join(", ")}`
-                  : "This category has no attributes configured yet."
-              }
-              actions={
-                <Button size="sm" variant="outline" onClick={addVariant}>
-                  <Plus className="h-4 w-4" /> Add variant
-                </Button>
-              }
-            />
-            <CardBody className="space-y-4">
-              {variants.map((v, idx) => (
-                <VariantEditor
-                  key={v.tempId}
-                  index={idx}
-                  variant={v}
-                  attributes={activeAttrs}
-                  productSku={sku}
-                  onChange={(patch) => updateVariant(v.tempId, patch)}
-                  onAttrChange={(attrId, val) =>
-                    setVariantAttr(v.tempId, attrId, val)
-                  }
-                  onPriceChange={(pt, val) =>
-                    setVariantPrice(v.tempId, pt, val)
-                  }
-                  onSuggestSku={() => suggestVariantSku(v.tempId)}
-                  onRemove={
-                    variants.length > 1
-                      ? () => removeVariant(v.tempId)
-                      : undefined
-                  }
-                />
-              ))}
+              {categoryId && (
+                <div className="ml-auto flex items-center gap-1.5 text-[10px] font-semibold text-emerald-500">
+                  <Check className="h-3.5 w-3.5" />
+                  Selected
+                </div>
+              )}
+            </div>
+
+            <CardBody>
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-5 items-end">
+                <Field
+                  label="Product type"
+                  required
+                >
+                  <Select
+                    value={
+                      categoryId
+                    }
+                    onChange={(event) => {
+                      const nextCategoryId =
+                        event.target.value;
+
+                      setCategoryId(
+                        nextCategoryId,
+                      );
+
+                      /*
+                       * Reset the current product-type
+                       * configuration while the new type loads.
+                       */
+                      setConfiguredCategoryAttrs([]);
+
+                      /*
+                       * Changing the product type changes
+                       * the dynamic attribute fields.
+                       *
+                       * Reset variant attribute values so
+                       * values from another product type
+                       * are not accidentally carried over.
+                       */
+                      setVariants(
+                        (current) =>
+                          current.map(
+                            (
+                              variant,
+                            ) => ({
+                              ...variant,
+                              attributeValues:
+                                {},
+                            }),
+                          ),
+                      );
+                    }}
+                  >
+                    <option value="">
+                      Select a product type…
+                    </option>
+
+                    {categories.map(
+                      (category) => (
+                        <option
+                          key={
+                            category.id
+                          }
+                          value={
+                            category.id
+                          }
+                        >
+                          {
+                            category.name
+                          }
+                        </option>
+                      ),
+                    )}
+                  </Select>
+                </Field>
+
+                {selectedCategory && (
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-xl border border-line bg-bg px-4 py-3 min-w-[190px]">
+                      <div className="text-[10px] uppercase tracking-wider text-subtle">
+                        Configured fields
+                      </div>
+
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <Settings2 className="h-4 w-4 text-primary-500" />
+
+                        <span className="text-sm font-bold text-ink">
+                          {activeAttrs.length}
+                        </span>
+
+                        <span className="text-xs text-muted">
+                          attributes
+                        </span>
+                      </div>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="md"
+                      onClick={() =>
+                        setConfiguratorOpen(true)
+                      }
+                    >
+                      <Settings2 className="h-4 w-4" />
+                      <span className="hidden sm:inline">
+                        Configure
+                      </span>
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {!categoryId && (
+                <div className="mt-4 rounded-xl border border-dashed border-line bg-bg/50 p-5 text-center">
+                  <Package className="h-5 w-5 text-muted mx-auto" />
+
+                  <div className="text-xs font-semibold text-ink mt-2">
+                    Select a product type to continue
+                  </div>
+
+                  <div className="text-[11px] text-muted mt-1">
+                    The correct attributes will appear automatically.
+                  </div>
+                </div>
+              )}
             </CardBody>
           </Card>
-        )}
+
+          {/* -------------------------------------------------
+              Basic information
+          ------------------------------------------------- */}
+
+          {categoryId && (
+            <Card className="mb-4 overflow-hidden">
+              <div className="px-5 py-4 border-b border-line flex items-center gap-3">
+                <StepNumber number="02" />
+
+                <div>
+                  <div className="text-sm font-bold text-ink">
+                    Product information
+                  </div>
+
+                  <div className="text-xs text-muted mt-0.5">
+                    Basic information used across quotations, invoices and reports.
+                  </div>
+                </div>
+
+                {name.trim() && (
+                  <div className="ml-auto hidden sm:flex items-center gap-1.5 text-[10px] font-semibold text-emerald-500">
+                    <Check className="h-3.5 w-3.5" />
+                    Ready
+                  </div>
+                )}
+              </div>
+
+              <CardBody>
+                <FormGrid cols={2}>
+                  <Field
+                    label="Product name"
+                    required
+                    className="sm:col-span-2"
+                  >
+                    <Input
+                      value={name}
+                      onChange={(event) =>
+                        setName(
+                          event.target
+                            .value,
+                        )
+                      }
+                      placeholder="e.g. Sharon Gold Plywood"
+                    />
+                  </Field>
+
+                  <Field
+                    label="Product SKU"
+                    required
+                    hint={
+                      skuLocked &&
+                      sku
+                        ? "SKU locked"
+                        : "Enter manually or generate automatically"
+                    }
+                  >
+                    <div className="flex gap-2">
+                      <Input
+                        value={sku}
+                        onChange={(event) =>
+                          handleManualSku(
+                            event.target
+                              .value,
+                          )
+                        }
+                        placeholder="e.g. PLY-SGP"
+                      />
+
+                      {!isEdit && (
+                        <>
+                          <Button
+                            type="button"
+                            variant="subtle"
+                            size="md"
+                            onClick={
+                              handleAutoSku
+                            }
+                            title="Generate SKU"
+                          >
+                            <Wand2 className="h-4 w-4" />
+
+                            <span className="hidden sm:inline">
+                              Auto
+                            </span>
+                          </Button>
+
+                          {sku && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="md"
+                              onClick={
+                                handleClearSku
+                              }
+                            >
+                              Clear
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </Field>
+
+                  <Field label="Brand">
+                    <Select
+                      value={brandId}
+                      onChange={(event) =>
+                        setBrandId(
+                          event.target
+                            .value,
+                        )
+                      }
+                    >
+                      <option value="">
+                        No brand
+                      </option>
+
+                      {brands.map(
+                        (brand) => (
+                          <option
+                            key={
+                              brand.id
+                            }
+                            value={
+                              brand.id
+                            }
+                          >
+                            {brand.name}
+                          </option>
+                        ),
+                      )}
+                    </Select>
+                  </Field>
+
+                  <Field
+                    label="Description"
+                    className="sm:col-span-2"
+                  >
+                    <Textarea
+                      rows={3}
+                      value={
+                        description
+                      }
+                      onChange={(event) =>
+                        setDescription(
+                          event.target
+                            .value,
+                        )
+                      }
+                      placeholder="Optional product notes"
+                    />
+                  </Field>
+
+                  <Field label="Status">
+                    <div className="flex items-center h-10">
+                      <Switch
+                        checked={
+                          status ===
+                          "active"
+                        }
+                        onChange={(
+                          value,
+                        ) =>
+                          setStatus(
+                            value
+                              ? "active"
+                              : "inactive",
+                          )
+                        }
+                        label={
+                          status ===
+                          "active"
+                            ? "Active"
+                            : "Inactive"
+                        }
+                      />
+                    </div>
+                  </Field>
+                </FormGrid>
+              </CardBody>
+            </Card>
+          )}
+
+          {/* -------------------------------------------------
+              Dynamic attributes + variants
+          ------------------------------------------------- */}
+
+          {categoryId && (
+            <Card className="mb-4 overflow-hidden">
+              <div className="px-5 py-4 border-b border-line flex flex-col sm:flex-row sm:items-center gap-3">
+                <StepNumber number="03" />
+
+                <div className="flex-1">
+                  <div className="text-sm font-bold text-ink">
+                    Product variants
+                  </div>
+
+                  <div className="text-xs text-muted mt-0.5">
+                    Add the actual combinations you sell.
+                  </div>
+                </div>
+
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={
+                    addVariant
+                  }
+                >
+                  <Plus className="h-4 w-4" />
+                  Add variant
+                </Button>
+              </div>
+
+              <CardBody className="space-y-3">
+                {/* Attribute summary */}
+                <div className="rounded-xl border border-line bg-bg p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="h-8 w-8 rounded-lg bg-primary-50 dark:bg-primary-950/30 text-primary-500 flex items-center justify-center shrink-0">
+                      <Settings2 className="h-4 w-4" />
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-ink">
+                        {selectedCategory?.name ||
+                          "Product"}{" "}
+                        fields
+                      </div>
+
+                      {activeAttrs.length >
+                      0 ? (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {activeAttrs.map(
+                            (
+                              attribute,
+                            ) => (
+                              <span
+                                key={
+                                  attribute.id
+                                }
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-surface border border-line text-[10px] font-medium text-muted"
+                              >
+                                {
+                                  attribute.name
+                                }
+
+                                {attribute.isRequired && (
+                                  <span className="text-primary-500">
+                                    *
+                                  </span>
+                                )}
+                              </span>
+                            ),
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-muted mt-1">
+                          No attributes are configured for this product type yet.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Variants */}
+                {variants.map(
+                  (
+                    variant,
+                    index,
+                  ) => (
+                    <VariantCard
+                      key={
+                        variant.tempId
+                      }
+                      index={index}
+                      variant={
+                        variant
+                      }
+                      attributes={
+                        activeAttrs
+                      }
+                      productSku={
+                        sku
+                      }
+                      open={
+                        openVariant ===
+                        index
+                      }
+                      onToggle={() =>
+                        setOpenVariant(
+                          (
+                            current,
+                          ) =>
+                            current ===
+                            index
+                              ? -1
+                              : index,
+                        )
+                      }
+                      onChange={(
+                        patch,
+                      ) =>
+                        updateVariant(
+                          variant.tempId,
+                          patch,
+                        )
+                      }
+                      onAttrChange={(
+                        attributeId,
+                        value,
+                      ) =>
+                        setVariantAttr(
+                          variant.tempId,
+                          attributeId,
+                          value,
+                        )
+                      }
+                      onPriceChange={(
+                        priceType,
+                        value,
+                      ) =>
+                        setVariantPrice(
+                          variant.tempId,
+                          priceType,
+                          value,
+                        )
+                      }
+                      onSuggestSku={() =>
+                        suggestVariantSku(
+                          variant.tempId,
+                        )
+                      }
+                      onRemove={
+                        variants.length >
+                        1
+                          ? () =>
+                              removeVariant(
+                                variant.tempId,
+                              )
+                          : undefined
+                      }
+                    />
+                  ),
+                )}
+
+                <button
+                  type="button"
+                  onClick={
+                    addVariant
+                  }
+                  className="
+                    w-full
+                    rounded-xl
+                    border
+                    border-dashed
+                    border-line
+                    py-4
+                    text-xs
+                    font-semibold
+                    text-muted
+                    hover:text-primary-500
+                    hover:border-primary-400
+                    hover:bg-primary-50/30
+                    dark:hover:bg-primary-950/10
+                    transition-colors
+                  "
+                >
+                  <Plus className="h-4 w-4 inline-block mr-1.5 -mt-0.5" />
+                  Add another variant
+                </button>
+              </CardBody>
+            </Card>
+          )}
+
+          {/* -------------------------------------------------
+              Final save summary
+          ------------------------------------------------- */}
+
+          {categoryId && (
+            <div className="rounded-2xl border border-line bg-surface p-4 md:p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+              <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-500 flex items-center justify-center shrink-0">
+                <Check className="h-5 w-5" />
+              </div>
+
+              <div className="flex-1">
+                <div className="text-sm font-bold text-ink">
+                  Ready to{" "}
+                  {isEdit
+                    ? "save changes"
+                    : "create product"}
+                </div>
+
+                <div className="text-xs text-muted mt-0.5">
+                  {name ||
+                    "Unnamed product"}{" "}
+                  ·{" "}
+                  {selectedCategory?.name ||
+                    "No type"}{" "}
+                  ·{" "}
+                  {variants.length}{" "}
+                  {variants.length ===
+                  1
+                    ? "variant"
+                    : "variants"}
+                </div>
+              </div>
+
+              <Button
+                onClick={
+                  handleSave
+                }
+                disabled={saving}
+              >
+                <Save className="h-4 w-4" />
+
+                {saving
+                  ? "Saving…"
+                  : isEdit
+                    ? "Save changes"
+                    : "Create product"}
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
-    </>
+
+      <ProductTypeConfigurator
+        open={configuratorOpen}
+        onClose={() => setConfiguratorOpen(false)}
+        productType={selectedCategory}
+        attributes={allAttrs}
+        selectedAttributes={activeAttrs}
+        saving={
+          upsertCategoryAttributeMut.isPending ||
+          removeCategoryAttributeMut.isPending
+        }
+        onSave={async (fields) => {
+          await persistProductTypeConfiguration(fields);
+
+          const allowedIds = new Set(
+            (fields || []).map(
+              (item) => item.attributeId ?? item.id,
+            ),
+          );
+
+          setVariants((current) =>
+            current.map((variant) => ({
+              ...variant,
+              attributeValues: Object.fromEntries(
+                Object.entries(variant.attributeValues || {}).filter(
+                  ([attributeId]) => allowedIds.has(attributeId),
+                ),
+              ),
+            })),
+          );
+
+          setConfiguratorOpen(false);
+        }}
+      />
+    </div>
   );
 }
 
-/* ───────── Variant editor ───────── */
+/* -------------------------------------------------------------
+   Progress
+------------------------------------------------------------- */
 
-function VariantEditor({
+function ProductProgress({
+  hasType,
+  hasInfo,
+  hasVariants,
+}) {
+  const steps = [
+    {
+      label: "Product type",
+      done: hasType,
+    },
+    {
+      label: "Information",
+      done: hasInfo,
+    },
+    {
+      label: "Variants",
+      done: hasVariants,
+    },
+  ];
+
+  return (
+    <div className="mb-4 rounded-xl border border-line bg-surface px-4 py-3">
+      <div className="flex items-center justify-between gap-2 overflow-x-auto">
+        {steps.map(
+          (step, index) => (
+            <div
+              key={step.label}
+              className="flex items-center gap-2 shrink-0"
+            >
+              <div
+                className={`
+                  h-7
+                  w-7
+                  rounded-lg
+                  flex
+                  items-center
+                  justify-center
+                  text-[10px]
+                  font-bold
+                  ${
+                    step.done
+                      ? "bg-primary-500 text-white"
+                      : "bg-bg border border-line text-muted"
+                  }
+                `}
+              >
+                {step.done ? (
+                  <Check className="h-3.5 w-3.5" />
+                ) : (
+                  `0${index + 1}`
+                )}
+              </div>
+
+              <span
+                className={`
+                  text-[11px]
+                  font-semibold
+                  ${
+                    step.done
+                      ? "text-ink"
+                      : "text-muted"
+                  }
+                `}
+              >
+                {step.label}
+              </span>
+
+              {index <
+                steps.length -
+                  1 && (
+                <div className="hidden sm:block w-8 h-px bg-line ml-2" />
+              )}
+            </div>
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------
+   Step number
+------------------------------------------------------------- */
+
+function StepNumber({
+  number,
+}) {
+  return (
+    <div className="h-8 w-8 rounded-lg bg-primary-50 dark:bg-primary-950/30 text-primary-500 flex items-center justify-center text-[10px] font-bold shrink-0">
+      {number}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------
+   Variant card
+------------------------------------------------------------- */
+
+function VariantCard({
   index,
   variant,
   attributes,
   productSku,
+  open,
+  onToggle,
   onChange,
   onAttrChange,
   onPriceChange,
   onSuggestSku,
   onRemove,
 }) {
+  const filledAttributes =
+    attributes.filter(
+      (attribute) => {
+        const value =
+          variant
+            .attributeValues[
+            attribute.id
+          ];
+
+        return (
+          value !== undefined &&
+          value !== null &&
+          value !== ""
+        );
+      },
+    ).length;
+
+  const sellingPrice =
+    variant.prices.selling;
+
   return (
-    <div className="border border-line rounded-lg p-3 md:p-4 bg-timber-50/40">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-full bg-timber-500 text-white text-xs font-bold flex items-center justify-center">
+    <div
+      className={`
+        rounded-2xl
+        border
+        overflow-hidden
+        transition-all
+        ${
+          open
+            ? "border-primary-500/30 shadow-sm"
+            : "border-line"
+        }
+      `}
+    >
+      {/* Header */}
+      <button
+        type="button"
+        onClick={
+          onToggle
+        }
+        className="
+          w-full
+          text-left
+          px-4
+          py-3.5
+          bg-surface
+          hover:bg-bg/60
+          transition-colors
+        "
+      >
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-xl bg-primary-50 dark:bg-primary-950/30 text-primary-500 flex items-center justify-center text-xs font-bold shrink-0">
             {index + 1}
           </div>
-          <div className="text-sm font-semibold text-timber-700">
-            Variant {index + 1}
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-bold text-ink truncate">
+                {variant.sku ||
+                  `Variant ${index + 1}`}
+              </div>
+
+              {index === 0 && (
+                <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/30 text-emerald-500 text-[9px] font-bold uppercase tracking-wide">
+                  Default
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 mt-1 text-[10px] text-muted">
+              <span>
+                {filledAttributes}/
+                {attributes.length}{" "}
+                fields
+              </span>
+
+              {sellingPrice && (
+                <>
+                  <span>
+                    •
+                  </span>
+
+                  <span className="font-semibold text-ink">
+                    ₹
+                    {sellingPrice}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {onRemove && (
+            <button
+              type="button"
+              onClick={(
+                event,
+              ) => {
+                event.stopPropagation();
+
+                onRemove();
+              }}
+              className="h-8 w-8 rounded-lg flex items-center justify-center text-muted hover:text-danger hover:bg-red-50 dark:hover:bg-red-950/30 shrink-0"
+              title="Remove variant"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+
+          <div className="h-8 w-8 rounded-lg bg-bg flex items-center justify-center text-muted shrink-0">
+            {open ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
           </div>
         </div>
-        {onRemove && (
-          <button
-            onClick={onRemove}
-            className="text-danger hover:bg-red-50 rounded p-1"
-            title="Remove variant"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        )}
-      </div>
+      </button>
 
-      <FormGrid cols={2}>
-        <Field label="Variant SKU" required hint={productSku ? `Product SKU: ${productSku}` : undefined}>
-          <div className="flex gap-2">
-            <Input
-              value={variant.sku}
-              onChange={(e) =>
-                onChange({ sku: e.target.value.toUpperCase() })
-              }
-              placeholder="e.g. PLYW-SGP-01"
+      {/* Content */}
+      {open && (
+        <div className="border-t border-line bg-bg/30 p-4 space-y-5">
+          {/* Identity */}
+          <section>
+            <SectionLabel
+              title="Variant identity"
+              description="Identify this exact product combination."
             />
-            <Button
-              variant="subtle"
-              size="md"
-              onClick={onSuggestSku}
-              title="Suggest variant SKU"
-            >
-              <Wand2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </Field>
-        <Field label="Opening stock">
-          <Input
-            type="number"
-            value={variant.openingStock}
-            onChange={(e) => onChange({ openingStock: e.target.value })}
-            placeholder="0"
-          />
-        </Field>
-        <Field label="Reorder level">
-          <Input
-            type="number"
-            value={variant.reorderLevel}
-            onChange={(e) => onChange({ reorderLevel: e.target.value })}
-            placeholder="0"
-          />
-        </Field>
-      </FormGrid>
 
-      {attributes.length > 0 && (
-        <div className="mt-4">
-          <div className="text-[11px] font-bold text-timber-700 uppercase tracking-wide mb-2">
-            Attributes
-          </div>
-          <FormGrid cols={3}>
-            {attributes.map((a) => (
-              <AttributeField
-                key={a.id}
-                attribute={a}
-                value={variant.attributeValues[a.id] ?? ""}
-                onChange={(val) => onAttrChange(a.id, val)}
-              />
-            ))}
-          </FormGrid>
+            <FormGrid cols={2}>
+              <Field
+                label="Variant SKU"
+                required
+                hint={
+                  productSku
+                    ? `Product SKU: ${productSku}`
+                    : undefined
+                }
+              >
+                <div className="flex gap-2">
+                  <Input
+                    value={
+                      variant.sku
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      onChange({
+                        sku: event.target.value.toUpperCase(),
+                      })
+                    }
+                    placeholder="e.g. PLY-SGP-01"
+                  />
+
+                  <Button
+                    type="button"
+                    variant="subtle"
+                    size="md"
+                    onClick={
+                      onSuggestSku
+                    }
+                    title="Suggest variant SKU"
+                  >
+                    <Wand2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </Field>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Opening stock">
+                  <Input
+                    type="number"
+                    min="0"
+                    value={
+                      variant.openingStock
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      onChange({
+                        openingStock:
+                          event.target
+                            .value,
+                      })
+                    }
+                    placeholder="0"
+                  />
+                </Field>
+
+                <Field label="Reorder level">
+                  <Input
+                    type="number"
+                    min="0"
+                    value={
+                      variant.reorderLevel
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      onChange({
+                        reorderLevel:
+                          event.target
+                            .value,
+                      })
+                    }
+                    placeholder="0"
+                  />
+                </Field>
+              </div>
+            </FormGrid>
+          </section>
+
+          {/* Dynamic attributes */}
+          <section>
+            <SectionLabel
+              title="Product attributes"
+              description="These fields come from the selected product type."
+              count={
+                attributes.length
+              }
+            />
+
+            {attributes.length >
+            0 ? (
+              <div className="rounded-xl border border-line bg-surface p-4">
+                <FormGrid cols={3}>
+                  {attributes.map(
+                    (attribute) => (
+                      <AttributeField
+                        key={
+                          attribute.id
+                        }
+                        attribute={
+                          attribute
+                        }
+                        value={
+                          variant
+                            .attributeValues[
+                            attribute.id
+                          ] ??
+                          ""
+                        }
+                        onChange={(
+                          value,
+                        ) =>
+                          onAttrChange(
+                            attribute.id,
+                            value,
+                          )
+                        }
+                      />
+                    ),
+                  )}
+                </FormGrid>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-line p-6 text-center">
+                <Settings2 className="h-5 w-5 text-muted mx-auto" />
+
+                <div className="text-xs font-semibold text-ink mt-2">
+                  No attributes configured
+                </div>
+
+                <div className="text-[11px] text-muted mt-1">
+                  This product can still be created without additional attributes.
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Pricing */}
+          <section>
+            <SectionLabel
+              title="Pricing"
+              description="Set the prices that will be used in sales documents."
+            />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {PRICE_TYPES.map(
+                (priceType) => (
+                  <div
+                    key={
+                      priceType.key
+                    }
+                    className="rounded-xl border border-line bg-surface p-3.5"
+                  >
+                    <div className="mb-2.5">
+                      <div className="text-xs font-semibold text-ink">
+                        {
+                          priceType.label
+                        }
+                      </div>
+
+                      <div className="text-[10px] text-muted mt-0.5">
+                        {
+                          priceType.description
+                        }
+                      </div>
+                    </div>
+
+                    <MoneyInput
+                      value={
+                        variant
+                          .prices[
+                          priceType
+                            .key
+                        ]
+                      }
+                      onChange={(
+                        event,
+                      ) =>
+                        onPriceChange(
+                          priceType.key,
+                          event.target
+                            .value,
+                        )
+                      }
+                      placeholder="0.00"
+                    />
+                  </div>
+                ),
+              )}
+            </div>
+          </section>
         </div>
       )}
-
-      <div className="mt-4">
-        <div className="text-[11px] font-bold text-timber-700 uppercase tracking-wide mb-2">
-          Prices
-        </div>
-        <FormGrid cols={3}>
-          {PRICE_TYPES.map((pt) => (
-            <Field key={pt.key} label={pt.label}>
-              <MoneyInput
-                value={variant.prices[pt.key]}
-                onChange={(e) => onPriceChange(pt.key, e.target.value)}
-                placeholder="0.00"
-              />
-            </Field>
-          ))}
-        </FormGrid>
-      </div>
     </div>
   );
 }
 
-/* ───────── Dynamic attribute input ───────── */
+/* -------------------------------------------------------------
+   Section label
+------------------------------------------------------------- */
 
-function AttributeField({ attribute, value, onChange }) {
-  const { data: values = [] } = useAttributeValues(
-    attribute.dataType === "select" ? attribute.id : null,
+function SectionLabel({
+  title,
+  description,
+  count,
+}) {
+  return (
+    <div className="flex items-end justify-between gap-3 mb-3">
+      <div>
+        <div className="text-xs font-bold text-ink">
+          {title}
+        </div>
+
+        {description && (
+          <div className="text-[10px] text-muted mt-0.5">
+            {description}
+          </div>
+        )}
+      </div>
+
+      {count !== undefined && (
+        <span className="text-[10px] text-muted">
+          {count} fields
+        </span>
+      )}
+    </div>
   );
+}
 
-  if (attribute.dataType === "select") {
+/* -------------------------------------------------------------
+   Dynamic attribute field
+------------------------------------------------------------- */
+
+function AttributeField({
+  attribute,
+  value,
+  onChange,
+}) {
+  const {
+    data: values = [],
+  } =
+    useAttributeValues(
+      attribute.dataType ===
+        "select"
+        ? attribute.id
+        : null,
+    );
+
+  if (
+    attribute.dataType ===
+    "select"
+  ) {
     return (
-      <Field label={attribute.name} required={attribute.isRequired}>
-        <Select value={value || ""} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Select…</option>
-          {values.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.label}
-            </option>
-          ))}
+      <Field
+        label={
+          attribute.name
+        }
+        required={
+          attribute.isRequired
+        }
+      >
+        <Select
+          value={
+            value || ""
+          }
+          onChange={(
+            event,
+          ) =>
+            onChange(
+              event.target
+                .value,
+            )
+          }
+        >
+          <option value="">
+            Select{" "}
+            {
+              attribute.name
+            }
+            …
+          </option>
+
+          {values.map(
+            (item) => (
+              <option
+                key={
+                  item.id
+                }
+                value={
+                  item.id
+                }
+              >
+                {item.label}
+              </option>
+            ),
+          )}
         </Select>
       </Field>
     );
   }
 
-  if (attribute.dataType === "boolean") {
-    const isOn = value === true || value === "true";
+  if (
+    attribute.dataType ===
+    "boolean"
+  ) {
+    const isOn =
+      value === true ||
+      value === "true";
+
     return (
-      <Field label={attribute.name} required={attribute.isRequired}>
-        <div className="flex items-center h-9">
+      <Field
+        label={
+          attribute.name
+        }
+        required={
+          attribute.isRequired
+        }
+      >
+        <div className="flex items-center h-10">
           <Switch
-            checked={isOn}
-            onChange={onChange}
-            label={isOn ? "Yes" : "No"}
+            checked={
+              isOn
+            }
+            onChange={
+              onChange
+            }
+            label={
+              isOn
+                ? "Yes"
+                : "No"
+            }
           />
         </div>
       </Field>
     );
   }
 
-  if (attribute.dataType === "number") {
+  if (
+    attribute.dataType ===
+    "number"
+  ) {
     return (
-      <Field label={attribute.name} required={attribute.isRequired}>
+      <Field
+        label={
+          attribute.name
+        }
+        required={
+          attribute.isRequired
+        }
+      >
         <Input
           type="number"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          value={
+            value
+          }
+          onChange={(
+            event,
+          ) =>
+            onChange(
+              event.target
+                .value,
+            )
+          }
           placeholder="0"
         />
       </Field>
@@ -800,11 +2461,29 @@ function AttributeField({ attribute, value, onChange }) {
   }
 
   return (
-    <Field label={attribute.name} required={attribute.isRequired}>
+    <Field
+      label={
+        attribute.name
+      }
+      required={
+        attribute.isRequired
+      }
+    >
       <Input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={attribute.name}
+        value={
+          value
+        }
+        onChange={(
+          event,
+        ) =>
+          onChange(
+            event.target
+              .value,
+          )
+        }
+        placeholder={
+          attribute.name
+        }
       />
     </Field>
   );

@@ -1,8 +1,17 @@
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Users } from "lucide-react";
+import {
+  MapPin,
+  Phone,
+  Plus,
+  Search,
+  Trash2,
+  Users,
+} from "lucide-react";
+
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
 import { Button } from "@/components/ui/Button";
@@ -12,17 +21,21 @@ import { Field } from "@/components/ui/Field";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { Switch } from "@/components/ui/Switch";
 import { Sheet } from "@/components/ui/Sheet";
-import { DataTable } from "@/components/ui/DataTable";
-import { Toolbar } from "@/components/ui/Toolbar";
+import { Card, CardBody } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { FormGrid } from "@/components/ui/FormGrid";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+
 import { toast } from "@/lib/toast";
-import { formatMoney } from "@/lib/utils/money";
 import { partySchema } from "@/lib/domain/schemas/party";
+
 import {
-  useParties, useCreateParty, useUpdateParty, useDeleteParty,
+  useParties,
+  useCreateParty,
+  useUpdateParty,
+  useDeleteParty,
 } from "@/hooks/useParties";
+
 import { MODULE_TABS } from "@/app/moduleNav";
 
 const emptyCustomer = () => ({
@@ -41,30 +54,52 @@ const emptyCustomer = () => ({
 
 export function CustomersPage() {
   const navigate = useNavigate();
+
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [confirm, setConfirm] = useState(null);
+  const [editing, setEditing] =
+    useState(null);
+  const [confirm, setConfirm] =
+    useState(null);
 
-  const { data: allParties = [], isLoading } = useParties();
+  const {
+    data: parties = [],
+    isLoading,
+  } = useParties();
+
   const createMut = useCreateParty();
   const updateMut = useUpdateParty();
   const deleteMut = useDeleteParty();
 
   const customers = useMemo(() => {
-    const base = allParties.filter(
-      (p) => p.type === "customer" || p.type === "both",
+    const base = parties.filter(
+      (party) =>
+        party.type === "customer" ||
+        party.type === "both",
     );
-    const q = search.trim().toLowerCase();
+
+    const q = search
+      .trim()
+      .toLowerCase();
+
     if (!q) return base;
+
     return base.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        (p.phone || "").includes(q) ||
-        (p.gstin || "").toLowerCase().includes(q) ||
-        (p.city || "").toLowerCase().includes(q),
+      (party) =>
+        party.name
+          ?.toLowerCase()
+          .includes(q) ||
+        party.phone
+          ?.toLowerCase()
+          .includes(q) ||
+        party.gstin
+          ?.toLowerCase()
+          .includes(q) ||
+        party.city
+          ?.toLowerCase()
+          .includes(q),
     );
-  }, [allParties, search]);
+  }, [parties, search]);
 
   const form = useForm({
     resolver: zodResolver(partySchema),
@@ -76,197 +111,481 @@ export function CustomersPage() {
     form.reset(emptyCustomer());
     setOpen(true);
   };
-  const openEdit = (row) => {
-    setEditing(row);
-    form.reset(row);
+
+  const openEdit = (customer) => {
+    setEditing(customer);
+    form.reset(customer);
     setOpen(true);
   };
 
-  const onSubmit = async (values) => {
+  const submit = async (values) => {
     try {
       if (editing) {
-        await updateMut.mutateAsync({ id: editing.id, patch: values });
+        await updateMut.mutateAsync({
+          id: editing.id,
+          patch: values,
+        });
+
         toast.success("Customer updated");
       } else {
         await createMut.mutateAsync(values);
+
         toast.success("Customer created");
       }
+
       setOpen(false);
-    } catch (e) {
-      toast.error(e?.message || "Save failed");
+    } catch (error) {
+      toast.error(
+        error?.message ||
+          "Unable to save customer",
+      );
     }
   };
 
-  const onDelete = async () => {
-    await deleteMut.mutateAsync(confirm.id);
-    toast.success("Customer deleted");
-    setConfirm(null);
+  const deleteCustomer = async () => {
+    try {
+      await deleteMut.mutateAsync(
+        confirm.id,
+      );
+
+      toast.success("Customer deleted");
+      setConfirm(null);
+    } catch (error) {
+      toast.error(
+        error?.message ||
+          "Unable to delete customer",
+      );
+    }
   };
 
   return (
-    <>
+    <div className="page-container">
       <PageHeader
         title="Customers"
-        description="Your buyers — used across all quotations and invoices"
+        description="Manage the people and businesses you sell to."
         actions={
-          <Button size="sm" onClick={openCreate}>
+          <Button
+            size="sm"
+            onClick={openCreate}
+          >
             <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">New Customer</span>
-            <span className="sm:hidden">New</span>
+            New Customer
           </Button>
         }
       />
+
       <ModuleTabs tabs={MODULE_TABS.master} />
 
-      <Toolbar
-        search={search}
-        onSearch={setSearch}
-        placeholder="Search by name, phone, GSTIN, city…"
-      />
+      <div className="p-4 md:p-6 pb-24 md:pb-8">
+        {/* Search + count */}
+        <Card className="mb-4">
+          <div className="p-3 flex items-center gap-3">
+            <div className="relative flex-1 max-w-lg">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted pointer-events-none" />
 
-      <div className="bg-surface border-t border-line">
-        <DataTable
-          columns={[
-            {
-              key: "name",
-              header: "Customer",
-              sortable: true,
-              render: (r) => (
-                <div className="min-w-0">
-                  <div className="font-semibold text-ink truncate">{r.name}</div>
-                  {r.city && (
-                    <div className="text-2xs text-muted">{r.city}</div>
-                  )}
-                </div>
-              ),
-            },
-            {
-              key: "phone",
-              header: "Phone",
-              hideOnMobile: true,
-              render: (r) => r.phone || "—",
-            },
-            {
-              key: "gstin",
-              header: "GSTIN",
-              hideOnMobile: true,
-              render: (r) => r.gstin || "—",
-            },
-            {
-              key: "openingBalance",
-              header: "Opening Bal.",
-              align: "right",
-              hideOnMobile: true,
-              render: (r) => (r.openingBalance ? formatMoney(r.openingBalance) : "—"),
-            },
-            {
-              key: "isActive",
-              header: "Status",
-              align: "right",
-              render: (r) => (
-                <StatusBadge status={r.isActive ? "active" : "inactive"} />
-              ),
-            },
-            {
-              key: "__actions",
-              header: "",
-              width: 100,
-              align: "right",
-              render: (row) => (
-                <div className="flex items-center justify-end gap-1">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); openEdit(row); }}
-                    className="px-2 py-1 text-2xs font-semibold text-primary-600 hover:bg-primary-100 dark:hover:bg-primary-950/40 rounded"
+              <input
+                value={search}
+                onChange={(event) =>
+                  setSearch(
+                    event.target.value,
+                  )
+                }
+                placeholder="Search name, phone, GSTIN or city…"
+                className="
+                  w-full
+                  h-10
+                  pl-9
+                  pr-3
+                  rounded-xl
+                  bg-bg
+                  border
+                  border-line
+                  text-sm
+                  text-ink
+                  placeholder:text-subtle
+                  focus:border-primary-500
+                  focus:ring-2
+                  focus:ring-primary-500/10
+                "
+              />
+            </div>
+
+            <div className="hidden sm:block text-xs text-muted ml-auto">
+              {customers.length} customers
+            </div>
+          </div>
+        </Card>
+
+        {isLoading ? (
+          <Card>
+            <CardBody className="p-8 text-sm text-muted">
+              Loading customers…
+            </CardBody>
+          </Card>
+        ) : customers.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon={Users}
+              title={
+                search
+                  ? "No customers found"
+                  : "No customers yet"
+              }
+              description={
+                search
+                  ? "Try a different search term."
+                  : "Add your first customer to start creating quotations and invoices."
+              }
+              action={
+                !search && (
+                  <Button
+                    size="sm"
+                    onClick={openCreate}
                   >
-                    Edit
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setConfirm(row); }}
-                    className="px-2 py-1 text-2xs font-semibold text-danger hover:bg-red-50 dark:hover:bg-red-950/40 rounded"
-                  >
-                    Del
-                  </button>
-                </div>
+                    <Plus className="h-4 w-4" />
+                    Add customer
+                  </Button>
+                )
+              }
+            />
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+            {customers.map(
+              (customer) => (
+                <CustomerCard
+                  key={customer.id}
+                  customer={customer}
+                  onOpen={() =>
+                    navigate(
+                      `/master/customers/${customer.id}`,
+                    )
+                  }
+                  onEdit={() =>
+                    openEdit(customer)
+                  }
+                  onDelete={() =>
+                    setConfirm(customer)
+                  }
+                />
               ),
-            },
-          ]}
-          rows={customers}
-          loading={isLoading}
-          onRowClick={(r) => navigate(`/master/customers/${r.id}`)}
-          emptyTitle="No customers yet"
-          emptyDescription="Add your first customer to start creating quotations and invoices."
-          emptyAction={
-            <Button onClick={openCreate}>
-              <Plus className="h-4 w-4" /> New Customer
-            </Button>
-          }
-        />
+            )}
+          </div>
+        )}
       </div>
 
+      {/* Customer form */}
       <Sheet
         open={open}
         onClose={() => setOpen(false)}
-        title={editing ? "Edit Customer" : "New Customer"}
+        title={
+          editing
+            ? "Edit customer"
+            : "New customer"
+        }
+        subtitle="Customer details are reused across quotations and invoices."
+        width="lg"
         footer={
           <>
-            <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={form.handleSubmit(onSubmit)} disabled={createMut.isPending || updateMut.isPending}>
-              {editing ? "Save changes" : "Create Customer"}
+            <Button
+              variant="ghost"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+
+            <Button
+              onClick={form.handleSubmit(
+                submit,
+              )}
+              loading={
+                createMut.isPending ||
+                updateMut.isPending
+              }
+            >
+              {editing
+                ? "Save changes"
+                : "Create customer"}
             </Button>
           </>
         }
       >
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <FormGrid cols={2}>
-            <Field label="Customer name" required error={form.formState.errors.name?.message} className="sm:col-span-2">
-              <Input {...form.register("name")} placeholder="e.g. Ramesh Traders" />
-            </Field>
-            <Field label="Phone">
-              <Input {...form.register("phone")} type="tel" placeholder="e.g. 9876543210" />
-            </Field>
-            <Field label="Email">
-              <Input {...form.register("email")} type="email" placeholder="optional" />
-            </Field>
-            <Field label="GSTIN" className="sm:col-span-2">
-              <Input {...form.register("gstin")} placeholder="optional" />
-            </Field>
-            <Field label="State">
-              <Input {...form.register("state")} placeholder="e.g. Tamil Nadu" />
-            </Field>
-            <Field label="City">
-              <Input {...form.register("city")} placeholder="e.g. Chennai" />
-            </Field>
-            <Field label="Address" className="sm:col-span-2">
-              <Textarea {...form.register("address")} rows={2} placeholder="Street, area, PIN" />
-            </Field>
-            <Field label="Opening Balance">
-              <MoneyInput {...form.register("openingBalance")} placeholder="0.00" />
-            </Field>
-            <Field label="Credit Limit">
-              <MoneyInput {...form.register("creditLimit")} placeholder="0.00" />
-            </Field>
-            <Field label="Status" className="sm:col-span-2">
-              <div className="flex items-center h-9">
-                <Switch
-                  checked={form.watch("isActive")}
-                  onChange={(v) => form.setValue("isActive", v)}
-                  label={form.watch("isActive") ? "Active" : "Inactive"}
+        <form
+          onSubmit={form.handleSubmit(
+            submit,
+          )}
+          className="space-y-6"
+        >
+          <section>
+            <div className="text-xs font-bold text-ink">
+              Basic information
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+              <Field
+                label="Customer name"
+                required
+                className="sm:col-span-2"
+                error={
+                  form.formState.errors
+                    .name?.message
+                }
+              >
+                <Input
+                  {...form.register("name")}
+                  placeholder="e.g. Sri Lakshmi Interiors"
                 />
+              </Field>
+
+              <Field label="Phone">
+                <Input
+                  {...form.register(
+                    "phone",
+                  )}
+                  type="tel"
+                  placeholder="9876543210"
+                />
+              </Field>
+
+              <Field label="Email">
+                <Input
+                  {...form.register(
+                    "email",
+                  )}
+                  type="email"
+                  placeholder="optional"
+                />
+              </Field>
+
+              <Field label="GSTIN">
+                <Input
+                  {...form.register(
+                    "gstin",
+                  )}
+                  placeholder="optional"
+                />
+              </Field>
+            </div>
+          </section>
+
+          <section>
+            <div className="text-xs font-bold text-ink">
+              Address
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+              <Field label="State">
+                <Input
+                  {...form.register(
+                    "state",
+                  )}
+                  placeholder="Tamil Nadu"
+                />
+              </Field>
+
+              <Field label="City">
+                <Input
+                  {...form.register(
+                    "city",
+                  )}
+                  placeholder="Chennai"
+                />
+              </Field>
+
+              <Field
+                label="Address"
+                className="sm:col-span-2"
+              >
+                <Textarea
+                  {...form.register(
+                    "address",
+                  )}
+                  rows={3}
+                  placeholder="Street, area, PIN"
+                />
+              </Field>
+            </div>
+          </section>
+
+          <section>
+            <div className="text-xs font-bold text-ink">
+              Financial settings
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+              <Field label="Opening balance">
+                <MoneyInput
+                  {...form.register(
+                    "openingBalance",
+                  )}
+                  placeholder="0.00"
+                />
+              </Field>
+
+              <Field label="Credit limit">
+                <MoneyInput
+                  {...form.register(
+                    "creditLimit",
+                  )}
+                  placeholder="0.00"
+                />
+              </Field>
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-line bg-bg p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-xs font-semibold text-ink">
+                  Customer status
+                </div>
+
+                <div className="text-[11px] text-muted mt-0.5">
+                  Inactive customers won't be suggested
+                  for new documents.
+                </div>
               </div>
-            </Field>
-          </FormGrid>
+
+              <Switch
+                checked={form.watch(
+                  "isActive",
+                )}
+                onChange={(value) =>
+                  form.setValue(
+                    "isActive",
+                    value,
+                  )
+                }
+              />
+            </div>
+          </section>
         </form>
       </Sheet>
 
       <ConfirmDialog
         open={!!confirm}
         onClose={() => setConfirm(null)}
-        onConfirm={onDelete}
+        onConfirm={deleteCustomer}
         title="Delete customer?"
-        description={`"${confirm?.name}" will be removed. Transaction history stays.`}
+        description={`"${confirm?.name}" will be removed. Existing transaction history stays intact.`}
         confirmLabel="Delete"
         loading={deleteMut.isPending}
       />
-    </>
+    </div>
+  );
+}
+
+function CustomerCard({
+  customer,
+  onOpen,
+  onEdit,
+  onDelete,
+}) {
+  const initials =
+    customer.name
+      ?.split(" ")
+      .filter(Boolean)
+      .map(
+        (part) => part[0],
+      )
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "CU";
+
+  return (
+    <Card
+      interactive
+      className="group"
+    >
+      <CardBody>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="w-full text-left"
+        >
+          <div className="flex items-start gap-3">
+            <div className="h-10 w-10 rounded-xl bg-primary-50 dark:bg-primary-950/30 text-primary-600 flex items-center justify-center text-xs font-bold shrink-0">
+              {initials}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-ink truncate">
+                    {customer.name}
+                  </div>
+
+                  <div className="text-[10px] text-muted mt-0.5">
+                    {customer.gstin ||
+                      "No GSTIN"}
+                  </div>
+                </div>
+
+                <StatusBadge
+                  status={
+                    customer.isActive
+                      ? "active"
+                      : "inactive"
+                  }
+                />
+              </div>
+
+              <div className="space-y-1.5 mt-4">
+                {customer.phone && (
+                  <div className="flex items-center gap-2 text-[11px] text-muted">
+                    <Phone className="h-3 w-3 shrink-0" />
+                    <span>
+                      {customer.phone}
+                    </span>
+                  </div>
+                )}
+
+                {(customer.city ||
+                  customer.state) && (
+                  <div className="flex items-center gap-2 text-[11px] text-muted">
+                    <MapPin className="h-3 w-3 shrink-0" />
+
+                    <span className="truncate">
+                      {[
+                        customer.city,
+                        customer.state,
+                      ]
+                        .filter(Boolean)
+                        .join(", ")}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </button>
+
+        <div className="flex items-center gap-1.5 mt-4 pt-3 border-t border-line">
+          <Button
+            size="xs"
+            variant="secondary"
+            onClick={onOpen}
+          >
+            View customer
+          </Button>
+
+          <button
+            type="button"
+            onClick={onEdit}
+            className="h-7 px-2.5 rounded-lg text-[11px] font-semibold text-muted hover:text-ink hover:bg-bg"
+          >
+            Edit
+          </button>
+
+          <button
+            type="button"
+            onClick={onDelete}
+            className="h-7 w-7 rounded-lg flex items-center justify-center text-danger/70 hover:text-danger hover:bg-red-50 dark:hover:bg-red-950/30"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </CardBody>
+    </Card>
   );
 }

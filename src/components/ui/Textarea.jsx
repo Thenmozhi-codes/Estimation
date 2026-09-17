@@ -14,7 +14,7 @@ export const Textarea = forwardRef(function Textarea(
         "border border-line placeholder:text-subtle",
         "transition-colors duration-150",
         "hover:border-muted/40",
-        "focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20",
+        "focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20",
         error && "border-danger",
         className,
       )}

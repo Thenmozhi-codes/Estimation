@@ -2,19 +2,33 @@ import { Moon, Sun } from "lucide-react";
 import { useThemeStore } from "@/lib/store/themeStore";
 
 export function ThemeToggle() {
-  const mode = useThemeStore((s) => s.mode);
-  const toggle = useThemeStore((s) => s.toggleMode);
+  const mode = useThemeStore((state) => state.mode);
+  const toggle = useThemeStore((state) => state.toggleMode);
+
+  const isDark = mode === "dark";
 
   return (
     <button
+      type="button"
       onClick={toggle}
-      className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-      title={mode === "dark" ? "Switch to light" : "Switch to dark"}
+      title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      className="
+        h-9
+        w-9
+        rounded-lg
+        flex
+        items-center
+        justify-center
+        text-muted
+        hover:text-ink
+        hover:bg-bg
+        transition-colors
+      "
     >
-      {mode === "dark" ? (
-        <Sun className="h-4.5 w-4.5 text-ink" strokeWidth={1.75} />
+      {isDark ? (
+        <Sun className="h-[17px] w-[17px]" />
       ) : (
-        <Moon className="h-4.5 w-4.5 text-ink" strokeWidth={1.75} />
+        <Moon className="h-[17px] w-[17px]" />
       )}
     </button>
   );
