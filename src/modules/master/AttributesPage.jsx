@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Pencil, Plus, Trash2 } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
@@ -8,22 +7,18 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Field } from "@/components/ui/Field";
-import { Card, CardBody } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Sheet } from "@/components/ui/Sheet";
 import { DataTable } from "@/components/ui/DataTable";
 import { Toolbar } from "@/components/ui/Toolbar";
-import { FormGrid } from "@/components/ui/FormGrid";
-import { Switch } from "@/components/ui/Switch";
 
 import {
   useCategories,
   useCreateCategory,
   useAttributes,
   useCreateAttribute,
-  useUpdateAttribute,
   useCategoryAttributes,
   useUpsertCategoryAttribute,
-  useRemoveCategoryAttribute,
   useAttributeValues,
   useCreateAttributeValue,
   useUpdateAttributeValue,
@@ -32,12 +27,34 @@ import {
 
 import { MODULE_TABS } from "@/app/moduleNav";
 import { toast } from "@/lib/toast";
+import {
+  categoryAttributeRepo,
+  attributeValueRepo,
+} from "@/lib/api/repos";
 
 /*
- * FIXED PRODUCT TYPES
- * Product Types are not created by the user.
- * They are automatically ensured in the local/mock store.
+ * ATTRIBUTE MASTER
+ *
+ * Main page
+ *   - Clean attribute list
+ *   - Search
+ *   - Add Attribute button
+ *   - Edit Values for an existing attribute
+ *
+ * Add Attribute
+ *   Product Type
+ *   Attribute Name
+ *   Allowed Values
+ *
+ * Edit Values
+ *   Product Type
+ *   Attribute (read-only)
+ *   Allowed Values
+ *
+ * Product Types are fixed:
+ *   Plywood, Laminate, Edge Band, WPC, Fevicol, Hardware
  */
+
 const FIXED_PRODUCT_TYPES = [
   { name: "Plywood", code: "PLYWOOD" },
   { name: "Laminate", code: "LAMINATE" },
@@ -47,72 +64,31 @@ const FIXED_PRODUCT_TYPES = [
   { name: "Hardware", code: "HARDWARE" },
 ];
 
-/*
- * FIXED ATTRIBUTES + VALUES
- *
- * This is the important part.
- * Every Product Type gets its own attribute records/mappings.
- *
- * UI is NOT changed.
- * The existing table and right-side Sheet continue to be used.
- *
- * Values are stored in Attribute Master and later consumed by
- * Product/Bill selectors as horizontal selectable options.
- */
 const PRODUCT_TYPE_ATTRIBUTE_CONFIG = {
-  Plywood: [
-    {
-      name: "Thickness",
-      values: ["19mm", "18mm", "16mm", "12mm", "9mm", "6mm"],
-      required: true,
-    },
-  ],
-
-  Laminate: [
-    {
-      name: "Thickness",
-      values: ["0.6mm", "0.8mm", "1mm"],
-      required: true,
-    },
-  ],
-
-  "Edge Band": [
-    {
-      name: "Thickness",
-      values: ["0.5mm"],
-      required: true,
-    },
-  ],
-
-  WPC: [
-    {
-      name: "Size",
-      values: ["3x2 inch", "4x2.5 inch"],
-      required: true,
-    },
-  ],
-
-  Fevicol: [
-    {
-      name: "Pack Size",
-      values: ["1/2kg", "1kg", "2kg", "5kg", "10kg", "20kg", "50kg"],
-      required: true,
-    },
-  ],
-
-  Hardware: [
-    {
-      name: "Size",
-      values: ["Small", "Medium", "Large"],
-      required: true,
-    },
-  ],
-};
-
-const EMPTY_FORM = {
-  name: "",
-  isRequired: true,
-  values: [],
+  Plywood: {
+    attribute: "Thickness",
+    values: ["19mm", "18mm", "16mm", "12mm", "9mm", "6mm"],
+  },
+  Laminate: {
+    attribute: "Thickness",
+    values: ["0.6mm", "0.8mm", "1mm"],
+  },
+  "Edge Band": {
+    attribute: "Thickness",
+    values: ["0.5mm"],
+  },
+  WPC: {
+    attribute: "Size",
+    values: ["3x2 inch", "4x2.5 inch"],
+  },
+  Fevicol: {
+    attribute: "Pack Size",
+    values: ["1/2kg", "1kg", "2kg", "5kg", "10kg", "20kg", "50kg"],
+  },
+  Hardware: {
+    attribute: "Size",
+    values: ["Small", "Medium", "Large"],
+  },
 };
 
 const normalize = (value) =>
@@ -122,17 +98,19 @@ const normalize = (value) =>
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ");
 
-const makeAttributeCode = (attributes = [], name = "ATTR") => {
-  const base =
-    String(name || "ATTR")
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 18) || "ATTR";
+const makeCode = (value, fallback = "VALUE") =>
+  String(value || fallback)
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 30) || fallback;
 
+const makeUniqueCode = (label, existing = []) => {
+  const base = makeCode(label);
   const used = new Set(
-    attributes
-      .map((item) => String(item.code || "").toUpperCase())
+    existing
+      .map((item) => String(item?.code || "").toUpperCase())
       .filter(Boolean),
   );
 
@@ -143,26 +121,15 @@ const makeAttributeCode = (attributes = [], name = "ATTR") => {
   return `${base}-${index}`;
 };
 
-const makeValueCode = (label, existingValues = []) => {
-  const base =
-    String(label || "VALUE")
-      .trim()
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 24) || "VALUE";
+const uniqueByName = (items = []) => {
+  const seen = new Set();
 
-  const used = new Set(
-    existingValues
-      .map((item) => String(item.code || "").toUpperCase())
-      .filter(Boolean),
-  );
-
-  if (!used.has(base)) return base;
-
-  let index = 2;
-  while (used.has(`${base}-${index}`)) index += 1;
-  return `${base}-${index}`;
+  return items.filter((item) => {
+    const key = normalize(item?.name);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 };
 
 export function AttributesPage() {
@@ -171,35 +138,30 @@ export function AttributesPage() {
 
   const createCategory = useCreateCategory();
   const createAttribute = useCreateAttribute();
-  const updateAttribute = useUpdateAttribute();
   const upsertCategoryAttribute = useUpsertCategoryAttribute();
-  const removeCategoryAttribute = useRemoveCategoryAttribute();
   const createAttributeValue = useCreateAttributeValue();
 
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [categoryId, setCategoryId] = useState("");
   const [search, setSearch] = useState("");
+  const [rows, setRows] = useState([]);
 
-  const [attributeSheetOpen, setAttributeSheetOpen] = useState(false);
-  const [editingAttribute, setEditingAttribute] = useState(null);
-  const [attributeForm, setAttributeForm] = useState(EMPTY_FORM);
-  const [valueDraft, setValueDraft] = useState("");
+  const [valuesSheetOpen, setValuesSheetOpen] = useState(false);
+  const [valuesSheetCategoryId, setValuesSheetCategoryId] = useState("");
+  const [valuesSheetAttributeId, setValuesSheetAttributeId] = useState("");
 
-  /*
-   * Prevent duplicate automatic setup calls while React/query data
-   * is refreshing.
-   */
+  const [newAttributeOpen, setNewAttributeOpen] = useState(false);
+
   const setupInProgress = useRef(new Set());
 
   /*
-   * Ensure the six fixed Product Types exist.
+   * Keep the six fixed Product Types available.
+   * Product Types are not created/edited from the visible UI.
    */
   useEffect(() => {
     let cancelled = false;
 
     const ensureTypes = async () => {
       const existingNames = new Set(
-        categories.map((item) => normalize(item.name)),
+        categories.map((item) => normalize(item?.name)),
       );
 
       for (const type of FIXED_PRODUCT_TYPES) {
@@ -214,7 +176,7 @@ export function AttributesPage() {
             isActive: true,
           });
         } catch (error) {
-          console.warn(`Could not create ${type.name}`, error);
+          console.warn(`Could not create fixed type ${type.name}`, error);
         }
       }
     };
@@ -224,545 +186,386 @@ export function AttributesPage() {
     return () => {
       cancelled = true;
     };
-  }, [categories]);
+  }, [categories, createCategory]);
 
-  const fixedCategories = useMemo(() => {
+  /*
+   * De-duplicate Product Types by name.
+   * This also prevents duplicate options when the local store contains
+   * more than one category record for the same Product Type.
+   */
+  const activeCategories = useMemo(() => {
     const byName = new Map();
 
     for (const category of categories) {
-      const key = normalize(category.name);
-      if (!key || category.isActive === false) continue;
+      if (category?.isActive === false) continue;
 
-      if (!byName.has(key)) {
-        byName.set(key, category);
-      }
+      const key = normalize(category?.name);
+      if (!key || byName.has(key)) continue;
+
+      byName.set(key, category);
     }
 
-    return FIXED_PRODUCT_TYPES.map((type) => ({
-      ...type,
-      record: byName.get(normalize(type.name)) || null,
-    }));
+    return FIXED_PRODUCT_TYPES
+      .map((type) => ({
+        ...type,
+        record: byName.get(normalize(type.name)) || null,
+      }))
+      .filter((item) => item.record);
   }, [categories]);
 
-  const availableCategories = useMemo(
-    () => fixedCategories.filter((item) => item.record),
-    [fixedCategories],
-  );
-
   /*
-   * Keep Product Type selection stable.
+   * Seed the six standard Product Type attributes when they do not exist.
+   * Existing user data is never overwritten.
    */
   useEffect(() => {
-    if (!availableCategories.length) return;
-
-    const urlType = searchParams.get("type");
-    const urlMatch = availableCategories.find(
-      (item) => item.record.id === urlType,
-    );
-
-    if (urlMatch) {
-      if (categoryId !== urlMatch.record.id) {
-        setCategoryId(urlMatch.record.id);
-      }
-      return;
-    }
-
-    const currentStillExists = availableCategories.some(
-      (item) => item.record.id === categoryId,
-    );
-
-    if (!currentStillExists) {
-      const firstId = availableCategories[0].record.id;
-      setCategoryId(firstId);
-      setSearchParams({ type: firstId }, { replace: true });
-    }
-  }, [
-    availableCategories,
-    categoryId,
-    searchParams,
-    setSearchParams,
-  ]);
-
-  const selectedCategory = useMemo(
-    () =>
-      availableCategories.find((item) => item.record.id === categoryId)
-        ?.record || null,
-    [availableCategories, categoryId],
-  );
-
-  const {
-    data: mappings = [],
-    isLoading: mappingsLoading,
-  } = useCategoryAttributes(categoryId);
-
-  /*
-   * AUTOMATICALLY CONFIGURE THE SELECTED PRODUCT TYPE
-   *
-   * If Plywood has no attributes, this creates:
-   *   Brand
-   *   Thickness
-   *   Width
-   *
-   * and maps them to Plywood.
-   *
-   * It then creates the allowed values.
-   *
-   * This is why the page will no longer show
-   * "No attributes configured" for a fresh Product Type.
-   */
-  useEffect(() => {
-    if (!selectedCategory) return;
-
-    const config =
-      PRODUCT_TYPE_ATTRIBUTE_CONFIG[selectedCategory.name];
-
-    if (!config?.length) return;
-
-    const setupKey = selectedCategory.id;
-
-    if (setupInProgress.current.has(setupKey)) return;
+    if (!activeCategories.length) return;
 
     let cancelled = false;
-    setupInProgress.current.add(setupKey);
 
-    const setupProductType = async () => {
-      try {
-        /*
-         * Re-read current mappings before creating anything so this
-         * remains safe after query refreshes.
-         */
-        let currentMappings =
-          (await import("@/lib/api/repos")).categoryAttributeRepo.list({
-            categoryId: selectedCategory.id,
+    const setupAllTypes = async () => {
+      for (const type of activeCategories) {
+        if (cancelled) return;
+
+        const category = type.record;
+        const config = PRODUCT_TYPE_ATTRIBUTE_CONFIG[type.name];
+
+        if (!category || !config) continue;
+        if (setupInProgress.current.has(category.id)) continue;
+
+        setupInProgress.current.add(category.id);
+
+        try {
+          let currentMappings = await categoryAttributeRepo.list({
+            categoryId: category.id,
           });
 
-        currentMappings = Array.isArray(currentMappings)
-          ? await currentMappings
-          : [];
-
-        for (let index = 0; index < config.length; index += 1) {
-          if (cancelled) return;
-
-          const definition = config[index];
+          currentMappings = Array.isArray(currentMappings)
+            ? currentMappings
+            : [];
 
           /*
-           * Attributes are shared master records, but each Product Type
-           * gets its own attribute record when a same-named attribute
-           * already belongs to another Product Type. This keeps the
-           * value list Product-Type-specific.
+           * Prefer an attribute with the expected name already mapped
+           * to this Product Type.
            */
           const matchingAttributes = attributes.filter(
-            (attribute) =>
-              normalize(attribute.name) === normalize(definition.name),
+            (item) =>
+              normalize(item?.name) === normalize(config.attribute),
           );
 
-          let attribute = matchingAttributes.find((candidate) => {
-            return currentMappings.some(
-              (mapping) => mapping.attributeId === candidate.id,
-            );
-          });
+          let attribute = matchingAttributes.find((item) =>
+            currentMappings.some(
+              (mapping) => mapping.attributeId === item.id,
+            ),
+          );
 
+          /*
+           * Do not reuse a Thickness/Size attribute belonging to another
+           * Product Type because their values can be different.
+           */
           if (!attribute) {
-            attribute = matchingAttributes[0] || null;
+            for (const candidate of matchingAttributes) {
+              const allMappings = await categoryAttributeRepo.list({
+                attributeId: candidate.id,
+              });
 
-            /*
-             * If the existing shared attribute is already mapped to a
-             * different Product Type, create a Product-Type-specific
-             * attribute record instead.
-             */
-            if (attribute) {
-              const belongsToCurrentType = currentMappings.some(
-                (mapping) => mapping.attributeId === attribute.id,
-              );
-
-              if (!belongsToCurrentType) {
-                const newCode = makeAttributeCode(
-                  attributes,
-                  `${selectedCategory.name}-${definition.name}`,
+              const mappedElsewhere =
+                Array.isArray(allMappings) &&
+                allMappings.some(
+                  (mapping) => mapping.categoryId !== category.id,
                 );
 
-                attribute = await createAttribute.mutateAsync({
-                  name: definition.name,
-                  code: newCode,
-                  dataType: "select",
-                  isRequired: definition.required,
-                  isActive: true,
-                });
+              if (!mappedElsewhere) {
+                attribute = candidate;
+                break;
               }
-            } else {
-              attribute = await createAttribute.mutateAsync({
-                name: definition.name,
-                code: makeAttributeCode(
-                  attributes,
-                  `${selectedCategory.name}-${definition.name}`,
-                ),
-                dataType: "select",
-                isRequired: definition.required,
-                isActive: true,
-              });
             }
           }
 
-          const existingMapping = currentMappings.find(
-            (mapping) => mapping.attributeId === attribute.id,
-          );
-
-          if (!existingMapping) {
-            const mapping = await upsertCategoryAttribute.mutateAsync({
-              categoryId: selectedCategory.id,
-              attributeId: attribute.id,
-              isRequired: definition.required,
-              sortOrder: index,
+          if (!attribute) {
+            attribute = await createAttribute.mutateAsync({
+              name: config.attribute,
+              code: makeCode(`${type.code}-${config.attribute}`, "ATTR"),
+              dataType: "select",
+              isRequired: true,
+              isActive: true,
             });
-
-            currentMappings = [...currentMappings, mapping];
           }
 
-          /*
-           * Seed values only when this attribute currently has no
-           * active values. Existing custom values are never overwritten.
-           */
-          const existingValues = await getAttributeValuesDirect(
-            attribute.id,
+          let mapping = currentMappings.find(
+            (item) => item.attributeId === attribute.id,
           );
 
-          const activeValues = existingValues.filter(
-            (value) => value.isActive !== false,
-          );
+          if (!mapping) {
+            mapping = await upsertCategoryAttribute.mutateAsync({
+              categoryId: category.id,
+              attributeId: attribute.id,
+              isRequired: true,
+              sortOrder: 0,
+            });
+          }
 
-          if (activeValues.length === 0) {
-            for (let valueIndex = 0; valueIndex < definition.values.length; valueIndex += 1) {
+          const existingValues = await attributeValueRepo.list({
+            attributeId: attribute.id,
+          });
+
+          const activeValues = Array.isArray(existingValues)
+            ? existingValues.filter((item) => item?.isActive !== false)
+            : [];
+
+          if (!activeValues.length) {
+            for (let index = 0; index < config.values.length; index += 1) {
               if (cancelled) return;
 
-              const label = definition.values[valueIndex];
+              const label = config.values[index];
+              const code = makeUniqueCode(label, activeValues);
 
               await createAttributeValue.mutateAsync({
                 attributeId: attribute.id,
                 label,
-                code: makeValueCode(label, activeValues),
-                sortOrder: valueIndex,
+                code,
+                sortOrder: index,
                 isActive: true,
               });
 
-              activeValues.push({
-                label,
-                code: makeValueCode(label, activeValues),
-              });
+              activeValues.push({ label, code });
             }
           }
-        }
-      } catch (error) {
-        console.error(
-          `Automatic Product Type setup failed for ${selectedCategory.name}`,
-          error,
-        );
-      } finally {
-        if (!cancelled) {
-          setupInProgress.current.delete(setupKey);
+        } catch (error) {
+          console.error(
+            `Attribute setup failed for ${type.name}`,
+            error,
+          );
+        } finally {
+          setupInProgress.current.delete(category.id);
         }
       }
     };
 
-    setupProductType();
+    setupAllTypes();
 
     return () => {
       cancelled = true;
     };
   }, [
-    selectedCategory,
+    activeCategories,
     attributes,
     createAttribute,
-    upsertCategoryAttribute,
     createAttributeValue,
+    upsertCategoryAttribute,
   ]);
 
-  const configuredAttributes = useMemo(() => {
-    /*
-     * Only ONE attribute is intentionally visible for each Product Type.
-     * These are the exact attribute/value selectors used by the product
-     * entry flow shown in the reference UI.
-     *
-     * Plywood  -> Thickness
-     * Laminate -> Thickness
-     * Edge Band -> Thickness
-     * WPC      -> Size
-     * Fevicol  -> Pack Size
-     * Hardware -> Size
-     *
-     * Other mappings may still exist in the data store, but they are not
-     * shown here and are not part of this simplified Product Type flow.
-     */
-    const visibleAttributeName =
-      PRODUCT_TYPE_ATTRIBUTE_CONFIG[selectedCategory?.name]?.[0]?.name ||
-      null;
+  /*
+   * Build the visible table.
+   *
+   * Standard rows are kept to one primary attribute per fixed Product Type.
+   * If a custom attribute is later added through Add Attribute, it is also
+   * shown in the table so the newly-created attribute is not hidden.
+   */
+  useEffect(() => {
+    let cancelled = false;
 
-    return mappings
-      .map((mapping) => {
-        const attribute = attributes.find(
-          (item) => item.id === mapping.attributeId,
-        );
-
-        if (!attribute) return null;
-
-        return {
-          ...attribute,
-          mappingId: mapping.id,
-          isRequired:
-            mapping.isRequired ??
-            attribute.isRequired ??
-            false,
-          sortOrder: mapping.sortOrder ?? 0,
-        };
-      })
-      .filter(Boolean)
-      .filter(
-        (attribute) =>
-          normalize(attribute.name) === normalize(visibleAttributeName),
-      )
-      .sort((a, b) => a.sortOrder - b.sortOrder);
-  }, [mappings, attributes, selectedCategory]);
-
-  const filteredAttributes = useMemo(() => {
-    const term = search.trim().toLowerCase();
-
-    if (!term) return configuredAttributes;
-
-    return configuredAttributes.filter(
-      (item) =>
-        String(item.name || "").toLowerCase().includes(term) ||
-        String(item.code || "").toLowerCase().includes(term),
-    );
-  }, [configuredAttributes, search]);
-
-  const closeAttributeSheet = () => {
-    setAttributeSheetOpen(false);
-    setEditingAttribute(null);
-    setAttributeForm(EMPTY_FORM);
-    setValueDraft("");
-  };
-
-  const openNewAttribute = () => {
-    setEditingAttribute(null);
-    setAttributeForm({
-      name: "",
-      isRequired: true,
-      values: [],
-    });
-    setValueDraft("");
-    setAttributeSheetOpen(true);
-  };
-
-  const openEditAttribute = (attribute) => {
-    setEditingAttribute(attribute);
-    setAttributeForm({
-      name: attribute.name || "",
-      isRequired: attribute.isRequired ?? true,
-      values: [],
-    });
-    setValueDraft("");
-    setAttributeSheetOpen(true);
-  };
-
-  const addDraftValue = () => {
-    const clean = valueDraft.trim();
-
-    if (!clean) {
-      toast.error("Enter a value first");
-      return;
-    }
-
-    if (
-      attributeForm.values.some(
-        (value) =>
-          value.label.toLowerCase() === clean.toLowerCase(),
-      )
-    ) {
-      toast.error("This value is already added");
-      return;
-    }
-
-    setAttributeForm((current) => ({
-      ...current,
-      values: [
-        ...current.values,
-        {
-          id: `draft-${Date.now()}-${current.values.length}`,
-          label: clean,
-        },
-      ],
-    }));
-
-    setValueDraft("");
-  };
-
-  const removeDraftValue = (id) => {
-    setAttributeForm((current) => ({
-      ...current,
-      values: current.values.filter((value) => value.id !== id),
-    }));
-  };
-
-  const saveAttribute = async () => {
-    if (!selectedCategory) {
-      toast.error("Select a Product Type");
-      return;
-    }
-
-    const name = attributeForm.name.trim();
-
-    if (!name) {
-      toast.error("Attribute name is required");
-      return;
-    }
-
-    /*
-     * Attribute names are allowed to repeat across Product Types,
-     * because values are Product-Type-specific.
-     */
-    try {
-      let attribute = editingAttribute;
-
-      if (editingAttribute) {
-        closeAttributeSheet();
+    const loadRows = async () => {
+      if (!activeCategories.length) {
+        setRows([]);
         return;
       }
 
-      attribute = await createAttribute.mutateAsync({
-        name,
-        code: makeAttributeCode(
-          attributes,
-          `${selectedCategory.name}-${name}`,
-        ),
-        dataType: "select",
-        isRequired: attributeForm.isRequired,
-        isActive: true,
-      });
+      const nextRows = [];
 
-      await upsertCategoryAttribute.mutateAsync({
-        categoryId: selectedCategory.id,
-        attributeId: attribute.id,
-        isRequired: attributeForm.isRequired,
-        sortOrder: configuredAttributes.length,
-      });
+      for (const type of activeCategories) {
+        if (cancelled) return;
 
-      for (let index = 0; index < attributeForm.values.length; index += 1) {
-        await createAttributeValue.mutateAsync({
-          attributeId: attribute.id,
-          label: attributeForm.values[index].label,
-          code: makeValueCode(
-            attributeForm.values[index].label,
-            attributeForm.values.slice(0, index),
-          ),
-          sortOrder: index,
-          isActive: true,
+        const categoryId = type.record.id;
+        const config = PRODUCT_TYPE_ATTRIBUTE_CONFIG[type.name];
+
+        const mappingData = await categoryAttributeRepo.list({
+          categoryId,
         });
-      }
 
-      toast.success(
-        attributeForm.values.length
-          ? "Attribute and values added"
-          : "Attribute added",
-      );
+      const mappings = Array.isArray(mappingData) ? mappingData : [];
 
-      closeAttributeSheet();
-    } catch (error) {
-      console.error("Attribute save failed:", error);
-      toast.error(error?.message || "Could not save attribute");
-    }
-  };
+const categoryRows = [];
 
-  const removeAttribute = async (attribute) => {
-    const confirmed = window.confirm(
-      `Remove "${attribute.name}" from ${selectedCategory?.name}?`,
+/*
+ * Show ONLY ONE attribute for each Product Type.
+ * The configured standard attribute has priority.
+ *
+ * Plywood   -> Thickness
+ * Laminate  -> Thickness
+ * Edge Band -> Thickness
+ * WPC       -> Size
+ * Fevicol   -> Pack Size
+ * Hardware  -> Size
+ */
+let mappingsToRender = mappings;
+
+if (config) {
+  const standardAttributeCode = makeCode(
+    `${type.code}-${config.attribute}`,
+    "ATTR",
+  );
+
+  const standardMapping = mappings.find((mapping) => {
+    const attribute = attributes.find(
+      (item) => item.id === mapping.attributeId,
     );
 
-    if (!confirmed) return;
+    if (!attribute || attribute.isActive === false) return false;
 
-    try {
-      await removeCategoryAttribute.mutateAsync({
-        id: attribute.mappingId,
-        categoryId: selectedCategory.id,
-      });
+    return (
+      attribute.code === standardAttributeCode ||
+      normalize(attribute.name) === normalize(config.attribute)
+    );
+  });
 
-      toast.success("Attribute removed");
-    } catch (error) {
-      toast.error(error?.message || "Could not remove attribute");
-    }
+  if (standardMapping) {
+    mappingsToRender = [standardMapping];
+  } else if (mappings.length) {
+    mappingsToRender = [mappings[0]];
+  } else {
+    mappingsToRender = [];
+  }
+} else {
+  mappingsToRender = mappings.length ? [mappings[0]] : [];
+}
+
+for (const mapping of mappingsToRender) {
+          const attribute = attributes.find(
+            (item) => item.id === mapping.attributeId,
+          );
+
+          if (!attribute || attribute.isActive === false) continue;
+
+          const storedValues = await attributeValueRepo.list({
+            attributeId: attribute.id,
+          });
+
+          const values = Array.isArray(storedValues)
+            ? storedValues.filter((item) => item?.isActive !== false)
+            : [];
+
+          categoryRows.push({
+            id: `${categoryId}-${attribute.id}`,
+            categoryId,
+            categoryName: type.name,
+            attributeId: attribute.id,
+            attributeName: attribute.name,
+            required: mapping.isRequired ?? true,
+            values,
+            fallbackValues:
+              config &&
+              normalize(attribute.name) === normalize(config.attribute)
+                ? config.values
+                : [],
+            isStandard:
+              config &&
+              normalize(attribute.name) === normalize(config.attribute),
+          });
+        }
+
+        /*
+         * During the first setup render, the mapping can briefly be empty.
+         * Keep the standard row visible with fallback values.
+         */
+        if (!categoryRows.length && config) {
+          categoryRows.push({
+            id: `${categoryId}-${config.attribute}`,
+            categoryId,
+            categoryName: type.name,
+            attributeId: null,
+            attributeName: config.attribute,
+            required: true,
+            values: [],
+            fallbackValues: config.values,
+            isStandard: true,
+          });
+        }
+
+        /*
+         * Put the standard attribute first. Any custom attributes added
+         * later appear immediately after it.
+         */
+        categoryRows.sort((a, b) => {
+          if (a.isStandard && !b.isStandard) return -1;
+          if (!a.isStandard && b.isStandard) return 1;
+          return a.attributeName.localeCompare(b.attributeName);
+        });
+
+        nextRows.push(...categoryRows);
+      }
+
+      if (!cancelled) setRows(nextRows);
+    };
+
+    loadRows();
+
+    const timer = window.setTimeout(() => {
+      if (!cancelled) loadRows();
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeCategories, attributes]);
+
+  const filteredRows = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
+    if (!term) return rows;
+
+    return rows.filter(
+      (row) =>
+        String(row.categoryName || "").toLowerCase().includes(term) ||
+        String(row.attributeName || "").toLowerCase().includes(term) ||
+        row.values.some((value) =>
+          String(value?.label || "").toLowerCase().includes(term),
+        ),
+    );
+  }, [rows, search]);
+
+  const openValues = (row) => {
+    setValuesSheetCategoryId(row.categoryId);
+    setValuesSheetAttributeId(row.attributeId || "");
+    setValuesSheetOpen(true);
   };
 
-  const toggleRequired = async (attribute) => {
-    try {
-      await upsertCategoryAttribute.mutateAsync({
-        categoryId: selectedCategory.id,
-        attributeId: attribute.id,
-        isRequired: !attribute.isRequired,
-        sortOrder: attribute.sortOrder,
-      });
-
-      toast.success(
-        `${attribute.name} marked ${
-          !attribute.isRequired ? "required" : "optional"
-        }`,
-      );
-    } catch (error) {
-      toast.error(error?.message || "Could not update attribute");
-    }
+  const closeValues = () => {
+    setValuesSheetOpen(false);
+    setValuesSheetCategoryId("");
+    setValuesSheetAttributeId("");
   };
 
   return (
     <div className="page-container min-h-full">
       <PageHeader
         title="Attributes"
-        description="Configure attributes and allowed values for each Product Type."
+        description="Manage attributes and the allowed values used for each Product Type."
         actions={
           <Button
             size="sm"
-            onClick={openNewAttribute}
-            disabled={!selectedCategory}
+            onClick={() => setNewAttributeOpen(true)}
           >
             <Plus className="h-4 w-4" />
-            New Attribute
+            Add Attribute
           </Button>
         }
       />
 
       <ModuleTabs tabs={MODULE_TABS.master} />
 
-      <div className="p-4 md:p-6 pb-24">
-        <div className="mx-auto max-w-6xl space-y-4">
-          <Card>
-            <CardBody className="p-4 md:p-5">
-              <Field label="Product Type" required>
-                <Select
-                  value={categoryId}
-                  onChange={(event) => {
-                    const id = event.target.value;
-                    setCategoryId(id);
-                    setSearch("");
-                    setSearchParams(id ? { type: id } : {}, {
-                      replace: true,
-                    });
-                  }}
-                >
-                  {availableCategories.map((item) => (
-                    <option key={item.record.id} value={item.record.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </CardBody>
-          </Card>
-
+      <div className="p-4 pb-24 md:p-6">
+       <div className="w-full space-y-4">
           <Card>
             <div className="flex flex-col gap-3 border-b border-line px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-5">
               <div>
                 <h2 className="text-sm font-bold text-ink">
-                  {selectedCategory?.name || "Product Type"} Attributes
+                  Product Attributes
                 </h2>
+
                 <p className="mt-0.5 text-[10px] text-muted">
-                  Add and manage only the attributes applicable to this Product
-                  Type.
+                  Define the attribute and allowed values that users can
+                  select while creating products.
                 </p>
               </div>
 
@@ -778,148 +581,103 @@ export function AttributesPage() {
             <DataTable
               columns={[
                 {
-                  key: "name",
-                  header: "Attribute",
+                  key: "productType",
+                  header: "Product Type",
                   sortable: true,
                   render: (row) => (
                     <div>
-                      <div className="font-semibold text-ink">{row.name}</div>
-                      <div className="text-2xs text-muted">
-                        {row.isRequired ? "Required" : "Optional"}
+                      <div className="font-semibold text-ink">
+                        {row.categoryName}
                       </div>
+
+                      {row.isStandard ? (
+                        <div className="text-2xs text-muted">
+                          Standard Product Type
+                        </div>
+                      ) : (
+                        <div className="text-2xs text-muted">
+                          Custom Attribute
+                        </div>
+                      )}
                     </div>
                   ),
                 },
+              
                 {
                   key: "values",
                   header: "Allowed Values",
                   render: (row) => (
-                    <AllowedValuesPreview attributeId={row.id} />
-                  ),
-                },
-                {
-                  key: "required",
-                  header: "Required",
-                  hideOnMobile: true,
-                  render: (row) => (
-                    <span className="text-2xs font-semibold text-muted">
-                      {row.isRequired ? "Yes" : "No"}
-                    </span>
+                    <AllowedValuesPreview
+                      values={
+                        row.values.length
+                          ? row.values
+                          : row.fallbackValues.map((label, index) => ({
+                              id: `${row.id}-${index}`,
+                              label,
+                            }))
+                      }
+                    />
                   ),
                 },
                 {
                   key: "actions",
-                  header: "",
-                  width: 230,
+                  header: "Actions",
+                  width: 150,
                   align: "right",
                   render: (row) => (
-                    <div className="flex justify-end gap-1">
-                      <button
-                        type="button"
-                        className="rounded-lg px-2.5 py-1.5 text-2xs font-semibold text-ink hover:bg-bg"
-                        onClick={() => openEditAttribute(row)}
-                      >
-                        <span className="inline-flex items-center gap-1">
-                          <Pencil className="h-3 w-3" />
-                          Edit
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        className="rounded-lg px-2.5 py-1.5 text-2xs font-semibold text-primary-600 hover:bg-primary-500/10"
-                        onClick={() => toggleRequired(row)}
-                      >
-                        {row.isRequired ? "Optional" : "Required"}
-                      </button>
-
-                      <button
-                        type="button"
-                        className="rounded-lg px-2.5 py-1.5 text-2xs font-semibold text-danger hover:bg-red-50 dark:hover:bg-red-950/30"
-                        onClick={() => removeAttribute(row)}
-                      >
-                        <span className="inline-flex items-center gap-1">
-                          <Trash2 className="h-3 w-3" />
-                          Remove
-                        </span>
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-2xs font-semibold text-ink transition hover:bg-bg"
+                      onClick={() => openValues(row)}
+                    >
+                      <Pencil className="h-3 w-3" />
+                      Edit Values
+                    </button>
                   ),
                 },
               ]}
-              rows={filteredAttributes}
-              loading={mappingsLoading}
+              rows={filteredRows}
+              loading={!activeCategories.length || !rows.length}
               emptyTitle="No attributes configured"
-              emptyDescription={
-                selectedCategory
-                  ? `Add attributes for ${selectedCategory.name}.`
-                  : "Select a Product Type first."
-              }
-              emptyAction={
-                <Button
-                  onClick={openNewAttribute}
-                  disabled={!selectedCategory}
-                >
-                  <Plus className="h-4 w-4" />
-                  New Attribute
-                </Button>
-              }
+              emptyDescription="Your Product Type attributes will appear here."
             />
           </Card>
         </div>
       </div>
 
-      <AttributeSheet
-        open={attributeSheetOpen}
-        onClose={closeAttributeSheet}
-        selectedCategory={selectedCategory}
-        editing={editingAttribute}
-        form={attributeForm}
-        setForm={setAttributeForm}
-        valueDraft={valueDraft}
-        setValueDraft={setValueDraft}
-        onAddValue={addDraftValue}
-        onRemoveValue={removeDraftValue}
-        onSave={saveAttribute}
-        saving={
-          createAttribute.isPending ||
-          updateAttribute.isPending ||
-          upsertCategoryAttribute.isPending ||
-          createAttributeValue.isPending
-        }
+      {/* IMPORTANT: Add Attribute form */}
+      <NewAttributeSheet
+        open={newAttributeOpen}
+        onClose={() => setNewAttributeOpen(false)}
+        categories={activeCategories}
+        attributes={attributes}
+      />
+
+      {/* Existing attribute value management */}
+      <AttributeValuesSheet
+        open={valuesSheetOpen}
+        onClose={closeValues}
+        categoryId={valuesSheetCategoryId}
+        attributeId={valuesSheetAttributeId}
+        setCategoryId={setValuesSheetCategoryId}
+        categories={activeCategories}
       />
     </div>
   );
 }
 
-async function getAttributeValuesDirect(attributeId) {
-  const { attributeValueRepo } = await import("@/lib/api/repos");
-  const rows = await attributeValueRepo.list({ attributeId });
-  return Array.isArray(rows) ? rows : [];
-}
-
-function AllowedValuesPreview({ attributeId }) {
-  const { data: values = [] } = useAttributeValues(attributeId);
-
-  const activeValues = values.filter(
-    (value) => value.isActive !== false,
-  );
-
-  if (!activeValues.length) {
-    return (
-      <span className="text-2xs text-muted">
-        No values
-      </span>
-    );
+function AllowedValuesPreview({ values }) {
+  if (!values?.length) {
+    return <span className="text-2xs text-muted">No values</span>;
   }
 
   return (
-    <div className="max-w-[430px] overflow-x-auto scrollbar-thin">
+    <div className="max-w-[560px] overflow-x-auto scrollbar-thin">
       <div className="flex w-max min-w-full flex-nowrap items-center gap-1.5 py-0.5">
-        {activeValues.map((value) => (
+        {values.map((value) => (
           <span
             key={value.id}
-            className="inline-flex shrink-0 items-center rounded-md border border-line bg-bg px-2.5 py-1 text-2xs font-semibold text-ink whitespace-nowrap"
+            className="inline-flex shrink-0 items-center whitespace-nowrap rounded-md border border-line bg-bg px-2.5 py-1 text-2xs font-semibold text-ink"
           >
             {value.label}
           </span>
@@ -928,106 +686,253 @@ function AllowedValuesPreview({ attributeId }) {
     </div>
   );
 }
-function AttributeSheet({
+
+/* -------------------------------------------------------------------------- */
+/* ADD ATTRIBUTE SHEET                                                        */
+/* -------------------------------------------------------------------------- */
+
+function NewAttributeSheet({
   open,
   onClose,
-  selectedCategory,
-  editing,
-  form,
-  setForm,
-  valueDraft,
-  setValueDraft,
-  onAddValue,
-  onRemoveValue,
-  onSave,
-  saving,
+  categories,
+  attributes,
 }) {
+  const createAttribute = useCreateAttribute();
+  const upsertCategoryAttribute = useUpsertCategoryAttribute();
+  const createAttributeValue = useCreateAttributeValue();
+
+  const [categoryId, setCategoryId] = useState("");
+  const [attributeName, setAttributeName] = useState("");
+  const [valueDraft, setValueDraft] = useState("");
+  const [draftValues, setDraftValues] = useState([]);
+
+  const selectedCategory = categories.find(
+    (item) => item.record.id === categoryId,
+  );
+
+  /*
+   * When the Add Attribute sheet opens, select the first Product Type
+   * only as an initial UI value. The user can change it.
+   */
+  useEffect(() => {
+    if (!open) return;
+
+    setCategoryId((current) => current || categories[0]?.record?.id || "");
+  }, [open, categories]);
+
+  const reset = () => {
+    setCategoryId("");
+    setAttributeName("");
+    setValueDraft("");
+    setDraftValues([]);
+  };
+
+  const handleClose = () => {
+    reset();
+    onClose();
+  };
+
+  const addDraftValue = () => {
+    const label = valueDraft.trim();
+
+    if (!label) return;
+
+    const exists = draftValues.some(
+      (value) => normalize(value) === normalize(label),
+    );
+
+    if (exists) {
+      toast.error("This value is already added");
+      return;
+    }
+
+    setDraftValues((current) => [...current, label]);
+    setValueDraft("");
+  };
+
+  const removeDraftValue = (label) => {
+    setDraftValues((current) =>
+      current.filter((value) => normalize(value) !== normalize(label)),
+    );
+  };
+
+  const save = async () => {
+  if (!categoryId) {
+    toast.error("Please select a Product Type");
+    return;
+  }
+
+  const selectedType = selectedCategory?.name;
+  const config = PRODUCT_TYPE_ATTRIBUTE_CONFIG[selectedType];
+
+  const cleanName =
+    config?.attribute || `${selectedType || "Product"} Attribute`;
+
+
+   
+
+    /*
+     * Prevent the same attribute from being mapped twice to one Product Type.
+     */
+    try {
+      const existingMappings = await categoryAttributeRepo.list({
+        categoryId,
+      });
+
+      const mappingList = Array.isArray(existingMappings)
+        ? existingMappings
+        : [];
+
+      const mappedAttributeIds = new Set(
+        mappingList.map((item) => item.attributeId),
+      );
+
+      const duplicate = attributes.find(
+        (item) =>
+          mappedAttributeIds.has(item.id) &&
+          normalize(item.name) === normalize(cleanName),
+      );
+
+      if (duplicate) {
+        toast.error(
+          `${cleanName} is already configured for ${selectedCategory?.name || "this Product Type"}`,
+        );
+        return;
+      }
+
+      /*
+       * Create a separate Attribute record even when another Product Type
+       * already has an attribute with the same name. This keeps their
+       * allowed values independent.
+       */
+      const attribute = await createAttribute.mutateAsync({
+        name: cleanName,
+        code: makeUniqueCode(
+          `${selectedCategory?.code || "TYPE"}-${cleanName}`,
+          attributes,
+        ),
+        dataType: "select",
+        isRequired: true,
+        isActive: true,
+      });
+
+      await upsertCategoryAttribute.mutateAsync({
+        categoryId,
+        attributeId: attribute.id,
+        isRequired: true,
+        sortOrder: 0,
+      });
+
+      /*
+       * Values are optional. An Attribute can be created first and values
+       * can be added later from Edit Values.
+       */
+      const usedValues = [];
+
+      for (let index = 0; index < draftValues.length; index += 1) {
+        const label = draftValues[index];
+
+        await createAttributeValue.mutateAsync({
+          attributeId: attribute.id,
+          label,
+          code: makeUniqueCode(label, usedValues),
+          sortOrder: index,
+          isActive: true,
+        });
+
+        usedValues.push({
+          label,
+          code: makeUniqueCode(label, usedValues),
+        });
+      }
+
+      toast.success("Attribute added successfully");
+      handleClose();
+    } catch (error) {
+      toast.error(error?.message || "Could not add attribute");
+    }
+  };
+
   return (
     <Sheet
       open={open}
-      onClose={onClose}
-      title="Manage Attribute Values"
-      subtitle={
-        selectedCategory
-          ? `${selectedCategory.name} • ${editing?.name || "Attribute"}`
-          : "Manage attribute values"
-      }
+      onClose={handleClose}
+      title="New Attribute"
+      subtitle="Create an attribute for a Product Type and define its allowed values."
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button
+            variant="ghost"
+            onClick={handleClose}
+            disabled={createAttribute.isPending}
+          >
             Cancel
           </Button>
 
           <Button
-            onClick={onSave}
-            disabled={saving}
+            onClick={save}
+            disabled={
+              !categoryId ||
+              !attributeName.trim() ||
+              createAttribute.isPending ||
+              upsertCategoryAttribute.isPending ||
+              createAttributeValue.isPending
+            }
           >
             <Check className="h-4 w-4" />
-            Save Changes
+            {createAttribute.isPending ? "Adding…" : "Add Attribute"}
           </Button>
         </>
       }
     >
-      <form
-        className="space-y-5"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSave();
-        }}
-      >
-        {/* Product Type + Attribute — READ ONLY CONTEXT */}
-        <div className="rounded-xl border border-line bg-bg/50 p-3">
-          <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted">
-            Product Type
-          </div>
+      <div className="space-y-5">
+        <Field label="Product Type" required>
+          <Select
+            value={categoryId}
+            onChange={(event) => setCategoryId(event.target.value)}
+          >
+            <option value="">Select product type</option>
 
-          <div className="mt-1 text-sm font-bold text-ink">
-            {selectedCategory?.name || "—"}
-          </div>
+            {categories.map((item) => (
+              <option
+                key={item.record.id}
+                value={item.record.id}
+              >
+                {item.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
 
-          <div className="mt-3 border-t border-line pt-3">
-            <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted">
-              Attribute
-            </div>
+       
 
-            <div className="mt-1 text-sm font-bold text-ink">
-              {editing?.name || "—"}
-            </div>
-          </div>
-        </div>
-
-        {/* ONLY VALUE INPUT */}
-        <div>
+        <div className="border-t border-line pt-5">
           <div className="mb-3">
-            <div className="text-xs font-bold text-ink">
-              Allowed Values
-            </div>
+            
 
-            <p className="mt-0.5 text-[10px] text-muted">
-              Add the values users can select for this attribute.
+            <p className="mt-0.5 text-[10px] leading-4 text-muted">
+              Add the values users should be able to select for this
+              attribute. Values are optional.
             </p>
           </div>
 
           <div className="flex gap-2">
             <Input
               value={valueDraft}
-              onChange={(event) =>
-                setValueDraft(event.target.value)
-              }
+              onChange={(event) => setValueDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
-                  onAddValue();
+                  addDraftValue();
                 }
               }}
-              placeholder="Enter value (e.g. 19mm)"
-              autoFocus
+              placeholder="Enter value..."
             />
 
             <Button
               type="button"
               variant="subtle"
-              onClick={onAddValue}
+              onClick={addDraftValue}
               disabled={!valueDraft.trim()}
             >
               <Plus className="h-4 w-4" />
@@ -1035,98 +940,153 @@ function AttributeSheet({
             </Button>
           </div>
 
-          {/* EXISTING VALUES */}
           <div className="mt-3 overflow-x-auto rounded-xl border border-line bg-bg/30 p-2.5 scrollbar-thin">
-            <div className="flex w-max min-w-full flex-nowrap items-center gap-1.5">
-              {form.values?.map((value) => (
-                <span
-                  key={value.id}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-line bg-surface px-2.5 py-1.5 text-2xs font-semibold text-ink whitespace-nowrap"
-                >
-                  {value.label}
-
-                  <button
-                    type="button"
-                    onClick={() => onRemoveValue(value.id)}
-                    className="rounded-full px-1 text-muted hover:bg-red-50 hover:text-danger"
-                    aria-label={`Remove ${value.label}`}
+            {draftValues.length ? (
+              <div className="flex w-max min-w-full flex-nowrap items-center gap-1.5">
+                {draftValues.map((value) => (
+                  <div
+                    key={value}
+                    className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-line bg-surface px-2.5 py-1.5 text-2xs font-semibold text-ink"
                   >
-                    ×
-                  </button>
-                </span>
-              ))}
+                    <span>{value}</span>
 
-              {!form.values?.length && (
-                <span className="py-1 text-[10px] text-muted">
-                  No values configured yet.
-                </span>
-              )}
-            </div>
+                    <button
+                      type="button"
+                      className="rounded-full p-0.5 text-muted transition hover:bg-bg hover:text-ink"
+                      onClick={() => removeDraftValue(value)}
+                      aria-label={`Remove ${value}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-1 text-[10px] text-muted">
+                No values added yet. You can add them now or later.
+              </div>
+            )}
           </div>
         </div>
-      </form>
+
+        <div className="rounded-xl border border-primary-500/15 bg-primary-500/5 p-3">
+          <div className="text-[11px] font-bold text-ink">
+            Attribute setup
+          </div>
+
+          <p className="mt-0.5 text-[10px] leading-4 text-muted">
+            This creates the Attribute, connects it to{" "}
+            {selectedCategory?.name || "the selected Product Type"}, and
+            stores each allowed value separately.
+          </p>
+        </div>
+      </div>
     </Sheet>
   );
 }
 
-function DraftValues({ values, onRemove }) {
-  return (
-    <div className="mt-3 rounded-xl border border-line bg-bg/30 p-2.5">
-      {values.length ? (
-        <div className="overflow-x-auto scrollbar-thin">
-          <div className="flex w-max min-w-full flex-nowrap items-center gap-1.5">
-            {values.map((value) => (
-              <span
-                key={value.id}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-line bg-surface px-2.5 py-1.5 text-2xs font-semibold text-ink whitespace-nowrap"
-              >
-                {value.label}
+/* -------------------------------------------------------------------------- */
+/* EDIT ATTRIBUTE VALUES SHEET                                                */
+/* -------------------------------------------------------------------------- */
 
-                <button
-                  type="button"
-                  onClick={() => onRemove(value.id)}
-                  className="rounded-full px-1 text-muted hover:bg-red-50 hover:text-danger"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="py-1 text-[10px] text-muted">
-          No values added yet.
-        </div>
-      )}
-    </div>
-  );
-}
+function AttributeValuesSheet({
+  open,
+  onClose,
+  categoryId,
+  attributeId,
+  setCategoryId,
+  categories,
+}) {
+  const { data: attributes = [] } = useAttributes();
+  const { data: mappings = [] } = useCategoryAttributes(categoryId);
 
-function ExistingValues({ attributeId }) {
-  const { data: values = [], isLoading } =
-    useAttributeValues(attributeId);
-
+  const createValue = useCreateAttributeValue();
   const updateValue = useUpdateAttributeValue();
   const deleteValue = useDeleteAttributeValue();
-  const createValue = useCreateAttributeValue();
 
-  const [newValue, setNewValue] = useState("");
+  const [valueDraft, setValueDraft] = useState("");
   const [editingId, setEditingId] = useState("");
   const [editingLabel, setEditingLabel] = useState("");
 
-  const activeValues = values.filter(
-    (value) => value.isActive !== false,
+  const selectedCategory = categories.find(
+    (item) => item.record.id === categoryId,
   );
 
-  const addValue = async () => {
-    const label = newValue.trim();
+  /*
+   * For the current Product Type, prefer the standard attribute.
+   * If the selected row is a custom attribute, the first mapped attribute
+   * is used as the context for this sheet.
+   */
+  const config =
+    PRODUCT_TYPE_ATTRIBUTE_CONFIG[selectedCategory?.name] || null;
 
-    if (!label) return;
+  const attribute = useMemo(() => {
+    if (attributeId) {
+      return attributes.find((item) => item.id === attributeId) || null;
+    }
+
+    const expectedName = config?.attribute;
+
+    const standardMapping = mappings.find((mapping) => {
+      const candidate = attributes.find(
+        (attr) => attr.id === mapping.attributeId,
+      );
+
+      return (
+        candidate &&
+        expectedName &&
+        normalize(candidate.name) === normalize(expectedName)
+      );
+    });
+
+    if (standardMapping) {
+      return (
+        attributes.find(
+          (item) => item.id === standardMapping.attributeId,
+        ) || null
+      );
+    }
+
+    const firstMapping = mappings.find((mapping) =>
+      attributes.some((attr) => attr.id === mapping.attributeId),
+    );
+
+    return firstMapping
+      ? attributes.find((item) => item.id === firstMapping.attributeId) ||
+          null
+      : null;
+  }, [attributeId, mappings, attributes, config]);
+
+  const {
+    data: storedValues = [],
+    isLoading,
+  } = useAttributeValues(attribute?.id);
+
+  const activeValues = useMemo(
+    () =>
+      Array.isArray(storedValues)
+        ? storedValues.filter((value) => value?.isActive !== false)
+        : [],
+    [storedValues],
+  );
+
+  useEffect(() => {
+    if (!open) {
+      setValueDraft("");
+      setEditingId("");
+      setEditingLabel("");
+    }
+  }, [open, categoryId]);
+
+  const addValue = async () => {
+    const label = valueDraft.trim();
+
+    if (!label || !attribute?.id) return;
 
     if (
       activeValues.some(
         (value) =>
-          value.label?.toLowerCase() === label.toLowerCase(),
+          normalize(value?.label) === normalize(label),
       )
     ) {
       toast.error("This value already exists");
@@ -1135,14 +1095,14 @@ function ExistingValues({ attributeId }) {
 
     try {
       await createValue.mutateAsync({
-        attributeId,
+        attributeId: attribute.id,
         label,
-        code: makeValueCode(label, activeValues),
+        code: makeUniqueCode(label, activeValues),
         sortOrder: activeValues.length,
         isActive: true,
       });
 
-      setNewValue("");
+      setValueDraft("");
       toast.success("Value added");
     } catch (error) {
       toast.error(error?.message || "Could not add value");
@@ -1158,7 +1118,7 @@ function ExistingValues({ attributeId }) {
       activeValues.some(
         (item) =>
           item.id !== value.id &&
-          item.label?.toLowerCase() === label.toLowerCase(),
+          normalize(item?.label) === normalize(label),
       )
     ) {
       toast.error("This value already exists");
@@ -1170,7 +1130,7 @@ function ExistingValues({ attributeId }) {
         id: value.id,
         patch: {
           label,
-          attributeId,
+          attributeId: attribute.id,
         },
       });
 
@@ -1188,7 +1148,7 @@ function ExistingValues({ attributeId }) {
     try {
       await deleteValue.mutateAsync({
         id: value.id,
-        attributeId,
+        attributeId: attribute.id,
       });
 
       toast.success("Value deleted");
@@ -1198,101 +1158,194 @@ function ExistingValues({ attributeId }) {
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex gap-2">
-        <Input
-          value={newValue}
-          onChange={(event) => setNewValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              addValue();
-            }
-          }}
-          placeholder="Enter another value"
-          disabled={isLoading}
-        />
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title="Manage Attribute Values"
+      subtitle={
+        selectedCategory
+          ? `${selectedCategory.name} • ${
+              attribute?.name || config?.attribute || "Attribute"
+            }`
+          : "Manage allowed values"
+      }
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
 
-        <Button
-          type="button"
-          variant="subtle"
-          onClick={addValue}
-          disabled={!newValue.trim() || createValue.isPending}
-        >
-          <Plus className="h-4 w-4" />
-          Add
-        </Button>
-      </div>
+          <Button onClick={onClose}>
+            <Check className="h-4 w-4" />
+            Save Changes
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        <Field label="Product Type" required>
+          <Select
+            value={categoryId}
+            onChange={(event) => {
+              setCategoryId(event.target.value);
+              setValueDraft("");
+              setEditingId("");
+              setEditingLabel("");
+            }}
+          >
+            <option value="">Select product type</option>
 
-      <div className="overflow-x-auto scrollbar-thin rounded-xl border border-line bg-bg/30 p-2.5">
-        {activeValues.length ? (
-          <div className="flex w-max min-w-full flex-nowrap items-center gap-1.5">
-            {activeValues.map((value) => (
-              <div
-                key={value.id}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-line bg-surface px-2.5 py-1.5 text-2xs font-semibold text-ink whitespace-nowrap"
+            {categories.map((item) => (
+              <option
+                key={item.record.id}
+                value={item.record.id}
               >
-                {editingId === value.id ? (
-                  <>
-                    <Input
-                      value={editingLabel}
-                      onChange={(event) =>
-                        setEditingLabel(event.target.value)
-                      }
-                      autoFocus
-                      className="h-6 w-[110px] px-2 text-2xs"
-                    />
-
-                    <button
-                      type="button"
-                      className="rounded-full p-1 text-primary-600 hover:bg-primary-500/10"
-                      onClick={() => saveValue(value)}
-                    >
-                      <Check className="h-3 w-3" />
-                    </button>
-
-                    <button
-                      type="button"
-                      className="rounded-full p-1 text-muted hover:bg-bg"
-                      onClick={() => setEditingId("")}
-                    >
-                      ×
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span>{value.label}</span>
-
-                    <button
-                      type="button"
-                      className="rounded-full p-1 text-muted hover:bg-bg hover:text-ink"
-                      onClick={() => {
-                        setEditingId(value.id);
-                        setEditingLabel(value.label || "");
-                      }}
-                    >
-                      <Pencil className="h-3 w-3" />
-                    </button>
-
-                    <button
-                      type="button"
-                      className="rounded-full p-1 text-muted hover:bg-red-50 hover:text-danger"
-                      onClick={() => removeValue(value)}
-                    >
-                      ×
-                    </button>
-                  </>
-                )}
-              </div>
+                {item.name}
+              </option>
             ))}
+          </Select>
+        </Field>
+
+        <div className="rounded-xl border border-line bg-bg/50 p-3">
+          <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted">
+            Attribute
           </div>
-        ) : (
-          <div className="py-1 text-[10px] text-muted">
-            No values configured yet.
+
+          <div className="mt-1 text-sm font-bold text-ink">
+            {attribute?.name || config?.attribute || "—"}
           </div>
-        )}
+        </div>
+
+        <div className="border-t border-line pt-5">
+          <div className="mb-3">
+            <div className="text-xs font-bold text-ink">
+              Allowed Values
+            </div>
+
+            <p className="mt-0.5 text-[10px] leading-4 text-muted">
+              Add, edit or remove selectable values for this attribute.
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <Input
+              value={valueDraft}
+              onChange={(event) => setValueDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  addValue();
+                }
+              }}
+              placeholder="Enter value (e.g. 19mm)"
+              disabled={!attribute?.id || isLoading}
+              autoFocus
+            />
+
+            <Button
+              type="button"
+              variant="subtle"
+              onClick={addValue}
+              disabled={
+                !valueDraft.trim() ||
+                !attribute?.id ||
+                createValue.isPending
+              }
+            >
+              <Plus className="h-4 w-4" />
+              Add
+            </Button>
+          </div>
+
+          <div className="mt-3 overflow-x-auto rounded-xl border border-line bg-bg/30 p-2.5 scrollbar-thin">
+            {activeValues.length ? (
+              <div className="flex w-max min-w-full flex-nowrap items-center gap-1.5">
+                {activeValues.map((value) => (
+                  <div
+                    key={value.id}
+                    className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-line bg-surface px-2.5 py-1.5 text-2xs font-semibold text-ink"
+                  >
+                    {editingId === value.id ? (
+                      <>
+                        <Input
+                          value={editingLabel}
+                          onChange={(event) =>
+                            setEditingLabel(event.target.value)
+                          }
+                          className="h-6 w-[110px] px-2 text-2xs"
+                          autoFocus
+                        />
+
+                        <button
+                          type="button"
+                          className="rounded-full p-1 text-primary-600 hover:bg-primary-500/10"
+                          onClick={() => saveValue(value)}
+                          aria-label="Save value"
+                        >
+                          <Check className="h-3 w-3" />
+                        </button>
+
+                        <button
+                          type="button"
+                          className="rounded-full p-1 text-muted hover:bg-bg"
+                          onClick={() => {
+                            setEditingId("");
+                            setEditingLabel("");
+                          }}
+                          aria-label="Cancel editing"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span>{value.label}</span>
+
+                        <button
+                          type="button"
+                          className="rounded-full p-1 text-muted hover:bg-bg hover:text-ink"
+                          onClick={() => {
+                            setEditingId(value.id);
+                            setEditingLabel(value.label || "");
+                          }}
+                          aria-label={`Edit ${value.label}`}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+
+                        <button
+                          type="button"
+                          className="rounded-full p-1 text-muted hover:bg-red-50 hover:text-danger"
+                          onClick={() => removeValue(value)}
+                          aria-label={`Delete ${value.label}`}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-1 text-[10px] text-muted">
+                No values configured yet.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-primary-500/15 bg-primary-500/5 p-3">
+          <div className="text-[11px] font-bold text-ink">
+            Values are stored separately
+          </div>
+
+          <p className="mt-0.5 text-[10px] leading-4 text-muted">
+            Each allowed value is maintained independently and will be
+            available to Product and Billing forms.
+          </p>
+        </div>
       </div>
-    </div>
+    </Sheet>
   );
 }
 
