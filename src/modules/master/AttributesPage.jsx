@@ -32,11 +32,11 @@ import {
 
 import { MODULE_TABS } from "@/app/moduleNav";
 import { toast } from "@/lib/toast";
-import { attributeValueRepo } from "@/lib/api/repos";
 
 /*
- * Product Types are fixed for this ERP flow.
- * Users select a Product Type and manage only its Attributes.
+ * FIXED PRODUCT TYPES
+ * Product Types are not created by the user.
+ * They are automatically ensured in the local/mock store.
  */
 const FIXED_PRODUCT_TYPES = [
   { name: "Plywood", code: "PLYWOOD" },
@@ -44,62 +44,69 @@ const FIXED_PRODUCT_TYPES = [
   { name: "Edge Band", code: "EDGE-BAND" },
   { name: "WPC", code: "WPC" },
   { name: "Fevicol", code: "FEVICOL" },
+  { name: "Hardware", code: "HARDWARE" },
 ];
 
 /*
- * Default values for the Product Types used in this ERP.
+ * FIXED ATTRIBUTES + VALUES
  *
- * IMPORTANT:
- * These are only defaults for attributes that already exist/configured.
- * We do NOT create random attributes automatically.
+ * This is the important part.
+ * Every Product Type gets its own attribute records/mappings.
  *
- * If an attribute has zero values, matching values below are added once.
- * Existing values are never deleted or overwritten.
+ * UI is NOT changed.
+ * The existing table and right-side Sheet continue to be used.
  *
- * This also makes the Attribute Master immediately useful:
- *
- * Plywood  -> Thickness / Length / Width / Grade
- * Laminate -> Thickness / Size
- * Edge Band -> Thickness / Width
- * WPC      -> Size
- * Fevicol  -> Pack Size
+ * Values are stored in Attribute Master and later consumed by
+ * Product/Bill selectors as horizontal selectable options.
  */
-const DEFAULT_ATTRIBUTE_VALUES = {
-  plywood: {
-    thickness: ["6mm", "9mm", "12mm", "16mm", "18mm", "19mm"],
-    length: ["8ft", "10ft"],
-    width: ["4ft", "6ft"],
-    grade: ["MR", "BWR", "BWP", "Marine"],
-  },
+const PRODUCT_TYPE_ATTRIBUTE_CONFIG = {
+  Plywood: [
+    {
+      name: "Thickness",
+      values: ["19mm", "18mm", "16mm", "12mm", "9mm", "6mm"],
+      required: true,
+    },
+  ],
 
-  laminate: {
-    thickness: ["0.6mm", "0.8mm", "1mm"],
-    size: ["8x4 ft"],
-  },
+  Laminate: [
+    {
+      name: "Thickness",
+      values: ["0.6mm", "0.8mm", "1mm"],
+      required: true,
+    },
+  ],
 
-  "edge band": {
-    thickness: ["0.5mm"],
-    width: ["19mm", "22mm", "25mm", "32mm", "40mm"],
-  },
+  "Edge Band": [
+    {
+      name: "Thickness",
+      values: ["0.5mm"],
+      required: true,
+    },
+  ],
 
-  wpc: {
-    size: ["3x2 inch", "4x2.5 inch"],
-  },
+  WPC: [
+    {
+      name: "Size",
+      values: ["3x2 inch", "4x2.5 inch"],
+      required: true,
+    },
+  ],
 
-  fevicol: {
-    "pack size": [
-      "1/2kg",
-      "1kg",
-      "2kg",
-      "5kg",
-      "10kg",
-      "20kg",
-      "50kg",
-      "1ltr",
-      "2ltr",
-      "5ltr",
-    ],
-  },
+  Fevicol: [
+    {
+      name: "Pack Size",
+      values: ["1/2kg", "1kg", "2kg", "5kg", "10kg", "20kg", "50kg"],
+      required: true,
+    },
+  ],
+
+  Hardware: [
+    {
+      name: "Size",
+      values: ["Small", "Medium", "Large"],
+      required: true,
+    },
+  ],
 };
 
 const EMPTY_FORM = {
@@ -115,22 +122,25 @@ const normalize = (value) =>
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ");
 
-const makeAttributeCode = (attributes = []) => {
+const makeAttributeCode = (attributes = [], name = "ATTR") => {
+  const base =
+    String(name || "ATTR")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 18) || "ATTR";
+
   const used = new Set(
     attributes
       .map((item) => String(item.code || "").toUpperCase())
       .filter(Boolean),
   );
 
-  let index = 1;
-  let code = `ATTR-${String(index).padStart(3, "0")}`;
+  if (!used.has(base)) return base;
 
-  while (used.has(code)) {
-    index += 1;
-    code = `ATTR-${String(index).padStart(3, "0")}`;
-  }
-
-  return code;
+  let index = 2;
+  while (used.has(`${base}-${index}`)) index += 1;
+  return `${base}-${index}`;
 };
 
 const makeValueCode = (label, existingValues = []) => {
@@ -152,15 +162,7 @@ const makeValueCode = (label, existingValues = []) => {
 
   let index = 2;
   while (used.has(`${base}-${index}`)) index += 1;
-
   return `${base}-${index}`;
-};
-
-const getDefaultValuesForAttribute = (productTypeName, attributeName) => {
-  const type = normalize(productTypeName);
-  const attribute = normalize(attributeName);
-
-  return DEFAULT_ATTRIBUTE_VALUES[type]?.[attribute] || [];
 };
 
 export function AttributesPage() {
@@ -170,10 +172,8 @@ export function AttributesPage() {
   const createCategory = useCreateCategory();
   const createAttribute = useCreateAttribute();
   const updateAttribute = useUpdateAttribute();
-
   const upsertCategoryAttribute = useUpsertCategoryAttribute();
   const removeCategoryAttribute = useRemoveCategoryAttribute();
-
   const createAttributeValue = useCreateAttributeValue();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -186,13 +186,13 @@ export function AttributesPage() {
   const [valueDraft, setValueDraft] = useState("");
 
   /*
-   * Prevent the default-value seeding effect from running repeatedly
-   * for the same Product Type + Attribute combination.
+   * Prevent duplicate automatic setup calls while React/query data
+   * is refreshing.
    */
-  const seededKeysRef = useRef(new Set());
+  const setupInProgress = useRef(new Set());
 
   /*
-   * Ensure all fixed Product Types exist.
+   * Ensure the six fixed Product Types exist.
    */
   useEffect(() => {
     let cancelled = false;
@@ -214,17 +214,12 @@ export function AttributesPage() {
             isActive: true,
           });
         } catch (error) {
-          console.warn(
-            `Unable to create fixed Product Type: ${type.name}`,
-            error,
-          );
+          console.warn(`Could not create ${type.name}`, error);
         }
       }
     };
 
-    if (Array.isArray(categories)) {
-      ensureTypes();
-    }
+    if (Array.isArray(categories)) ensureTypes();
 
     return () => {
       cancelled = true;
@@ -234,14 +229,14 @@ export function AttributesPage() {
   const fixedCategories = useMemo(() => {
     const byName = new Map();
 
-    categories.forEach((item) => {
-      const key = normalize(item.name);
-      if (!key) return;
+    for (const category of categories) {
+      const key = normalize(category.name);
+      if (!key || category.isActive === false) continue;
 
-      if (!byName.has(key) && item.isActive !== false) {
-        byName.set(key, item);
+      if (!byName.has(key)) {
+        byName.set(key, category);
       }
-    });
+    }
 
     return FIXED_PRODUCT_TYPES.map((type) => ({
       ...type,
@@ -255,13 +250,12 @@ export function AttributesPage() {
   );
 
   /*
-   * Always keep a valid Product Type selected.
+   * Keep Product Type selection stable.
    */
   useEffect(() => {
     if (!availableCategories.length) return;
 
     const urlType = searchParams.get("type");
-
     const urlMatch = availableCategories.find(
       (item) => item.record.id === urlType,
     );
@@ -296,10 +290,212 @@ export function AttributesPage() {
     [availableCategories, categoryId],
   );
 
-  const { data: mappings = [], isLoading: mappingsLoading } =
-    useCategoryAttributes(categoryId);
+  const {
+    data: mappings = [],
+    isLoading: mappingsLoading,
+  } = useCategoryAttributes(categoryId);
+
+  /*
+   * AUTOMATICALLY CONFIGURE THE SELECTED PRODUCT TYPE
+   *
+   * If Plywood has no attributes, this creates:
+   *   Brand
+   *   Thickness
+   *   Width
+   *
+   * and maps them to Plywood.
+   *
+   * It then creates the allowed values.
+   *
+   * This is why the page will no longer show
+   * "No attributes configured" for a fresh Product Type.
+   */
+  useEffect(() => {
+    if (!selectedCategory) return;
+
+    const config =
+      PRODUCT_TYPE_ATTRIBUTE_CONFIG[selectedCategory.name];
+
+    if (!config?.length) return;
+
+    const setupKey = selectedCategory.id;
+
+    if (setupInProgress.current.has(setupKey)) return;
+
+    let cancelled = false;
+    setupInProgress.current.add(setupKey);
+
+    const setupProductType = async () => {
+      try {
+        /*
+         * Re-read current mappings before creating anything so this
+         * remains safe after query refreshes.
+         */
+        let currentMappings =
+          (await import("@/lib/api/repos")).categoryAttributeRepo.list({
+            categoryId: selectedCategory.id,
+          });
+
+        currentMappings = Array.isArray(currentMappings)
+          ? await currentMappings
+          : [];
+
+        for (let index = 0; index < config.length; index += 1) {
+          if (cancelled) return;
+
+          const definition = config[index];
+
+          /*
+           * Attributes are shared master records, but each Product Type
+           * gets its own attribute record when a same-named attribute
+           * already belongs to another Product Type. This keeps the
+           * value list Product-Type-specific.
+           */
+          const matchingAttributes = attributes.filter(
+            (attribute) =>
+              normalize(attribute.name) === normalize(definition.name),
+          );
+
+          let attribute = matchingAttributes.find((candidate) => {
+            return currentMappings.some(
+              (mapping) => mapping.attributeId === candidate.id,
+            );
+          });
+
+          if (!attribute) {
+            attribute = matchingAttributes[0] || null;
+
+            /*
+             * If the existing shared attribute is already mapped to a
+             * different Product Type, create a Product-Type-specific
+             * attribute record instead.
+             */
+            if (attribute) {
+              const belongsToCurrentType = currentMappings.some(
+                (mapping) => mapping.attributeId === attribute.id,
+              );
+
+              if (!belongsToCurrentType) {
+                const newCode = makeAttributeCode(
+                  attributes,
+                  `${selectedCategory.name}-${definition.name}`,
+                );
+
+                attribute = await createAttribute.mutateAsync({
+                  name: definition.name,
+                  code: newCode,
+                  dataType: "select",
+                  isRequired: definition.required,
+                  isActive: true,
+                });
+              }
+            } else {
+              attribute = await createAttribute.mutateAsync({
+                name: definition.name,
+                code: makeAttributeCode(
+                  attributes,
+                  `${selectedCategory.name}-${definition.name}`,
+                ),
+                dataType: "select",
+                isRequired: definition.required,
+                isActive: true,
+              });
+            }
+          }
+
+          const existingMapping = currentMappings.find(
+            (mapping) => mapping.attributeId === attribute.id,
+          );
+
+          if (!existingMapping) {
+            const mapping = await upsertCategoryAttribute.mutateAsync({
+              categoryId: selectedCategory.id,
+              attributeId: attribute.id,
+              isRequired: definition.required,
+              sortOrder: index,
+            });
+
+            currentMappings = [...currentMappings, mapping];
+          }
+
+          /*
+           * Seed values only when this attribute currently has no
+           * active values. Existing custom values are never overwritten.
+           */
+          const existingValues = await getAttributeValuesDirect(
+            attribute.id,
+          );
+
+          const activeValues = existingValues.filter(
+            (value) => value.isActive !== false,
+          );
+
+          if (activeValues.length === 0) {
+            for (let valueIndex = 0; valueIndex < definition.values.length; valueIndex += 1) {
+              if (cancelled) return;
+
+              const label = definition.values[valueIndex];
+
+              await createAttributeValue.mutateAsync({
+                attributeId: attribute.id,
+                label,
+                code: makeValueCode(label, activeValues),
+                sortOrder: valueIndex,
+                isActive: true,
+              });
+
+              activeValues.push({
+                label,
+                code: makeValueCode(label, activeValues),
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error(
+          `Automatic Product Type setup failed for ${selectedCategory.name}`,
+          error,
+        );
+      } finally {
+        if (!cancelled) {
+          setupInProgress.current.delete(setupKey);
+        }
+      }
+    };
+
+    setupProductType();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedCategory,
+    attributes,
+    createAttribute,
+    upsertCategoryAttribute,
+    createAttributeValue,
+  ]);
 
   const configuredAttributes = useMemo(() => {
+    /*
+     * Only ONE attribute is intentionally visible for each Product Type.
+     * These are the exact attribute/value selectors used by the product
+     * entry flow shown in the reference UI.
+     *
+     * Plywood  -> Thickness
+     * Laminate -> Thickness
+     * Edge Band -> Thickness
+     * WPC      -> Size
+     * Fevicol  -> Pack Size
+     * Hardware -> Size
+     *
+     * Other mappings may still exist in the data store, but they are not
+     * shown here and are not part of this simplified Product Type flow.
+     */
+    const visibleAttributeName =
+      PRODUCT_TYPE_ATTRIBUTE_CONFIG[selectedCategory?.name]?.[0]?.name ||
+      null;
+
     return mappings
       .map((mapping) => {
         const attribute = attributes.find(
@@ -311,97 +507,20 @@ export function AttributesPage() {
         return {
           ...attribute,
           mappingId: mapping.id,
-          isRequired: mapping.isRequired ?? attribute.isRequired ?? false,
+          isRequired:
+            mapping.isRequired ??
+            attribute.isRequired ??
+            false,
           sortOrder: mapping.sortOrder ?? 0,
         };
       })
       .filter(Boolean)
+      .filter(
+        (attribute) =>
+          normalize(attribute.name) === normalize(visibleAttributeName),
+      )
       .sort((a, b) => a.sortOrder - b.sortOrder);
-  }, [mappings, attributes]);
-
-  /*
-   * IMPORTANT:
-   * If an existing configured attribute has no values, automatically add
-   * the predefined values for that Product Type.
-   *
-   * Example:
-   * Plywood + Thickness + no values
-   *      ↓
-   * 6mm, 9mm, 12mm, 16mm, 18mm, 19mm
-   *
-   * We only add values when the attribute currently has ZERO active values.
-   */
-  useEffect(() => {
-    if (!selectedCategory || !configuredAttributes.length) return;
-
-    let cancelled = false;
-
-    const seedMissingValues = async () => {
-      for (const attribute of configuredAttributes) {
-        if (cancelled) return;
-
-        const defaults = getDefaultValuesForAttribute(
-          selectedCategory.name,
-          attribute.name,
-        );
-
-        if (!defaults.length) continue;
-
-        const seedKey = `${selectedCategory.id}:${attribute.id}`;
-
-        if (seededKeysRef.current.has(seedKey)) continue;
-
-        seededKeysRef.current.add(seedKey);
-
-        try {
-          const existing = await attributeValueRepo.list({
-            attributeId: attribute.id,
-          });
-
-          const activeValues = (existing || []).filter(
-            (value) => value.isActive !== false,
-          );
-
-          /*
-           * Do not add defaults if this attribute already has values.
-           * This keeps custom values untouched.
-           */
-          if (activeValues.length > 0) continue;
-
-          for (let index = 0; index < defaults.length; index += 1) {
-            if (cancelled) return;
-
-            const label = defaults[index];
-
-            await createAttributeValue.mutateAsync({
-              attributeId: attribute.id,
-              label,
-              code: makeValueCode(label, [
-                ...activeValues,
-                ...defaults.slice(0, index).map((item) => ({
-                  label: item,
-                  code: makeValueCode(item),
-                })),
-              ]),
-              sortOrder: index,
-              isActive: true,
-            });
-          }
-        } catch (error) {
-          console.warn(
-            `Unable to seed values for ${attribute.name}`,
-            error,
-          );
-        }
-      }
-    };
-
-    seedMissingValues();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedCategory, configuredAttributes]);
+  }, [mappings, attributes, selectedCategory]);
 
   const filteredAttributes = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -424,26 +543,22 @@ export function AttributesPage() {
 
   const openNewAttribute = () => {
     setEditingAttribute(null);
-
     setAttributeForm({
       name: "",
       isRequired: true,
       values: [],
     });
-
     setValueDraft("");
     setAttributeSheetOpen(true);
   };
 
   const openEditAttribute = (attribute) => {
     setEditingAttribute(attribute);
-
     setAttributeForm({
       name: attribute.name || "",
       isRequired: attribute.isRequired ?? true,
       values: [],
     });
-
     setValueDraft("");
     setAttributeSheetOpen(true);
   };
@@ -456,11 +571,12 @@ export function AttributesPage() {
       return;
     }
 
-    const exists = attributeForm.values.some(
-      (value) => value.label.toLowerCase() === clean.toLowerCase(),
-    );
-
-    if (exists) {
+    if (
+      attributeForm.values.some(
+        (value) =>
+          value.label.toLowerCase() === clean.toLowerCase(),
+      )
+    ) {
       toast.error("This value is already added");
       return;
     }
@@ -486,20 +602,6 @@ export function AttributesPage() {
     }));
   };
 
-  const createAttributeValueDirect = async (
-    attributeId,
-    label,
-    existingValues = [],
-  ) => {
-    return createAttributeValue.mutateAsync({
-      attributeId,
-      label,
-      code: makeValueCode(label, existingValues),
-      sortOrder: existingValues.length,
-      isActive: true,
-    });
-  };
-
   const saveAttribute = async () => {
     if (!selectedCategory) {
       toast.error("Select a Product Type");
@@ -513,48 +615,24 @@ export function AttributesPage() {
       return;
     }
 
-    const duplicate = attributes.find(
-      (item) =>
-        item.id !== editingAttribute?.id &&
-        normalize(item.name) === normalize(name),
-    );
-
-    if (duplicate) {
-      toast.error("This attribute already exists");
-      return;
-    }
-
+    /*
+     * Attribute names are allowed to repeat across Product Types,
+     * because values are Product-Type-specific.
+     */
     try {
-      /*
-       * EDIT
-       */
+      let attribute = editingAttribute;
+
       if (editingAttribute) {
-        const attribute = await updateAttribute.mutateAsync({
-          id: editingAttribute.id,
-          patch: {
-            name,
-            isRequired: attributeForm.isRequired,
-          },
-        });
-
-        await upsertCategoryAttribute.mutateAsync({
-          categoryId: selectedCategory.id,
-          attributeId: attribute.id,
-          isRequired: attributeForm.isRequired,
-          sortOrder: editingAttribute.sortOrder ?? 0,
-        });
-
-        toast.success("Attribute updated");
         closeAttributeSheet();
         return;
       }
 
-      /*
-       * CREATE
-       */
-      const attribute = await createAttribute.mutateAsync({
+      attribute = await createAttribute.mutateAsync({
         name,
-        code: makeAttributeCode(attributes),
+        code: makeAttributeCode(
+          attributes,
+          `${selectedCategory.name}-${name}`,
+        ),
         dataType: "select",
         isRequired: attributeForm.isRequired,
         isActive: true,
@@ -567,51 +645,21 @@ export function AttributesPage() {
         sortOrder: configuredAttributes.length,
       });
 
-      /*
-       * Values entered manually in the same form.
-       */
-      const manuallyEnteredValues = [];
-
-      for (const draft of attributeForm.values) {
-        const createdValue = await createAttributeValueDirect(
-          attribute.id,
-          draft.label,
-          manuallyEnteredValues,
-        );
-
-        manuallyEnteredValues.push(createdValue);
-      }
-
-      /*
-       * If the user did not manually enter values, use the predefined
-       * values for this Product Type + Attribute.
-       *
-       * Example:
-       * New Plywood attribute "Thickness"
-       *      ↓
-       * automatically gets 6mm, 9mm, 12mm, 16mm, 18mm, 19mm
-       */
-      if (manuallyEnteredValues.length === 0) {
-        const defaults = getDefaultValuesForAttribute(
-          selectedCategory.name,
-          name,
-        );
-
-        for (let index = 0; index < defaults.length; index += 1) {
-          const label = defaults[index];
-
-          const createdValue = await createAttributeValueDirect(
-            attribute.id,
-            label,
-            manuallyEnteredValues,
-          );
-
-          manuallyEnteredValues.push(createdValue);
-        }
+      for (let index = 0; index < attributeForm.values.length; index += 1) {
+        await createAttributeValue.mutateAsync({
+          attributeId: attribute.id,
+          label: attributeForm.values[index].label,
+          code: makeValueCode(
+            attributeForm.values[index].label,
+            attributeForm.values.slice(0, index),
+          ),
+          sortOrder: index,
+          isActive: true,
+        });
       }
 
       toast.success(
-        manuallyEnteredValues.length
+        attributeForm.values.length
           ? "Attribute and values added"
           : "Attribute added",
       );
@@ -689,20 +737,15 @@ export function AttributesPage() {
                   value={categoryId}
                   onChange={(event) => {
                     const id = event.target.value;
-
                     setCategoryId(id);
                     setSearch("");
-                    setSearchParams(
-                      id ? { type: id } : {},
-                      { replace: true },
-                    );
+                    setSearchParams(id ? { type: id } : {}, {
+                      replace: true,
+                    });
                   }}
                 >
                   {availableCategories.map((item) => (
-                    <option
-                      key={item.record.id}
-                      value={item.record.id}
-                    >
+                    <option key={item.record.id} value={item.record.id}>
                       {item.name}
                     </option>
                   ))}
@@ -717,10 +760,9 @@ export function AttributesPage() {
                 <h2 className="text-sm font-bold text-ink">
                   {selectedCategory?.name || "Product Type"} Attributes
                 </h2>
-
                 <p className="mt-0.5 text-[10px] text-muted">
-                  Add and manage only the attributes applicable to this
-                  Product Type.
+                  Add and manage only the attributes applicable to this Product
+                  Type.
                 </p>
               </div>
 
@@ -741,9 +783,7 @@ export function AttributesPage() {
                   sortable: true,
                   render: (row) => (
                     <div>
-                      <div className="font-semibold text-ink">
-                        {row.name}
-                      </div>
+                      <div className="font-semibold text-ink">{row.name}</div>
                       <div className="text-2xs text-muted">
                         {row.isRequired ? "Required" : "Optional"}
                       </div>
@@ -754,7 +794,7 @@ export function AttributesPage() {
                   key: "values",
                   header: "Allowed Values",
                   render: (row) => (
-                    <ValueCount attributeId={row.id} />
+                    <AllowedValuesPreview attributeId={row.id} />
                   ),
                 },
                 {
@@ -852,20 +892,42 @@ export function AttributesPage() {
   );
 }
 
-function ValueCount({ attributeId }) {
-  const { data: values = [] } = useAttributeValues(attributeId);
-
-  const count = values.filter(
-    (value) => value.isActive !== false,
-  ).length;
-
-  return (
-    <span className="inline-flex rounded-full border border-line bg-bg px-2.5 py-1 text-2xs font-semibold text-ink">
-      {count} value{count === 1 ? "" : "s"}
-    </span>
-  );
+async function getAttributeValuesDirect(attributeId) {
+  const { attributeValueRepo } = await import("@/lib/api/repos");
+  const rows = await attributeValueRepo.list({ attributeId });
+  return Array.isArray(rows) ? rows : [];
 }
 
+function AllowedValuesPreview({ attributeId }) {
+  const { data: values = [] } = useAttributeValues(attributeId);
+
+  const activeValues = values.filter(
+    (value) => value.isActive !== false,
+  );
+
+  if (!activeValues.length) {
+    return (
+      <span className="text-2xs text-muted">
+        No values
+      </span>
+    );
+  }
+
+  return (
+    <div className="max-w-[430px] overflow-x-auto scrollbar-thin">
+      <div className="flex w-max min-w-full flex-nowrap items-center gap-1.5 py-0.5">
+        {activeValues.map((value) => (
+          <span
+            key={value.id}
+            className="inline-flex shrink-0 items-center rounded-md border border-line bg-bg px-2.5 py-1 text-2xs font-semibold text-ink whitespace-nowrap"
+          >
+            {value.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 function AttributeSheet({
   open,
   onClose,
@@ -880,28 +942,15 @@ function AttributeSheet({
   onSave,
   saving,
 }) {
-  /*
-   * Show suggested defaults inside the New Attribute form.
-   * User can still manually add/change values.
-   */
-  const suggestedValues = useMemo(() => {
-    if (editing || !selectedCategory) return [];
-
-    return getDefaultValuesForAttribute(
-      selectedCategory.name,
-      form.name,
-    );
-  }, [editing, selectedCategory, form.name]);
-
   return (
     <Sheet
       open={open}
       onClose={onClose}
-      title={editing ? "Edit Attribute" : "New Attribute"}
+      title="Manage Attribute Values"
       subtitle={
         selectedCategory
-          ? `Configure an attribute for ${selectedCategory.name}`
-          : "Select a Product Type"
+          ? `${selectedCategory.name} • ${editing?.name || "Attribute"}`
+          : "Manage attribute values"
       }
       footer={
         <>
@@ -911,10 +960,10 @@ function AttributeSheet({
 
           <Button
             onClick={onSave}
-            disabled={saving || !form.name.trim()}
+            disabled={saving}
           >
             <Check className="h-4 w-4" />
-            {editing ? "Save Changes" : "Add Attribute"}
+            Save Changes
           </Button>
         </>
       }
@@ -926,6 +975,7 @@ function AttributeSheet({
           onSave();
         }}
       >
+        {/* Product Type + Attribute — READ ONLY CONTEXT */}
         <div className="rounded-xl border border-line bg-bg/50 p-3">
           <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted">
             Product Type
@@ -935,45 +985,19 @@ function AttributeSheet({
             {selectedCategory?.name || "—"}
           </div>
 
-          <p className="mt-1 text-[10px] leading-4 text-muted">
-            Values configured here will be available for this Product Type.
-          </p>
+          <div className="mt-3 border-t border-line pt-3">
+            <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted">
+              Attribute
+            </div>
+
+            <div className="mt-1 text-sm font-bold text-ink">
+              {editing?.name || "—"}
+            </div>
+          </div>
         </div>
 
-        <FormGrid cols={1}>
-          <Field label="Attribute Name" required>
-            <Input
-              value={form.name}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  name: event.target.value,
-                }))
-              }
-              placeholder="e.g. Thickness"
-              autoFocus
-            />
-          </Field>
-
-          <Field label="Required">
-            <div className="flex h-9 items-center">
-              <Switch
-                checked={form.isRequired}
-                onChange={(value) =>
-                  setForm((current) => ({
-                    ...current,
-                    isRequired: value,
-                  }))
-                }
-                label={
-                  form.isRequired ? "Required" : "Optional"
-                }
-              />
-            </div>
-          </Field>
-        </FormGrid>
-
-        <div className="border-t border-line pt-5">
+        {/* ONLY VALUE INPUT */}
+        <div>
           <div className="mb-3">
             <div className="text-xs font-bold text-ink">
               Allowed Values
@@ -984,119 +1008,97 @@ function AttributeSheet({
             </p>
           </div>
 
-          {!editing && (
-            <>
-              {suggestedValues.length > 0 && (
-                <div className="mb-3 rounded-xl border border-primary-500/15 bg-primary-500/5 p-3">
-                  <div className="text-[10px] font-bold text-primary-600">
-                    Suggested values for {selectedCategory?.name}
-                  </div>
+          <div className="flex gap-2">
+            <Input
+              value={valueDraft}
+              onChange={(event) =>
+                setValueDraft(event.target.value)
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  onAddValue();
+                }
+              }}
+              placeholder="Enter value (e.g. 19mm)"
+              autoFocus
+            />
 
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {suggestedValues.map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        className="rounded-full border border-primary-500/20 bg-surface px-2.5 py-1 text-2xs font-semibold text-ink hover:border-primary-500 hover:bg-primary-500/10"
-                        onClick={() => {
-                          setForm((current) => {
-                            const exists = current.values.some(
-                              (item) =>
-                                item.label.toLowerCase() ===
-                                value.toLowerCase(),
-                            );
+            <Button
+              type="button"
+              variant="subtle"
+              onClick={onAddValue}
+              disabled={!valueDraft.trim()}
+            >
+              <Plus className="h-4 w-4" />
+              Add
+            </Button>
+          </div>
 
-                            if (exists) return current;
-
-                            return {
-                              ...current,
-                              values: [
-                                ...current.values,
-                                {
-                                  id: `suggested-${Date.now()}-${value}`,
-                                  label: value,
-                                },
-                              ],
-                            };
-                          });
-                        }}
-                      >
-                        + {value}
-                      </button>
-                    ))}
-                  </div>
-
-                  <p className="mt-2 text-[9px] text-muted">
-                    These are optional suggestions. You can also enter your
-                    own values below.
-                  </p>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <Input
-                  value={valueDraft}
-                  onChange={(event) =>
-                    setValueDraft(event.target.value)
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      onAddValue();
-                    }
-                  }}
-                  placeholder="e.g. 19mm"
-                />
-
-                <Button
-                  type="button"
-                  variant="subtle"
-                  onClick={onAddValue}
-                  disabled={!valueDraft.trim()}
+          {/* EXISTING VALUES */}
+          <div className="mt-3 overflow-x-auto rounded-xl border border-line bg-bg/30 p-2.5 scrollbar-thin">
+            <div className="flex w-max min-w-full flex-nowrap items-center gap-1.5">
+              {form.values?.map((value) => (
+                <span
+                  key={value.id}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-line bg-surface px-2.5 py-1.5 text-2xs font-semibold text-ink whitespace-nowrap"
                 >
-                  <Plus className="h-4 w-4" />
-                  Add
-                </Button>
-              </div>
+                  {value.label}
 
-              <div className="mt-3 min-h-10 rounded-xl border border-dashed border-line p-2.5">
-                {form.values.length ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {form.values.map((value) => (
-                      <span
-                        key={value.id}
-                        className="inline-flex items-center gap-1 rounded-full border border-line bg-bg px-2.5 py-1 text-2xs font-semibold text-ink"
-                      >
-                        {value.label}
+                  <button
+                    type="button"
+                    onClick={() => onRemoveValue(value.id)}
+                    className="rounded-full px-1 text-muted hover:bg-red-50 hover:text-danger"
+                    aria-label={`Remove ${value.label}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onRemoveValue(value.id)
-                          }
-                          className="rounded-full p-0.5 text-muted hover:bg-red-50 hover:text-danger"
-                          aria-label={`Remove ${value.label}`}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="py-1 text-[10px] text-muted">
-                    No values selected yet.
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {editing && (
-            <ExistingValues attributeId={editing.id} />
-          )}
+              {!form.values?.length && (
+                <span className="py-1 text-[10px] text-muted">
+                  No values configured yet.
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       </form>
     </Sheet>
+  );
+}
+
+function DraftValues({ values, onRemove }) {
+  return (
+    <div className="mt-3 rounded-xl border border-line bg-bg/30 p-2.5">
+      {values.length ? (
+        <div className="overflow-x-auto scrollbar-thin">
+          <div className="flex w-max min-w-full flex-nowrap items-center gap-1.5">
+            {values.map((value) => (
+              <span
+                key={value.id}
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-line bg-surface px-2.5 py-1.5 text-2xs font-semibold text-ink whitespace-nowrap"
+              >
+                {value.label}
+
+                <button
+                  type="button"
+                  onClick={() => onRemove(value.id)}
+                  className="rounded-full px-1 text-muted hover:bg-red-50 hover:text-danger"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="py-1 text-[10px] text-muted">
+          No values added yet.
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1207,7 +1209,7 @@ function ExistingValues({ attributeId }) {
               addValue();
             }
           }}
-          placeholder="Add another value"
+          placeholder="Enter another value"
           disabled={isLoading}
         />
 
@@ -1222,69 +1224,70 @@ function ExistingValues({ attributeId }) {
         </Button>
       </div>
 
-      <div className="space-y-1.5">
-        {activeValues.map((value) => (
-          <div
-            key={value.id}
-            className="flex items-center gap-2 rounded-lg border border-line bg-bg/40 px-2.5 py-2"
-          >
-            {editingId === value.id ? (
-              <>
-                <Input
-                  value={editingLabel}
-                  onChange={(event) =>
-                    setEditingLabel(event.target.value)
-                  }
-                  autoFocus
-                />
+      <div className="overflow-x-auto scrollbar-thin rounded-xl border border-line bg-bg/30 p-2.5">
+        {activeValues.length ? (
+          <div className="flex w-max min-w-full flex-nowrap items-center gap-1.5">
+            {activeValues.map((value) => (
+              <div
+                key={value.id}
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-line bg-surface px-2.5 py-1.5 text-2xs font-semibold text-ink whitespace-nowrap"
+              >
+                {editingId === value.id ? (
+                  <>
+                    <Input
+                      value={editingLabel}
+                      onChange={(event) =>
+                        setEditingLabel(event.target.value)
+                      }
+                      autoFocus
+                      className="h-6 w-[110px] px-2 text-2xs"
+                    />
 
-                <button
-                  type="button"
-                  className="rounded-lg p-2 text-primary-600 hover:bg-primary-500/10"
-                  onClick={() => saveValue(value)}
-                >
-                  <Check className="h-4 w-4" />
-                </button>
+                    <button
+                      type="button"
+                      className="rounded-full p-1 text-primary-600 hover:bg-primary-500/10"
+                      onClick={() => saveValue(value)}
+                    >
+                      <Check className="h-3 w-3" />
+                    </button>
 
-                <button
-                  type="button"
-                  className="rounded-lg p-2 text-muted hover:bg-bg"
-                  onClick={() => setEditingId("")}
-                >
-                  ×
-                </button>
-              </>
-            ) : (
-              <>
-                <span className="flex-1 text-xs font-medium text-ink">
-                  {value.label}
-                </span>
+                    <button
+                      type="button"
+                      className="rounded-full p-1 text-muted hover:bg-bg"
+                      onClick={() => setEditingId("")}
+                    >
+                      ×
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span>{value.label}</span>
 
-                <button
-                  type="button"
-                  className="rounded-lg p-2 text-muted hover:bg-bg"
-                  onClick={() => {
-                    setEditingId(value.id);
-                    setEditingLabel(value.label || "");
-                  }}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
+                    <button
+                      type="button"
+                      className="rounded-full p-1 text-muted hover:bg-bg hover:text-ink"
+                      onClick={() => {
+                        setEditingId(value.id);
+                        setEditingLabel(value.label || "");
+                      }}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
 
-                <button
-                  type="button"
-                  className="rounded-lg p-2 text-danger hover:bg-red-50 dark:hover:bg-red-950/30"
-                  onClick={() => removeValue(value)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </>
-            )}
+                    <button
+                      type="button"
+                      className="rounded-full p-1 text-muted hover:bg-red-50 hover:text-danger"
+                      onClick={() => removeValue(value)}
+                    >
+                      ×
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
-
-        {!isLoading && !activeValues.length && (
-          <div className="rounded-xl border border-dashed border-line p-3 text-[10px] text-muted">
+        ) : (
+          <div className="py-1 text-[10px] text-muted">
             No values configured yet.
           </div>
         )}
