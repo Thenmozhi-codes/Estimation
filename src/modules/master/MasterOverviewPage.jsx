@@ -27,8 +27,8 @@ const RESOURCES = [
     key: "product-types",
     title: "Product Types",
     description:
-      "Define the types of products your business sells.",
-    path: "/master/product-types",
+      "Define product types and the attributes that apply to each.",
+    path: "/master/attributes",
     icon: Layers3,
     tone: "indigo",
   },
@@ -36,7 +36,7 @@ const RESOURCES = [
     key: "attributes",
     title: "Attributes",
     description:
-      "Define reusable fields and values for products.",
+      "Define reusable fields and allowed values for products.",
     path: "/master/attributes",
     icon: Boxes,
     tone: "violet",
@@ -45,7 +45,7 @@ const RESOURCES = [
     key: "products",
     title: "Products",
     description:
-      "Manage products, variants, pricing and stock.",
+      "Create products by name and Product Type. Attributes flow in automatically.",
     path: "/master/products",
     icon: Package,
     tone: "emerald",
@@ -107,7 +107,6 @@ export function MasterOverviewPage() {
       <ModuleTabs tabs={MODULE_TABS.master} />
 
       <div className="p-4 md:p-6 pb-24 md:pb-8">
-        {/* Intro */}
         <div className="mb-5">
           <div className="text-xs font-semibold text-muted">
             Business setup
@@ -118,12 +117,11 @@ export function MasterOverviewPage() {
           </h2>
 
           <p className="mt-1 text-sm text-muted max-w-2xl">
-            Configure your product structure once, then reuse
-            it throughout quotations, invoices and reports.
+            Configure your product structure once, then reuse it
+            throughout quotations, invoices and reports.
           </p>
         </div>
 
-        {/* Resource cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {RESOURCES.map((resource) => {
             const Icon = resource.icon;
@@ -136,9 +134,7 @@ export function MasterOverviewPage() {
               >
                 <button
                   type="button"
-                  onClick={() =>
-                    navigate(resource.path)
-                  }
+                  onClick={() => navigate(resource.path)}
                   className="w-full text-left"
                 >
                   <CardBody>
@@ -188,14 +184,11 @@ export function MasterOverviewPage() {
                             </div>
 
                             <div className="text-[10px] text-muted mt-0.5">
-                              {resource.key ===
-                              "product-types"
+                              {resource.key === "product-types"
                                 ? "configured types"
-                                : resource.key ===
-                                    "attributes"
+                                : resource.key === "attributes"
                                   ? "defined attributes"
-                                  : resource.key ===
-                                      "products"
+                                  : resource.key === "products"
                                     ? "products"
                                     : "customers"}
                             </div>
@@ -214,7 +207,6 @@ export function MasterOverviewPage() {
           })}
         </div>
 
-        {/* Relationship explanation */}
         <Card className="mt-4">
           <CardBody>
             <div className="flex flex-col md:flex-row md:items-center gap-5">
@@ -224,31 +216,21 @@ export function MasterOverviewPage() {
                 </div>
 
                 <p className="text-xs text-muted mt-1 leading-relaxed">
-                  Product Types control which Attributes are
-                  available. Products then use those attributes
-                  to create consistent variants and pricing.
+                  Pick a Product Type in Attribute Master, then list
+                  which Attributes apply and their allowed values.
+                  Products just pick a name and a type — everything
+                  else flows through automatically.
                 </p>
               </div>
 
               <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1">
-                <FlowItem
-                  number="01"
-                  label="Product Type"
-                />
-
+                <FlowItem number="01" label="Product Type" />
                 <FlowLine />
-
-                <FlowItem
-                  number="02"
-                  label="Attributes"
-                />
-
+                <FlowItem number="02" label="Attributes" />
                 <FlowLine />
-
-                <FlowItem
-                  number="03"
-                  label="Product"
-                />
+                <FlowItem number="03" label="Allowed Values" />
+                <FlowLine />
+                <FlowItem number="04" label="Product" />
               </div>
             </div>
           </CardBody>
@@ -273,7 +255,5 @@ function FlowItem({ number, label }) {
 }
 
 function FlowLine() {
-  return (
-    <div className="w-7 h-px bg-line shrink-0" />
-  );
+  return <div className="w-7 h-px bg-line shrink-0" />;
 }

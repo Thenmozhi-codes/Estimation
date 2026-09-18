@@ -88,7 +88,7 @@ function build() {
     { name: "Grade",      dataType: "select", isRequired: false },
     { name: "Finish",     dataType: "select", isRequired: false },
     { name: "Color",      dataType: "select", isRequired: false },
-    { name: "Pack Size",  dataType: "text",   isRequired: false },
+    { name: "Pack Size",  dataType: "select", isRequired: false },
     { name: "Unit",       dataType: "select", isRequired: true },
   ].forEach((a) => {
     db.attributes.push({ id: newId(), companyId: company.id,
@@ -107,6 +107,7 @@ function build() {
     Grade: ["MR","BWR","BWP","Marine"],
     Finish: ["Smooth","Matte","Glossy","Textured"],
     Color: ["White","Beige","Grey","Walnut","Oak","Teak","Wenge","Ivory"],
+    "Pack Size": ["250g","500g","1kg","2kg","5kg","10kg","20kg"],
     Unit: db.units.map((u) => u.name),
   };
   for (const [attrName, labels] of Object.entries(valueDefs)) {
@@ -221,13 +222,7 @@ function build() {
       push("Finish", v.finish);
       push("Color", v.color);
       push("Unit", v.unit);
-      if (v.packSize) {
-        db.variantAttributes.push({
-          id: newId(), variantId,
-          attributeId: attrBy["Pack Size"].id,
-          attributeValueId: null, rawValue: v.packSize,
-        });
-      }
+      if (v.packSize) push("Pack Size", v.packSize);
 
       [["purchase",v.purchase],["selling",v.selling],
        ["wholesale",v.wholesale],["retail",v.retail],["minimum",v.min]]

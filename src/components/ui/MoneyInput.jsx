@@ -20,7 +20,7 @@ export const MoneyInput = forwardRef(function MoneyInput(
           "border border-line placeholder:text-subtle",
           "transition-colors duration-150",
           "hover:border-muted/40",
-          "focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20",
+          "focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20",
           "disabled:opacity-60 disabled:cursor-not-allowed",
           error && "border-danger",
           className,

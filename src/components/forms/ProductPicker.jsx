@@ -1,16 +1,26 @@
-import { useState, useMemo, useRef, useEffect } from "react";
-import { Search, X } from "lucide-react";
-import { useProducts, useProductVariants } from "@/hooks/useProducts";
-import { useAttributes, useAttributeValues } from "@/hooks/useMasters";
-import { variantAttributeRepo, priceRepo } from "@/lib/api/repos";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { Search, X, ArrowLeft } from "lucide-react";
+import { useProducts } from "@/hooks/useProducts";
+import { useAttributes, useAttributeValues, useCategoryAttributes } from "@/hooks/useMasters";
 import { useQueryClient } from "@tanstack/react-query";
-import { cn } from "@/lib/utils/cn";
 import { formatMoney } from "@/lib/utils/money";
 
 /**
- * Opens a search overlay: user types product name / SKU,
- * picks a product, then picks a variant. Returns variant meta.
- * onSelect receives: { variant, product, attributes, defaultPrice }
+ * Two-step picker:
+ *   1. Search & pick a product
+ *   2. Pick attribute values (Thickness, Grade, etc.) — the choices
+ *      offered here are exactly what's configured for the product's
+ *      Product Type in Attribute Master.
+ *      - If a variant already exists with those values → auto-fills its price
+ *      - Otherwise → user will type a price (variant is created on save)
+ *
+ * onSelect receives:
+ *   {
+ *     product,
+ *     attributeValues: { [attributeId]: attributeValueId },
+ *     matchedVariant | null,
+ *     defaultPrice: number,
+ *   }
  */
 export function ProductPicker({ open, onClose, onSelect }) {
   const [query, setQuery] = useState("");
@@ -43,25 +53,42 @@ export function ProductPicker({ open, onClose, onSelect }) {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-3 md:p-6">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-xl border border-line w-full max-w-2xl max-h-[85vh] flex flex-col">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-surface rounded-2xl border border-line shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-line">
-          <Search className="h-4 w-4 text-muted shrink-0" strokeWidth={1.75} />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setSelectedProduct(null);
-            }}
-            placeholder={
-              selectedProduct
-                ? "Pick a variant below…"
-                : "Search product by name or SKU…"
-            }
-            className="w-full h-9 text-sm border-0 focus:ring-0 placeholder:text-muted"
-          />
-          <button onClick={onClose} className="p-1 hover:bg-timber-100 rounded">
+          {selectedProduct && (
+            <button
+              onClick={() => setSelectedProduct(null)}
+              className="h-7 w-7 shrink-0 rounded-lg flex items-center justify-center text-muted hover:bg-bg"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
+          {!selectedProduct && (
+            <Search className="h-4 w-4 text-muted shrink-0" strokeWidth={1.75} />
+          )}
+          {!selectedProduct ? (
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search product by name or SKU…"
+              className="w-full h-9 text-sm border-0 focus:ring-0 placeholder:text-muted bg-transparent outline-none text-ink"
+            />
+          ) : (
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-ink truncate">
+                {selectedProduct.name}
+              </div>
+              <div className="text-[10px] text-muted font-mono">
+                Pick attribute values
+              </div>
+            </div>
+          )}
+          <button
+            onClick={onClose}
+            className="h-7 w-7 shrink-0 rounded-lg flex items-center justify-center text-muted hover:bg-bg"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -78,15 +105,17 @@ export function ProductPicker({ open, onClose, onSelect }) {
                   <button
                     key={p.id}
                     onClick={() => setSelectedProduct(p)}
-                    className="w-full text-left px-4 py-2.5 hover:bg-timber-50 flex items-center justify-between gap-3"
+                    className="w-full text-left px-4 py-2.5 hover:bg-bg flex items-center justify-between gap-3"
                   >
                     <div className="min-w-0">
-                      <div className="font-semibold text-timber-700 truncate">
+                      <div className="font-bold text-ink truncate text-sm">
                         {p.name}
                       </div>
-                      <div className="text-[11px] text-muted">{p.sku}</div>
+                      <div className="text-[11px] text-muted font-mono">
+                        {p.sku}
+                      </div>
                     </div>
-                    <div className="text-xs text-timber-700 font-semibold shrink-0">
+                    <div className="text-[11px] text-primary-600 dark:text-primary-400 font-bold shrink-0">
                       Select →
                     </div>
                   </button>
@@ -94,11 +123,10 @@ export function ProductPicker({ open, onClose, onSelect }) {
               </div>
             )
           ) : (
-            <VariantList
+            <AttributePicker
               product={selectedProduct}
-              onBack={() => setSelectedProduct(null)}
-              onSelect={(v) => {
-                onSelect(v);
+              onSelect={(payload) => {
+                onSelect(payload);
                 onClose();
               }}
             />
@@ -109,109 +137,220 @@ export function ProductPicker({ open, onClose, onSelect }) {
   );
 }
 
-/* ───────── Variant list for the picked product ───────── */
+/* ───────── Attribute picker for the picked product ───────── */
 
-function VariantList({ product, onBack, onSelect }) {
-  const { data: variants = [] } = useProductVariants(product.id);
-  const { data: attributes = [] } = useAttributes();
+function AttributePicker({ product, onSelect }) {
   const qc = useQueryClient();
+  const { data: schemaMappings = [] } = useCategoryAttributes(
+    product.categoryId,
+  );
+  const { data: attributes = [] } = useAttributes();
 
-  // Load variant attribute labels + prices once
-  const variantsWithMeta = variants.map((v) => {
-    const attrKey = ["variantAttributes", v.id];
-    const attrData = qc.getQueryData(attrKey) || [];
-    const priceKey = ["prices", v.id];
-    const priceData = qc.getQueryData(priceKey) || [];
-    return {
-      ...v,
-      _attrData: attrData,
-      _priceData: priceData,
-      _needsLoad: attrData.length === 0,
-    };
-  });
+  // Build a list of attribute objects for this product's category —
+  // sourced live from Attribute Master, so it always matches what's
+  // configured there.
+  const schemaAttrs = useMemo(
+    () =>
+      schemaMappings
+        .map((m) => ({
+          mapping: m,
+          attribute: attributes.find((a) => a.id === m.attributeId),
+        }))
+        .filter((x) => x.attribute)
+        .sort((a, b) => (a.mapping.sortOrder ?? 0) - (b.mapping.sortOrder ?? 0)),
+    [schemaMappings, attributes],
+  );
 
-  // Trigger loads for any variant not yet cached
+  const [picked, setPicked] = useState({}); // { [attributeId]: valueId }
+  const [matchedVariant, setMatchedVariant] = useState(null);
+  const [matchedPrice, setMatchedPrice] = useState(0);
+  const [checking, setChecking] = useState(false);
+
+  const allPicked =
+    schemaAttrs.length === 0 ||
+    schemaAttrs.every((x) => picked[x.attribute.id]);
+
+  // When every attribute is picked, try to find a matching variant
   useEffect(() => {
-    variants.forEach((v) => {
-      qc.prefetchQuery({
-        queryKey: ["variantAttributes", v.id],
-        queryFn: () => variantAttributeRepo.list({ variantId: v.id }),
-      });
-      qc.prefetchQuery({
-        queryKey: ["prices", v.id],
-        queryFn: () => priceRepo.list({ variantId: v.id }),
-      });
+    let cancelled = false;
+
+    async function lookup() {
+      if (!allPicked) {
+        setMatchedVariant(null);
+        setMatchedPrice(0);
+        return;
+      }
+      setChecking(true);
+      try {
+        const variants = await qc.fetchQuery({
+          queryKey: ["variants", product.id],
+          queryFn: () => import("@/lib/api/repos").then((m) => m.variantRepo.list({ productId: product.id })),
+        });
+        const list = Array.isArray(variants) ? variants : variants?.data ?? [];
+
+        const attrRows = await Promise.all(
+          list.map((v) =>
+            qc.fetchQuery({
+              queryKey: ["variantAttributes", v.id],
+              queryFn: () =>
+                import("@/lib/api/repos").then((m) =>
+                  m.variantAttributeRepo.list({ variantId: v.id }),
+                ),
+            }),
+          ),
+        );
+
+        const pairs = Object.entries(picked).filter(([, v]) => v);
+        const match = list.find((_, i) => {
+          const attrs = attrRows[i] || [];
+          if (attrs.length !== pairs.length) return false;
+          return pairs.every(([attrId, valueId]) =>
+            attrs.some(
+              (a) =>
+                a.attributeId === attrId &&
+                a.attributeValueId === valueId,
+            ),
+          );
+        });
+
+        if (cancelled) return;
+
+        if (match) {
+          setMatchedVariant(match);
+          const prices = await qc.fetchQuery({
+            queryKey: ["prices", match.id],
+            queryFn: () =>
+              import("@/lib/api/repos").then((m) =>
+                m.priceRepo.list({ variantId: match.id }),
+              ),
+          });
+          const selling =
+            (prices || []).find((p) => p.priceType === "selling")?.amount ?? 0;
+          setMatchedPrice(selling);
+        } else {
+          setMatchedVariant(null);
+          setMatchedPrice(0);
+        }
+      } catch (err) {
+        console.error("variant lookup failed", err);
+      } finally {
+        if (!cancelled) setChecking(false);
+      }
+    }
+
+    lookup();
+    return () => {
+      cancelled = true;
+    };
+  }, [allPicked, picked, product.id, qc]);
+
+  const handleConfirm = () => {
+    if (!allPicked) return;
+    onSelect({
+      product,
+      attributeValues: picked,
+      matchedVariant,
+      defaultPrice: matchedPrice,
     });
-  }, [variants, qc]);
+  };
+
+  if (schemaAttrs.length === 0) {
+    return (
+      <div className="p-4">
+        <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4 text-xs text-muted leading-5">
+          <span className="font-bold text-ink">
+            No attributes configured for this Product Type yet.
+          </span>{" "}
+          You can add it to the line directly — the price will be whatever
+          you type. Add attributes in Attribute Master to offer Thickness,
+          Length or Grade choices next time.
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={() =>
+              onSelect({
+                product,
+                attributeValues: {},
+                matchedVariant: null,
+                defaultPrice: 0,
+              })
+            }
+            className="px-4 py-2 rounded-lg gradient-primary text-white text-sm font-bold hover:brightness-105"
+          >
+            Add to line →
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <div className="flex items-center justify-between px-4 py-2 border-b border-line bg-timber-50">
-        <div className="text-xs font-semibold text-timber-700">
-          {product.name} — pick variant
-        </div>
-        <button
-          onClick={onBack}
-          className="text-xs text-timber-700 hover:underline"
-        >
-          ← Back to search
-        </button>
+    <div className="p-4 space-y-4">
+      {schemaAttrs.map(({ attribute }) => (
+        <AttributeValueField
+          key={attribute.id}
+          attribute={attribute}
+          value={picked[attribute.id] || ""}
+          onChange={(valueId) =>
+            setPicked((prev) => ({ ...prev, [attribute.id]: valueId }))
+          }
+        />
+      ))}
+
+      <div className="rounded-xl border border-line bg-bg/60 p-3 text-xs">
+        {!allPicked ? (
+          <span className="text-muted">
+            Pick a value for every attribute to see the price.
+          </span>
+        ) : checking ? (
+          <span className="text-muted">Looking up price…</span>
+        ) : matchedVariant ? (
+          <span className="text-ink">
+            <b>Existing variant:</b>{" "}
+            <span className="font-mono text-muted">{matchedVariant.sku}</span>{" "}
+            · Rate <b>{formatMoney(matchedPrice)}</b>
+          </span>
+        ) : (
+          <span className="text-muted">
+            New combination — you&apos;ll type the rate on the line.
+          </span>
+        )}
       </div>
 
-      {variants.length === 0 ? (
-        <div className="p-6 text-center text-sm text-muted">
-          This product has no variants.
-        </div>
-      ) : (
-        <div className="divide-y divide-line">
-          {variantsWithMeta.map((v) => {
-            const attrs = v._attrData;
-            const prices = v._priceData;
-            const selling = prices.find((p) => p.priceType === "selling")?.amount ?? 0;
-
-            // Build a readable attribute summary
-            const attrLabels = attrs
-              .map((a) => {
-                const name = attributes.find((x) => x.id === a.attributeId)?.name;
-                const val = a.attributeValueId
-                  ? qc.getQueryData(["__avLabel", a.attributeValueId])?.label || "…"
-                  : a.rawValue ?? "—";
-                return name ? `${name}: ${val}` : null;
-              })
-              .filter(Boolean);
-
-            return (
-              <button
-                key={v.id}
-                onClick={() =>
-                  onSelect({
-                    product,
-                    variant: v,
-                    attributes: attrs,
-                    defaultPrice: selling,
-                  })
-                }
-                className="w-full text-left px-4 py-3 hover:bg-timber-50 flex items-center justify-between gap-3"
-              >
-                <div className="min-w-0">
-                  <div className="font-semibold text-timber-700">{v.sku}</div>
-                  {attrLabels.length > 0 && (
-                    <div className="text-[11px] text-muted mt-0.5 truncate">
-                      {attrLabels.join(" · ")}
-                    </div>
-                  )}
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="font-bold text-timber-700 text-sm">
-                    {formatMoney(selling)}
-                  </div>
-                  <div className="text-[10px] text-muted">selling</div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <div className="flex justify-end">
+        <button
+          onClick={handleConfirm}
+          disabled={!allPicked}
+          className="px-4 py-2 rounded-lg gradient-primary text-white text-sm font-bold hover:brightness-105 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Add to line →
+        </button>
+      </div>
     </div>
+  );
+}
+
+function AttributeValueField({ attribute, value, onChange }) {
+  const { data: values = [] } = useAttributeValues(attribute.id);
+  const active = values.filter((v) => v.isActive !== false);
+
+  return (
+    <label className="block">
+      <div className="text-[10px] font-bold text-muted uppercase tracking-wide mb-1.5">
+        {attribute.name}
+      </div>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full h-9 px-3 text-sm rounded-lg bg-surface border border-line text-ink focus-ring"
+      >
+        <option value="">Select {attribute.name}…</option>
+        {active.map((v) => (
+          <option key={v.id} value={v.id}>
+            {v.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

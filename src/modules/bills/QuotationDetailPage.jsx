@@ -43,10 +43,19 @@ export function QuotationDetailPage() {
 
   if (!q) {
     return (
-      <>
+      <div className="page-container min-h-full">
         <PageHeader title="Quotation" />
-        <div className="p-6 text-sm text-muted">Loading…</div>
-      </>
+        <div className="p-6">
+          <Card>
+            <CardBody className="py-14 text-center">
+              <div className="text-sm font-bold text-ink">Loading…</div>
+              <div className="text-xs text-muted mt-1">
+                Preparing quotation details.
+              </div>
+            </CardBody>
+          </Card>
+        </div>
+      </div>
     );
   }
 
@@ -64,7 +73,7 @@ export function QuotationDetailPage() {
       const invoice = await convertMut.mutateAsync(id);
       toast.success(`Converted to invoice ${invoice.number}`);
       setConfirmConvert(false);
-      navigate(`/sales/invoices/${invoice.id}`);
+      navigate(`/bills/invoices/${invoice.id}`);
     } catch (e) {
       toast.error(e?.message || "Convert failed");
     }
@@ -86,7 +95,7 @@ export function QuotationDetailPage() {
     q.status !== "expired";
 
   return (
-    <>
+    <div className="page-container min-h-full">
       <PageHeader
         title={q.number}
         description={`Quotation · ${party?.name || "—"}`}
@@ -97,17 +106,17 @@ export function QuotationDetailPage() {
               size="sm"
               onClick={() => navigate("/bills/quotations")}
             >
-              <ArrowLeft className="h-4 w-4" /> Back
+              <ArrowLeft className="h-4 w-4" />
+              <span className="hidden sm:inline">Back</span>
             </Button>
             <Button size="sm" variant="outline" onClick={handleDownloadPdf}>
               <Download className="h-4 w-4" /> PDF
             </Button>
-           {q.status === "draft" && (
-  <Button size="sm" onClick={() => setStatus("sent")}>
-    <Send className="h-4 w-4" /> Mark Sent
-  </Button>
-)}
-            
+            {q.status === "draft" && (
+              <Button size="sm" onClick={() => setStatus("sent")}>
+                <Send className="h-4 w-4" /> Mark Sent
+              </Button>
+            )}
             {(q.status === "sent" || q.status === "draft") && (
               <Button size="sm" onClick={() => setStatus("approved")}>
                 <Check className="h-4 w-4" /> Approve
@@ -127,11 +136,11 @@ export function QuotationDetailPage() {
       />
       <ModuleTabs tabs={MODULE_TABS.bills} />
 
-      <div className="p-3 md:p-6 space-y-4 max-w-5xl">
+      <div className="p-4 md:p-6 pb-24 space-y-4 max-w-5xl mx-auto">
         <Card>
           <CardHeader title="Summary" />
           <CardBody>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <Detail label="Customer">{party?.name || "—"}</Detail>
               <Detail label="Date">{fmtDate(q.date)}</Detail>
               <Detail label="Valid Until">{fmtDate(q.validUntil)}</Detail>
@@ -142,23 +151,23 @@ export function QuotationDetailPage() {
               <Detail label="Discount">{formatMoney(q.discount)}</Detail>
               <Detail label="Tax">{formatMoney(q.taxTotal)}</Detail>
               <Detail label="Grand Total">
-                <span className="text-timber-700 font-extrabold text-base">
+                <span className="text-ink font-black text-base">
                   {formatMoney(q.grandTotal)}
                 </span>
               </Detail>
             </div>
             {q.notes && (
-              <div className="mt-3 text-sm">
-                <div className="text-[11px] font-semibold text-muted uppercase">
+              <div className="mt-4 text-sm">
+                <div className="text-[10px] font-bold text-muted uppercase tracking-wide">
                   Notes
                 </div>
-                <div>{q.notes}</div>
+                <div className="mt-1 text-ink">{q.notes}</div>
               </div>
             )}
           </CardBody>
         </Card>
 
-        <Card>
+        <Card className="overflow-hidden">
           <CardHeader title={`Items (${items.length})`} />
           <DataTable
             columns={[
@@ -167,7 +176,7 @@ export function QuotationDetailPage() {
                 header: "Product",
                 render: (r) => (
                   <div>
-                    <div className="font-semibold text-timber-700">
+                    <div className="font-bold text-ink">
                       {r.productNameSnapshot}
                     </div>
                     <div className="text-[11px] text-muted">
@@ -203,7 +212,7 @@ export function QuotationDetailPage() {
                 header: "Total",
                 align: "right",
                 render: (r) => (
-                  <span className="font-semibold text-timber-700">
+                  <span className="font-bold text-ink">
                     {formatMoney(r.lineTotal)}
                   </span>
                 ),
@@ -225,17 +234,19 @@ export function QuotationDetailPage() {
         variant="primary"
         loading={convertMut.isPending}
       />
-    </>
+    </div>
   );
 }
 
 function Detail({ label, children }) {
   return (
     <div>
-      <div className="text-[11px] font-semibold text-muted uppercase tracking-wide">
+      <div className="text-[10px] font-bold text-muted uppercase tracking-wide">
         {label}
       </div>
-      <div className="text-sm mt-1">{children}</div>
+      <div className="text-sm mt-1 text-ink">{children}</div>
     </div>
   );
 }
+
+export default QuotationDetailPage;

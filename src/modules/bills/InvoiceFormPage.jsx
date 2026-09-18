@@ -9,12 +9,13 @@ import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { Field } from "@/components/ui/Field";
 import { MoneyInput } from "@/components/ui/MoneyInput";
-import { Card, CardBody } from "@/components/ui/Card";
+import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { FormGrid } from "@/components/ui/FormGrid";
 import { LineItemsEditor } from "@/components/forms/LineItemsEditor";
 import { toast } from "@/lib/toast";
 import { useCreateInvoice } from "@/hooks/useDocuments";
 import { useParties } from "@/hooks/useParties";
+import { variantResolver } from "@/lib/api/repos";
 import { MODULE_TABS } from "@/app/moduleNav";
 
 export function InvoiceFormPage() {
@@ -31,6 +32,7 @@ export function InvoiceFormPage() {
   const [discount, setDiscount] = useState(0);
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState([]);
+  const [saving, setSaving] = useState(false);
 
   const customers = parties.filter(
     (p) => p.type === "customer" || p.type === "both",
@@ -40,7 +42,26 @@ export function InvoiceFormPage() {
     if (!partyId) return toast.error("Select a customer");
     if (!items.length) return toast.error("Add at least one item");
 
+    setSaving(true);
     try {
+      const enrichedItems = await Promise.all(
+        items.map(async (it) => {
+          const variant = await variantResolver.resolveOrCreate({
+            productId: it.productId,
+            defaultSku: it.productSku || it.sku,
+            attributeValues: it.attributeValues || {},
+          });
+
+          return {
+            variantId: variant.id,
+            quantity: Number(it.quantity) || 0,
+            unitPrice: Number(it.unitPrice) || 0,
+            discount: Number(it.discount) || 0,
+            taxId: it.taxId || null,
+          };
+        }),
+      );
+
       const payload = {
         partyId,
         date,
@@ -48,25 +69,22 @@ export function InvoiceFormPage() {
         status,
         discount: Number(discount) || 0,
         notes,
-        items: items.map((it) => ({
-          variantId: it.variantId,
-          quantity: Number(it.quantity) || 0,
-          unitPrice: Number(it.unitPrice) || 0,
-          discount: Number(it.discount) || 0,
-          taxId: it.taxId || null,
-        })),
+        items: enrichedItems,
       };
+
       const created = await createMut.mutateAsync(payload);
       toast.success(`Invoice ${created.number} created`);
       navigate(`/bills/invoices/${created.id}`);
     } catch (e) {
       console.error(e);
       toast.error(e?.message || "Save failed");
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
-    <>
+    <div className="page-container min-h-full">
       <PageHeader
         title="New Invoice"
         description="Issuing an invoice will reduce stock for its variants"
@@ -77,17 +95,18 @@ export function InvoiceFormPage() {
               size="sm"
               onClick={() => navigate("/bills/invoices")}
             >
-              <ArrowLeft className="h-4 w-4" /> Cancel
+              <ArrowLeft className="h-4 w-4" />
+              <span className="hidden sm:inline">Cancel</span>
             </Button>
-            <Button size="sm" onClick={handleSave} disabled={createMut.isPending}>
-              <Save className="h-4 w-4" /> Save Invoice
+            <Button size="sm" onClick={handleSave} disabled={saving}>
+              <Save className="h-4 w-4" /> {saving ? "Saving…" : "Save Invoice"}
             </Button>
           </div>
         }
       />
       <ModuleTabs tabs={MODULE_TABS.bills} />
 
-      <div className="p-3 md:p-6 space-y-4 max-w-5xl">
+      <div className="p-4 md:p-6 pb-28 space-y-4 max-w-5xl mx-auto">
         <Card>
           <CardBody>
             <FormGrid cols={2}>
@@ -129,10 +148,11 @@ export function InvoiceFormPage() {
         </Card>
 
         <Card>
+          <CardHeader
+            title="Items"
+            subtitle="Search a product, then pick the attribute values configured for it in Attribute Master."
+          />
           <CardBody>
-            <div className="text-sm font-semibold text-timber-700 mb-3">
-              Items
-            </div>
             <LineItemsEditor items={items} onChange={setItems} />
           </CardBody>
         </Card>
@@ -158,6 +178,8 @@ export function InvoiceFormPage() {
           </CardBody>
         </Card>
       </div>
-    </>
+    </div>
   );
 }
+
+export default InvoiceFormPage;

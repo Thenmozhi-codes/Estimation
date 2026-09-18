@@ -12,7 +12,7 @@ export function Switch({ checked, onChange, disabled, label }) {
         onClick={() => onChange?.(!checked)}
         className={cn(
           "relative inline-block w-9 h-5 rounded-full transition-colors duration-200",
-          checked ? "bg-primary-500" : "bg-slate-300 dark:bg-slate-700",
+          checked ? "bg-brand-500" : "bg-slate-300 dark:bg-slate-700",
         )}
       >
         <span

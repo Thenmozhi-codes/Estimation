@@ -56,7 +56,7 @@ export function InvoiceListPage() {
   };
 
   return (
-    <>
+    <div className="page-container min-h-full">
       <PageHeader
         title="Invoices"
         description="Issued invoices and their payment status"
@@ -90,7 +90,7 @@ export function InvoiceListPage() {
         </Select>
       </Toolbar>
 
-      <div className="bg-white border-t border-line">
+      <div className="bg-surface border-t border-line pb-24 md:pb-0">
         <DataTable
           columns={[
             {
@@ -98,7 +98,7 @@ export function InvoiceListPage() {
               header: "Number",
               sortable: true,
               render: (r) => (
-                <div className="font-semibold text-timber-700">{r.number}</div>
+                <div className="font-bold text-ink">{r.number}</div>
               ),
             },
             {
@@ -118,7 +118,7 @@ export function InvoiceListPage() {
               align: "right",
               sortable: true,
               render: (r) => (
-                <span className="font-semibold text-timber-700">
+                <span className="font-bold text-ink">
                   {formatMoney(r.grandTotal)}
                 </span>
               ),
@@ -131,7 +131,7 @@ export function InvoiceListPage() {
               render: (r) => {
                 const bal = (r.grandTotal || 0) - (r.amountPaid || 0);
                 return (
-                  <span className={bal > 0 ? "text-danger font-semibold" : "text-muted"}>
+                  <span className={bal > 0 ? "text-red-500 font-bold" : "text-muted"}>
                     {formatMoney(Math.max(0, bal))}
                   </span>
                 );
@@ -154,7 +154,7 @@ export function InvoiceListPage() {
                     e.stopPropagation();
                     setConfirm(row);
                   }}
-                  className="px-2 py-1 text-xs font-semibold text-danger hover:bg-red-50 rounded"
+                  className="px-2 py-1 text-xs font-bold text-red-500 hover:bg-red-500/10 rounded-md"
                 >
                   Del
                 </button>
@@ -183,6 +183,8 @@ export function InvoiceListPage() {
         confirmLabel="Delete"
         loading={deleteMut.isPending}
       />
-    </>
+    </div>
   );
 }
+
+export default InvoiceListPage;

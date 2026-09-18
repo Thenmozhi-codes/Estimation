@@ -1,193 +1,102 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+/* Inter font via Google Fonts */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --bg: 248 249 252;
-  --surface: 255 255 255;
+  /* Light — soft, warm, near-white background like Flow accounting */
+  --bg:       250 250 252;   /* very soft off-white */
+  --surface:  255 255 255;
   --elevated: 255 255 255;
+  --line:     230 232 238;
 
-  --line: 226 229 236;
-
-  --ink: 17 24 39;
-  --muted: 100 116 139;
-  --subtle: 148 163 184;
+  --ink:      15 23 42;
+  --muted:    100 116 139;
+  --subtle:   148 163 184;
 }
 
 .dark {
-  --bg: 8 10 16;
-  --surface: 13 16 23;
-  --elevated: 18 22 31;
+  --bg:       8 11 20;
+  --surface:  15 18 28;
+  --elevated: 22 26 38;
+  --line:     34 40 58;
 
-  --line: 31 36 48;
-
-  --ink: 241 245 249;
-  --muted: 148 163 184;
-  --subtle: 100 116 139;
+  --ink:      241 245 249;
+  --muted:    148 163 184;
+  --subtle:   100 116 139;
 }
 
 @layer base {
-  html {
-    height: 100%;
-    background: rgb(var(--bg));
-  }
-
-  body,
-  #root {
-    min-height: 100%;
-  }
+  html, body, #root { height: 100%; }
 
   body {
     @apply bg-bg text-ink antialiased;
-
-    font-family:
-      Inter,
-      "Plus Jakarta Sans",
-      system-ui,
-      -apple-system,
-      BlinkMacSystemFont,
-      "Segoe UI",
-      sans-serif;
-
-    font-feature-settings:
-      "cv02",
-      "cv03",
-      "cv04",
-      "cv11",
-      "tnum";
-
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01", "tnum";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
 
-  * {
-    @apply border-line;
+  /* Numbers in tables/KPIs get tabular figures */
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+
+  * { @apply border-line; }
+  button, input, select, textarea { font: inherit; }
+  input:focus, select:focus, textarea:focus, button:focus { outline: none; }
+
+  html.theme-transition * {
+    transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
   }
 
-  button,
-  input,
-  textarea,
-  select {
-    font: inherit;
-  }
-
-  button {
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  input:focus,
-  textarea:focus,
-  select:focus,
-  button:focus {
-    outline: none;
-  }
-
-  ::selection {
-    background: rgb(99 102 241 / 0.16);
-  }
-
-  html.theme-transition *,
-  html.theme-transition {
-    transition:
-      background-color 180ms ease,
-      border-color 180ms ease,
-      color 180ms ease;
-  }
-
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
     background: rgb(var(--line));
     border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
   }
-
   ::-webkit-scrollbar-thumb:hover {
-    background: rgb(var(--muted) / 0.35);
+    background: rgb(var(--muted) / 0.4);
+    background-clip: content-box;
+    border: 3px solid transparent;
   }
 }
 
 @layer components {
-  .focus-ring:focus-visible {
-    outline: none;
-    box-shadow:
-      0 0 0 2px rgb(var(--surface)),
-      0 0 0 4px rgb(99 102 241 / 0.38);
+  .skeleton {
+    @apply bg-line rounded-md;
+    background-image: linear-gradient(90deg, transparent 0%, rgb(var(--elevated) / 0.8) 50%, transparent 100%);
+    background-size: 1000px 100%;
+    @apply animate-shimmer;
   }
 
+.focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(99 102 241 / 0.4);
+}
+
+  /* Compact card surface, matches Flow's card rhythm */
   .surface {
-    @apply bg-surface border border-line rounded-2xl;
-    box-shadow:
-      0 1px 2px rgb(15 23 42 / 0.025),
-      0 0 0 1px rgb(15 23 42 / 0.015);
-  }
-
-  .page-container {
-    @apply w-full max-w-[1700px] mx-auto;
-  }
-
-  .section-title {
-    @apply text-sm font-semibold tracking-tight text-ink;
-  }
-
-  .section-description {
-    @apply text-xs text-muted;
-  }
-
-  .eyebrow {
-    @apply text-[10px] font-bold uppercase tracking-[0.14em] text-subtle;
+    @apply bg-surface border border-line rounded-xl shadow-card;
   }
 }
 
 @layer utilities {
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
+  .scrollbar-thin::-webkit-scrollbar { width: 8px; height: 8px; }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: rgb(var(--muted) / 0.25);
+    background: rgb(var(--muted) / 0.35);
     border-radius: 999px;
   }
-
-  .scrollbar-none::-webkit-scrollbar {
-    display: none;
-  }
-
-  .scrollbar-none {
-    scrollbar-width: none;
-  }
-
-  .tabular-nums {
-    font-variant-numeric: tabular-nums;
-  }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+  .scrollbar-none { scrollbar-width: none; }
 
   .gradient-primary {
-    background-image: linear-gradient(
-      135deg,
-      #6366f1 0%,
-      #7c3aed 100%
-    );
+    background-image: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
   }
-
   .gradient-primary-soft {
-    background-image: linear-gradient(
-      135deg,
-      rgb(99 102 241 / 0.1),
-      rgb(124 58 237 / 0.08)
-    );
-  }
-
-  .text-balance {
-    text-wrap: balance;
+    background-image: linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%);
   }
 }

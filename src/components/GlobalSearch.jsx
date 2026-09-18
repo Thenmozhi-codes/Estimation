@@ -136,12 +136,12 @@ export function GlobalSearch({ open, onClose }) {
                     className={cn(
                       "w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors",
                       active === i
-                        ? "bg-primary-50 dark:bg-primary-950/30"
+                        ? "bg-brand-50 dark:bg-brand-950/30"
                         : "hover:bg-bg",
                     )}
                   >
-                    <div className="w-7 h-7 rounded-md bg-primary-50 dark:bg-primary-950/40 flex items-center justify-center shrink-0">
-                      <Icon className="h-3.5 w-3.5 text-primary-500" />
+                    <div className="w-7 h-7 rounded-md bg-brand-50 dark:bg-brand-950/40 flex items-center justify-center shrink-0">
+                      <Icon className="h-3.5 w-3.5 text-brand-500" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold text-ink truncate">

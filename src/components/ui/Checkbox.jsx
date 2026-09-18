@@ -14,8 +14,8 @@ export function Checkbox({ checked, onChange, disabled, label }) {
         className={cn(
           "w-4 h-4 rounded border flex items-center justify-center transition-all duration-150",
           checked
-            ? "bg-primary-500 border-primary-500 text-white"
-            : "bg-surface border-line hover:border-primary-500/60",
+            ? "bg-brand-500 border-brand-500 text-white"
+            : "bg-surface border-line hover:border-brand-500/60",
         )}
       >
         {checked && <Check className="h-3 w-3" strokeWidth={3} />}

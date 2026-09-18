@@ -59,7 +59,7 @@ export function QuotationListPage() {
   };
 
   return (
-    <>
+    <div className="page-container min-h-full">
       <PageHeader
         title="Quotations"
         description="Estimates sent to customers"
@@ -93,7 +93,7 @@ export function QuotationListPage() {
         </Select>
       </Toolbar>
 
-      <div className="bg-white border-t border-line">
+      <div className="bg-surface border-t border-line pb-24 md:pb-0">
         <DataTable
           columns={[
             {
@@ -101,7 +101,7 @@ export function QuotationListPage() {
               header: "Number",
               sortable: true,
               render: (r) => (
-                <div className="font-semibold text-timber-700">{r.number}</div>
+                <div className="font-bold text-ink">{r.number}</div>
               ),
             },
             {
@@ -121,7 +121,7 @@ export function QuotationListPage() {
               align: "right",
               sortable: true,
               render: (r) => (
-                <span className="font-semibold text-timber-700">
+                <span className="font-bold text-ink">
                   {formatMoney(r.grandTotal)}
                 </span>
               ),
@@ -143,7 +143,7 @@ export function QuotationListPage() {
                     e.stopPropagation();
                     setConfirm(row);
                   }}
-                  className="px-2 py-1 text-xs font-semibold text-danger hover:bg-red-50 rounded"
+                  className="px-2 py-1 text-xs font-bold text-red-500 hover:bg-red-500/10 rounded-md"
                 >
                   Del
                 </button>
@@ -172,6 +172,8 @@ export function QuotationListPage() {
         confirmLabel="Delete"
         loading={deleteMut.isPending}
       />
-    </>
+    </div>
   );
 }
+
+export default QuotationListPage;

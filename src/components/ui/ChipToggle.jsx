@@ -15,7 +15,7 @@ export function ChipToggle({ value, onChange, options, className }) {
             className={cn(
               "px-2.5 py-1 rounded-md text-xs font-semibold transition-all duration-150",
               active
-                ? "bg-surface text-primary-600 shadow-xs dark:text-primary-400"
+                ? "bg-surface text-brand-600 shadow-xs dark:text-brand-400"
                 : "text-muted hover:text-ink",
             )}
           >

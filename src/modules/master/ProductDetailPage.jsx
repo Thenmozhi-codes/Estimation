@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Pencil, ArrowLeft } from "lucide-react";
+import { Pencil, ArrowLeft, SlidersHorizontal } from "lucide-react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
@@ -10,11 +10,8 @@ import { DataTable } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { formatMoney } from "@/lib/utils/money";
 import { useProduct, useProductVariants } from "@/hooks/useProducts";
-import {
-  useCategories,
-  useBrands,
-  useAttributes,
-} from "@/hooks/useMasters";
+import { useCategories, useAttributes } from "@/hooks/useMasters";
+import { AttributeConfigPreview } from "@/components/master/AttributeConfigPreview";
 import {
   variantAttributeRepo,
   priceRepo,
@@ -30,13 +27,18 @@ export function ProductDetailPage() {
   const { data: product, isLoading } = useProduct(id);
   const { data: variants = [] } = useProductVariants(id);
   const { data: categories = [] } = useCategories();
-  const { data: brands = [] } = useBrands();
   const { data: attributes = [] } = useAttributes();
   const { data: stock = [] } = useQuery({
     queryKey: ["stock"],
     queryFn: () => stockRepo.list(),
   });
 
+  // NOTE: "variants" below is the internal implementation detail
+  // described in the product spec — the UI never surfaces the word
+  // "variant" to the user. Each row here is presented as a
+  // "configured option": one saved combination of attribute values
+  // for this product, created automatically the first time it's
+  // picked on a bill.
   const attrQueries = useQueries({
     queries: variants.map((v) => ({
       queryKey: ["variantAttributes", v.id],
@@ -59,7 +61,6 @@ export function ProductDetailPage() {
     [stock],
   );
 
-  // Collect all attributeValueIds used across variants → fetch labels once
   const allValueIds = useMemo(() => {
     const ids = new Set();
     for (const q of attrQueries) {
@@ -87,28 +88,36 @@ export function ProductDetailPage() {
 
   if (isLoading) {
     return (
-      <>
+      <div className="page-container min-h-full">
         <PageHeader title="Product" />
-        <div className="p-6 text-sm text-muted">Loading…</div>
-      </>
+        <div className="p-6">
+          <Card>
+            <CardBody className="py-14 text-center">
+              <div className="text-sm font-bold text-ink">Loading…</div>
+              <div className="text-xs text-muted mt-1">
+                Preparing product details.
+              </div>
+            </CardBody>
+          </Card>
+        </div>
+      </div>
     );
   }
 
   if (!product) {
     return (
-      <>
+      <div className="page-container min-h-full">
         <PageHeader title="Product not found" />
         <div className="p-6">
           <Button onClick={() => navigate("/master/products")}>
             <ArrowLeft className="h-4 w-4" /> Back to products
           </Button>
         </div>
-      </>
+      </div>
     );
   }
 
   const cat = categories.find((c) => c.id === product.categoryId);
-  const brand = brands.find((b) => b.id === product.brandId);
 
   const rows = variants.map((v, i) => {
     const attrs = attrQueries[i]?.data || [];
@@ -139,12 +148,10 @@ export function ProductDetailPage() {
   });
 
   return (
-    <>
+    <div className="page-container min-h-full">
       <PageHeader
         title={product.name}
-        description={`SKU ${product.sku} · ${cat?.name || "—"}${
-          brand ? ` · ${brand.name}` : ""
-        }`}
+        description={`${product.sku} · ${cat?.name || "—"}`}
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -152,7 +159,8 @@ export function ProductDetailPage() {
               size="sm"
               onClick={() => navigate("/master/products")}
             >
-              <ArrowLeft className="h-4 w-4" /> Back
+              <ArrowLeft className="h-4 w-4" />
+              <span className="hidden sm:inline">Back</span>
             </Button>
             <Button
               size="sm"
@@ -165,56 +173,85 @@ export function ProductDetailPage() {
       />
       <ModuleTabs tabs={MODULE_TABS.master} />
 
-      <div className="p-3 md:p-6 space-y-4 max-w-6xl">
+      <div className="p-4 md:p-6 pb-24 space-y-4 max-w-5xl mx-auto">
         <Card>
           <CardHeader title="Overview" />
           <CardBody>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <Detail label="Status">
                 <StatusBadge status={product.status} />
               </Detail>
               <Detail label="Product Type">{cat?.name || "—"}</Detail>
-              <Detail label="Brand">{brand?.name || "—"}</Detail>
-              <Detail label="Variants">{variants.length}</Detail>
-              {product.description && (
-                <div className="col-span-2 md:col-span-4">
-                  <div className="text-[11px] font-semibold text-muted uppercase tracking-wide">
-                    Description
-                  </div>
-                  <div className="text-sm mt-1">{product.description}</div>
-                </div>
-              )}
+              <Detail label="SKU">
+                <span className="font-mono text-xs text-ink">
+                  {product.sku}
+                </span>
+              </Detail>
+              <Detail label="Configured options">{rows.length}</Detail>
             </div>
           </CardBody>
         </Card>
 
-        <Card>
-          <CardHeader
-            title={`Variants (${rows.length})`}
-            subtitle="Attributes, prices and stock per variant"
-          />
+        <Card className="overflow-hidden">
+          <div className="px-5 py-4 border-b border-line flex items-start gap-3">
+            <div className="h-9 w-9 rounded-lg bg-primary-500/10 flex items-center justify-center shrink-0">
+              <SlidersHorizontal className="h-4 w-4 text-primary-500" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-ink">
+                Available Attributes
+              </h3>
+              <p className="text-[11px] text-muted mt-0.5">
+                Configured in Attribute Master for {cat?.name || "this Product Type"}.
+                These are the choices billing will offer for {product.name}.
+              </p>
+            </div>
+          </div>
+          <CardBody>
+            <AttributeConfigPreview
+              categoryId={product.categoryId}
+              categoryName={cat?.name}
+              dense
+            />
+          </CardBody>
+        </Card>
+
+        <Card className="overflow-hidden">
+          <div className="px-5 py-4 border-b border-line flex items-start gap-3">
+            <div className="h-9 w-9 rounded-lg bg-primary-500/10 flex items-center justify-center shrink-0">
+              <SlidersHorizontal className="h-4 w-4 text-primary-500" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-ink">
+                Configured Options ({rows.length})
+              </h3>
+              <p className="text-[11px] text-muted mt-0.5">
+                Each row is a combination of attribute values — chosen from
+                Attribute Master — that has been used for {product.name} on
+                a bill. These are created automatically; you don&apos;t
+                need to manage them here.
+              </p>
+            </div>
+          </div>
+
           <DataTable
             columns={[
               {
-                key: "sku",
-                header: "SKU",
-                sortable: true,
-                render: (r) => (
-                  <div className="font-semibold text-timber-700">{r.sku}</div>
-                ),
-              },
-              {
                 key: "attrSummary",
-                header: "Attributes",
+                header: "Selected Values",
                 render: (r) => {
                   if (!r.attrSummary.length)
-                    return <span className="text-muted">—</span>;
+                    return (
+                      <span className="text-xs text-muted">
+                        Base option — no attributes selected
+                      </span>
+                    );
                   return (
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap gap-1.5">
                       {r.attrSummary.map((x, i) => (
                         <span
                           key={i}
-                          className="inline-flex items-center px-1.5 py-0.5 rounded bg-timber-100 text-timber-700 text-[11px] font-semibold"
+                          className="inline-flex items-center px-2 py-1 rounded-md bg-bg border border-line text-ink text-[11px] font-semibold"
                         >
                           {x.name}: {String(x.value)}
                         </span>
@@ -228,14 +265,16 @@ export function ProductDetailPage() {
                 header: "Purchase",
                 align: "right",
                 hideOnMobile: true,
-                render: (r) => formatMoney(r.purchase),
+                render: (r) => (
+                  <span className="text-ink">{formatMoney(r.purchase)}</span>
+                ),
               },
               {
                 key: "selling",
                 header: "Selling",
                 align: "right",
                 render: (r) => (
-                  <div className="font-semibold text-timber-700">
+                  <div className="font-bold text-ink">
                     {formatMoney(r.selling)}
                   </div>
                 ),
@@ -248,8 +287,8 @@ export function ProductDetailPage() {
                   <span
                     className={
                       r.stock <= (r.reorderLevel || 0)
-                        ? "text-danger font-semibold"
-                        : "text-ink font-semibold"
+                        ? "text-red-500 font-bold"
+                        : "text-ink font-bold"
                     }
                   >
                     {r.stock}
@@ -258,22 +297,24 @@ export function ProductDetailPage() {
               },
             ]}
             rows={rows}
-            emptyTitle="No variants"
-            emptyDescription="This product has no variants yet."
+            emptyTitle="No configured options yet"
+            emptyDescription="These appear here the first time this product is used on a bill with attribute values selected."
           />
         </Card>
       </div>
-    </>
+    </div>
   );
 }
 
 function Detail({ label, children }) {
   return (
     <div>
-      <div className="text-[11px] font-semibold text-muted uppercase tracking-wide">
+      <div className="text-[10px] font-bold text-muted uppercase tracking-wide">
         {label}
       </div>
-      <div className="text-sm mt-1">{children}</div>
+      <div className="text-sm mt-1 text-ink">{children}</div>
     </div>
   );
 }
+
+export default ProductDetailPage;

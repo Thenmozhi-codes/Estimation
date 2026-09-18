@@ -1,23 +1,13 @@
 import { cn } from "@/lib/utils/cn";
 
-export function Card({
-  className,
-  interactive = false,
-  children,
-  ...rest
-}) {
+export function Card({ className, interactive, children, ...rest }) {
   return (
     <div
       className={cn(
-        "bg-surface border border-line rounded-2xl",
+        "bg-surface border border-line rounded-xl",
         "shadow-card",
         "transition-all duration-200 ease-premium",
-        interactive && [
-          "cursor-pointer",
-          "hover:-translate-y-[1px]",
-          "hover:shadow-card-hover",
-          "hover:border-line/80",
-        ],
+        interactive && "hover:shadow-card-hover hover:-translate-y-[1px] cursor-pointer",
         className,
       )}
       {...rest}
@@ -27,52 +17,28 @@ export function Card({
   );
 }
 
-export function CardHeader({
-  title,
-  subtitle,
-  actions,
-  className,
-  dense = false,
-}) {
+export function CardHeader({ title, subtitle, actions, className, dense }) {
   return (
     <div
       className={cn(
-        "flex items-start justify-between gap-4",
-        dense ? "px-4 py-3" : "px-5 py-4",
+        "flex items-start justify-between gap-3 border-b border-line",
+        dense ? "px-4 py-2.5" : "px-5 py-3.5",
         className,
       )}
     >
       <div className="min-w-0">
-        {title && (
-          <div className="text-sm font-semibold tracking-tight text-ink">
-            {title}
-          </div>
-        )}
-
+        <div className="font-semibold text-ink text-sm tracking-tight">{title}</div>
         {subtitle && (
-          <div className="text-xs text-muted mt-0.5">
-            {subtitle}
-          </div>
+          <div className="text-2xs text-muted mt-0.5">{subtitle}</div>
         )}
       </div>
-
-      {actions && (
-        <div className="flex items-center gap-1.5 shrink-0">
-          {actions}
-        </div>
-      )}
+      {actions && <div className="flex items-center gap-1.5 shrink-0">{actions}</div>}
     </div>
   );
 }
 
-export function CardBody({
-  className,
-  children,
-  dense = false,
-}) {
+export function CardBody({ className, dense, children }) {
   return (
-    <div className={cn(dense ? "p-4" : "p-5", className)}>
-      {children}
-    </div>
+    <div className={cn(dense ? "p-4" : "p-5", className)}>{children}</div>
   );
 }
