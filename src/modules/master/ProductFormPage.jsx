@@ -1,35 +1,42 @@
-import { useEffect, useState } from "react";
-import {
-  ArrowLeft,
-  Package,
-  Save,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, Package, Save } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { PageHeader } from "@/components/common/PageHeader";
-import { ModuleTabs } from "@/components/common/ModuleTabs";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Field } from "@/components/ui/Field";
-import { Card, CardBody } from "@/components/ui/Card";
+import { Sheet } from "@/components/ui/Sheet";
 
 import { toast } from "@/lib/toast";
 import { toCode } from "@/lib/utils/code";
 import { useCategories } from "@/hooks/useMasters";
-import { AttributeConfigPreview } from "@/components/master/AttributeConfigPreview";
 import {
   useProduct,
   useProductVariants,
   useCreateProduct,
   useUpdateProduct,
 } from "@/hooks/useProducts";
-import {
-  variantRepo,
-  variantAttributeRepo,
-} from "@/lib/api/repos";
-import { MODULE_TABS } from "@/app/moduleNav";
+import { variantRepo, variantAttributeRepo } from "@/lib/api/repos";
+
+/*
+ * Product Types shown to users.
+ *
+ * IMPORTANT:
+ * The database can contain other categories/legacy records.
+ * Product Master must NOT expose those records.
+ *
+ * Keep this list in sync with Attribute Master.
+ */
+const FIXED_PRODUCT_TYPES = [
+  { name: "Plywood", code: "PLYWOOD" },
+  { name: "Laminate", code: "LAMINATE" },
+  { name: "Edge Band", code: "EDGE-BAND" },
+  { name: "WPC", code: "WPC" },
+  { name: "Adhesive", code: "ADHESIVE" },
+  { name: "Hardware", code: "HARDWARE" },
+];
 
 function buildSku(name, categoryName) {
   const typeCode =
@@ -45,9 +52,28 @@ function buildSku(name, categoryName) {
   return `${typeCode}-${productCode}`.toUpperCase();
 }
 
-export function ProductFormPage() {
-  const { id } = useParams();
+/*
+ * Product Form
+ *
+ * Right-side Sheet, matching the Customer / Attribute Master pattern.
+ *
+ * User-facing fields:
+ *   - Product Name
+ *   - Product Type
+ *
+ * Attributes and allowed values are configured only in Attribute Master.
+ * Variants remain an internal implementation detail for billing compatibility.
+ */
+export function ProductFormPage({
+  open = true,
+  onClose,
+  productId = null,
+}) {
+  const routeParams = useParams();
+  const routeId = routeParams.id || null;
+  const id = productId || routeId;
   const isEdit = Boolean(id);
+
   const navigate = useNavigate();
   const qc = useQueryClient();
 
@@ -61,30 +87,94 @@ export function ProductFormPage() {
   const [categoryId, setCategoryId] = useState("");
   const [loaded, setLoaded] = useState(!isEdit);
 
-  const saving =
-    createProduct.isPending || updateProduct.isPending;
+  const saving = createProduct.isPending || updateProduct.isPending;
+
+  /*
+   * Only the six Product Types configured by the ERP should be exposed.
+   *
+   * This prevents old/extra categories from appearing in the Product Type
+   * dropdown and also prevents duplicate-looking Product Types.
+   */
+  const productTypes = useMemo(() => {
+    const byName = new Map();
+
+    categories.forEach((category) => {
+      const key = String(category.name || "").trim().toLowerCase();
+
+      if (!key) return;
+
+      // Keep the first active matching record only.
+      if (!byName.has(key) && category.isActive !== false) {
+        byName.set(key, category);
+      }
+    });
+
+    return FIXED_PRODUCT_TYPES
+      .map((type) => byName.get(type.name.toLowerCase()))
+      .filter(Boolean);
+  }, [categories]);
 
   useEffect(() => {
-    if (!isEdit || loaded) return;
+    if (!open) return;
+
+    if (!isEdit) {
+      setName("");
+      setCategoryId("");
+      setLoaded(true);
+      return;
+    }
+
+    setLoaded(false);
+  }, [open, id, isEdit]);
+
+  useEffect(() => {
+    if (!open || !isEdit || loaded) return;
     if (!productQ.data) return;
 
     setName(productQ.data.name || "");
     setCategoryId(productQ.data.categoryId || "");
     setLoaded(true);
-  }, [isEdit, loaded, productQ.data]);
+  }, [open, isEdit, loaded, productQ.data]);
 
+  /*
+   * When editing an old product whose category is no longer one of the
+   * six visible Product Types, still show its current value so the form
+   * does not silently change the product. For NEW products only the six
+   * fixed types are available.
+   */
   const selectedCategory = categories.find(
     (category) => category.id === categoryId,
   );
 
+  const close = () => {
+    if (onClose) {
+      onClose();
+      return;
+    }
+
+    navigate("/master/products");
+  };
+
   const validate = () => {
     if (!name.trim()) return "Product name is required";
     if (!categoryId) return "Product Type is required";
+
+    if (!isEdit) {
+      const isAllowed = productTypes.some(
+        (category) => category.id === categoryId,
+      );
+
+      if (!isAllowed) {
+        return "Please select a valid Product Type";
+      }
+    }
+
     return null;
   };
 
   const handleSave = async () => {
     const error = validate();
+
     if (error) {
       toast.error(error);
       return;
@@ -112,8 +202,10 @@ export function ProductFormPage() {
           ],
         });
 
+        await qc.invalidateQueries({ queryKey: ["products"] });
+
         toast.success("Product created");
-        navigate("/master/products");
+        close();
         return;
       }
 
@@ -125,11 +217,6 @@ export function ProductFormPage() {
         },
       });
 
-      // Product Master is a schema-bound entity: attribute selections
-      // belong to Attribute Master (per Product Type). Any variant-
-      // attribute rows left over from an earlier version of the app
-      // are stripped here. Bills snapshot attribute labels on their
-      // own line items, so history stays readable regardless.
       const variants = variantsQ.data || [];
       const firstVariant = variants[0];
 
@@ -140,10 +227,9 @@ export function ProductFormPage() {
           status: "active",
         });
 
-        const existingAttributes =
-          await variantAttributeRepo.list({
-            variantId: firstVariant.id,
-          });
+        const existingAttributes = await variantAttributeRepo.list({
+          variantId: firstVariant.id,
+        });
 
         for (const row of existingAttributes) {
           await variantAttributeRepo.remove(row.id);
@@ -155,136 +241,131 @@ export function ProductFormPage() {
       await qc.invalidateQueries({ queryKey: ["variants", id] });
 
       toast.success("Product updated");
-      navigate(`/master/products/${id}`);
+      close();
     } catch (error) {
-      console.error(error);
+      console.error("Product save failed:", error);
       toast.error(error?.message || "Could not save product");
     }
   };
 
-  if (isEdit && !loaded) {
-    return (
-      <div className="page-container">
-        <PageHeader title="Edit Product" />
-        <div className="p-6">
-          <Card>
-            <CardBody className="py-14 text-center">
-              <div className="text-sm font-bold text-ink">
-                Loading product…
-              </div>
-              <div className="text-xs text-muted mt-1">
-                Preparing product details.
-              </div>
-            </CardBody>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="page-container min-h-full">
-      <PageHeader
-        title={isEdit ? "Edit Product" : "New Product"}
-        description="A product needs only a name and a Product Type. Attributes and their allowed values live in Attribute Master."
-        actions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate("/master/products")}
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span className="hidden sm:inline">Cancel</span>
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSave}
-              disabled={saving}
-            >
-              <Save className="h-4 w-4" />
-              {saving
-                ? "Saving…"
-                : isEdit
-                  ? "Save changes"
-                  : "Create product"}
-            </Button>
+    <Sheet
+      open={open}
+      onClose={close}
+      title={isEdit ? "Edit Product" : "New Product"}
+      subtitle={
+        selectedCategory
+          ? `Product Type: ${selectedCategory.name}`
+          : "Add basic product information"
+      }
+      width="md"
+      footer={
+        <>
+          <Button variant="ghost" onClick={close}>
+            Cancel
+          </Button>
+
+          <Button
+            onClick={handleSave}
+            disabled={saving || !name.trim() || !categoryId}
+          >
+            <Save className="h-4 w-4" />
+            {saving
+              ? "Saving…"
+              : isEdit
+                ? "Save Changes"
+                : "Create Product"}
+          </Button>
+        </>
+      }
+    >
+      {!loaded ? (
+        <div className="flex min-h-[240px] items-center justify-center">
+          <div className="text-sm font-semibold text-muted">
+            Loading product…
           </div>
-        }
-      />
-
-      <ModuleTabs tabs={MODULE_TABS.master} />
-
-      <div className="p-4 md:p-6 pb-28">
-        <div className="max-w-2xl mx-auto">
-          <Card className="overflow-hidden">
-            <div className="px-5 py-5 border-b border-line flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-primary-500/10 flex items-center justify-center shrink-0">
+        </div>
+      ) : (
+        <form
+          className="space-y-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleSave();
+          }}
+        >
+          <div className="rounded-xl border border-line bg-bg/50 p-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-500/10">
                 <Package className="h-5 w-5 text-primary-500" />
               </div>
+
               <div>
-                <h2 className="text-sm font-black text-ink">
-                  Product details
-                </h2>
-                <p className="text-xs text-muted mt-0.5">
-                  Enter only the basic product information.
+                <div className="text-sm font-bold text-ink">
+                  Product Details
+                </div>
+                <p className="mt-0.5 text-[10px] leading-4 text-muted">
+                  Only basic product information is required here.
                 </p>
               </div>
             </div>
+          </div>
 
-            <CardBody className="p-5 space-y-5">
-              <Field label="Product Name" required>
-                <Input
-                  value={name}
-                  onChange={(event) =>
-                    setName(event.target.value)
-                  }
-                  placeholder="e.g. Sharon Gold Plywood"
-                  autoFocus
-                />
-              </Field>
+          <Field label="Product Name" required>
+            <Input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="e.g. Sharon Gold Plywood"
+              autoFocus
+            />
+          </Field>
 
-              <Field label="Product Type" required>
-                <Select
-                  value={categoryId}
-                  onChange={(event) =>
-                    setCategoryId(event.target.value)
-                  }
-                >
-                  <option value="">Select product type</option>
-                  {categories.map((category) => (
-                    <option
-                      key={category.id}
-                      value={category.id}
-                    >
-                      {category.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
+          <Field label="Product Type" required>
+            <Select
+              value={categoryId}
+              onChange={(event) => setCategoryId(event.target.value)}
+            >
+              <option value="">Select product type</option>
 
-              {selectedCategory && (
-                <AttributeConfigPreview
-                  categoryId={selectedCategory.id}
-                  categoryName={selectedCategory.name}
-                />
-              )}
-            </CardBody>
+              {productTypes.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
 
-            <div className="px-5 py-4 border-t border-line flex justify-end">
-              <Button onClick={handleSave} disabled={saving}>
-                <Save className="h-4 w-4" />
-                {saving
-                  ? "Saving…"
-                  : isEdit
-                    ? "Save changes"
-                    : "Create product"}
-              </Button>
+              {isEdit &&
+                selectedCategory &&
+                !productTypes.some(
+                  (category) => category.id === selectedCategory.id,
+                ) && (
+                  <option value={selectedCategory.id}>
+                    {selectedCategory.name}
+                  </option>
+                )}
+            </Select>
+          </Field>
+
+          {selectedCategory && (
+            <div className="rounded-xl border border-primary-500/15 bg-primary-500/5 p-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface">
+                  <Check className="h-4 w-4 text-primary-500" />
+                </div>
+
+                <div>
+                  <div className="text-xs font-bold text-ink">
+                    {selectedCategory.name} selected
+                  </div>
+                  <p className="mt-1 text-[10px] leading-5 text-muted">
+                    Attributes and allowed values for this Product Type are
+                    managed in Attribute Master.
+                  </p>
+                </div>
+              </div>
             </div>
-          </Card>
-        </div>
-      </div>
-    </div>
+          )}
+        </form>
+      )}
+    </Sheet>
   );
 }
 
