@@ -27,12 +27,10 @@ import {
   resolveBrandCategoryId,
 } from "./brandConfig";
 
-/*
- * Default Specifications
- *
- * These specifications are automatically loaded
- * based on the selected Product Type.
- */
+/* =========================================================
+   DEFAULT SPECIFICATIONS BY PRODUCT TYPE
+========================================================= */
+
 const PRODUCT_TYPE_SPECIFICATIONS = {
   Plywood: [
     "19mm",
@@ -75,6 +73,10 @@ const PRODUCT_TYPE_SPECIFICATIONS = {
   ],
 };
 
+/* =========================================================
+   BRAND FORM
+========================================================= */
+
 export function BrandFormPage({
   open = true,
   onClose,
@@ -89,6 +91,10 @@ export function BrandFormPage({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  /* =======================================================
+     DATA
+  ======================================================= */
+
   const { data: brands = [] } = useBrands();
   const { data: categories = [] } = useCategories();
   const { data: products = [] } = useProducts();
@@ -96,19 +102,22 @@ export function BrandFormPage({
   const createBrand = useCreateBrand();
   const updateBrand = useUpdateBrand();
 
+  /* =======================================================
+     FORM STATE
+  ======================================================= */
+
   const [brandName, setBrandName] = useState("");
   const [productTypeId, setProductTypeId] = useState("");
 
   /*
-   * Each specification now has its own price.
+   * Each specification has its own price.
    *
    * Example:
    *
-   * [
-   *   { specification: "19mm", price: "2450" },
-   *   { specification: "18mm", price: "2300" },
-   *   { specification: "16mm", price: "2100" }
-   * ]
+   * {
+   *   specification: "19mm",
+   *   price: "2450"
+   * }
    */
   const [specifications, setSpecifications] = useState([]);
 
@@ -118,49 +127,63 @@ export function BrandFormPage({
     createBrand.isPending ||
     updateBrand.isPending;
 
-
-  /*
-   * Current Brand
-   */
-  const currentBrand = useMemo(() => {
-    if (!id) return null;
-
-    return (
-      brands.find((brand) => brand.id === id) ||
-      null
-    );
-  }, [brands, id]);
+  /* =======================================================
+     PRODUCT TYPES
+  ======================================================= */
 
   const productTypes = useMemo(() => {
     return getFixedProductTypes(categories);
   }, [categories]);
 
-  /*
-   * Selected Product Type
-   */
+  /* =======================================================
+     CURRENT BRAND
+  ======================================================= */
+
+  const currentBrand = useMemo(() => {
+    if (!id) return null;
+
+    return (
+      brands.find(
+        (brand) => brand.id === id
+      ) || null
+    );
+  }, [brands, id]);
+
+  /* =======================================================
+     SELECTED PRODUCT TYPE
+  ======================================================= */
+
   const selectedProductType = useMemo(() => {
     return productTypes.find(
-      (type) => type.categoryId === productTypeId
+      (type) =>
+        type.categoryId === productTypeId
     );
-  }, [productTypes, productTypeId]);
+  }, [
+    productTypes,
+    productTypeId,
+  ]);
 
-  /*
-   * Default Specifications for selected Product Type
-   */
+  /* =======================================================
+     DEFAULT SPECIFICATIONS
+  ======================================================= */
+
   const defaultSpecifications = useMemo(() => {
-    const typeName = selectedProductType?.label;
+    const typeName =
+      selectedProductType?.label;
 
     if (!typeName) return [];
 
     return (
-      PRODUCT_TYPE_SPECIFICATIONS[typeName] ||
-      []
+      PRODUCT_TYPE_SPECIFICATIONS[
+        typeName
+      ] || []
     );
   }, [selectedProductType]);
 
-  /*
-   * Reset form for new Brand.
-   */
+  /* =======================================================
+     RESET FORM
+  ======================================================= */
+
   useEffect(() => {
     if (!open) return;
 
@@ -169,20 +192,34 @@ export function BrandFormPage({
       setProductTypeId("");
       setSpecifications([]);
       setLoaded(true);
+
       return;
     }
 
     setLoaded(false);
-  }, [open, id, isEdit]);
+  }, [
+    open,
+    id,
+    isEdit,
+  ]);
 
-  /*
-   * Load existing Brand.
-   */
+  /* =======================================================
+     LOAD EXISTING BRAND
+  ======================================================= */
+
   useEffect(() => {
-    if (!open || !isEdit || loaded) return;
-    if (!currentBrand) return;
+    if (
+      !open ||
+      !isEdit ||
+      loaded ||
+      !currentBrand
+    ) {
+      return;
+    }
 
-    setBrandName(currentBrand.name || "");
+    setBrandName(
+      currentBrand.name || ""
+    );
 
     const resolvedCategoryId =
       resolveBrandCategoryId(
@@ -191,31 +228,28 @@ export function BrandFormPage({
         categories
       );
 
-    setProductTypeId(resolvedCategoryId);
+    setProductTypeId(
+      resolvedCategoryId
+    );
 
     /*
-     * Restore saved specification + price rows.
-     *
-     * New format:
-     * [
-     *   {
-     *     specification: "19mm",
-     *     price: 2450
-     *   }
-     * ]
-     *
-     * Also supports the older simple
-     * specification string format.
+     * Restore specification + price.
      */
     if (
-      Array.isArray(currentBrand.specifications) &&
+      Array.isArray(
+        currentBrand.specifications
+      ) &&
       currentBrand.specifications.length > 0
     ) {
-      const restoredSpecifications =
-        currentBrand.specifications.map(
-          (item) => {
+      const restored =
+        currentBrand.specifications
+          .map((item) => {
+            /*
+             * Legacy string format
+             */
             if (
-              typeof item === "string"
+              typeof item ===
+              "string"
             ) {
               return {
                 specification: item,
@@ -223,26 +257,33 @@ export function BrandFormPage({
               };
             }
 
+            /*
+             * New object format
+             */
             return {
               specification:
                 item?.specification ||
                 item?.name ||
                 item?.value ||
                 "",
+
               price:
-                item?.price !== undefined &&
+                item?.price !==
+                  undefined &&
                 item?.price !== null
-                  ? String(item.price)
+                  ? String(
+                      item.price
+                    )
                   : "",
             };
-          }
-        );
+          })
+          .filter(
+            (item) =>
+              item.specification
+          );
 
       setSpecifications(
-        restoredSpecifications.filter(
-          (item) =>
-            item.specification
-        )
+        restored
       );
     } else {
       setSpecifications([]);
@@ -258,10 +299,10 @@ export function BrandFormPage({
     categories,
   ]);
 
-  /*
-   * Automatically load default Specifications
-   * when Product Type is selected.
-   */
+  /* =======================================================
+     AUTO LOAD SPECIFICATIONS
+  ======================================================= */
+
   useEffect(() => {
     if (!productTypeId) {
       setSpecifications([]);
@@ -269,8 +310,7 @@ export function BrandFormPage({
     }
 
     /*
-     * While editing, don't overwrite the
-     * existing saved specification + price data.
+     * Don't overwrite saved edit values.
      */
     if (
       isEdit &&
@@ -278,7 +318,8 @@ export function BrandFormPage({
       Array.isArray(
         currentBrand.specifications
       ) &&
-      currentBrand.specifications.length > 0
+      currentBrand.specifications.length >
+        0
     ) {
       return;
     }
@@ -298,45 +339,48 @@ export function BrandFormPage({
     currentBrand,
   ]);
 
-  /*
-   * Remove a Specification row.
-   *
-   * IMPORTANT:
-   * Minus button is only placed beside
-   * the Specification field.
-   */
-  const removeSpecification = (index) => {
-    setSpecifications((previous) =>
-      previous.filter(
-        (_, itemIndex) =>
-          itemIndex !== index
-      )
+  /* =======================================================
+     REMOVE SPECIFICATION
+  ======================================================= */
+
+  const removeSpecification = (
+    index
+  ) => {
+    setSpecifications(
+      (previous) =>
+        previous.filter(
+          (_, itemIndex) =>
+            itemIndex !== index
+        )
     );
   };
 
-  /*
-   * Update price for a Specification.
-   */
+  /* =======================================================
+     UPDATE PRICE
+  ======================================================= */
+
   const updateSpecificationPrice = (
     index,
     price
   ) => {
-    setSpecifications((previous) =>
-      previous.map(
-        (item, itemIndex) =>
-          itemIndex === index
-            ? {
-                ...item,
-                price,
-              }
-            : item
-      )
+    setSpecifications(
+      (previous) =>
+        previous.map(
+          (item, itemIndex) =>
+            itemIndex === index
+              ? {
+                  ...item,
+                  price,
+                }
+              : item
+        )
     );
   };
 
-  /*
-   * Validate Brand.
-   */
+  /* =======================================================
+     VALIDATION
+  ======================================================= */
+
   const validate = () => {
     const cleanName =
       brandName.trim();
@@ -349,9 +393,6 @@ export function BrandFormPage({
       return "Please select a Product Type";
     }
 
-    /*
-     * Make sure Product Type is valid.
-     */
     const validType =
       productTypes.some(
         (type) =>
@@ -365,9 +406,6 @@ export function BrandFormPage({
 
     /*
      * Validate prices.
-     *
-     * Price can be empty for now.
-     * If entered, it must be >= 0.
      */
     const invalidPrice =
       specifications.some(
@@ -386,11 +424,10 @@ export function BrandFormPage({
     }
 
     /*
-     * Prevent duplicate Brand +
-     * Product Type.
+     * Duplicate Brand + Product Type.
      */
-    const duplicate = brands.find(
-      (brand) => {
+    const duplicate =
+      brands.find((brand) => {
         if (brand.id === id) {
           return false;
         }
@@ -409,13 +446,16 @@ export function BrandFormPage({
           );
 
         return (
-          normalize(brand.name) ===
-            normalize(cleanName) &&
+          normalize(
+            brand.name
+          ) ===
+            normalize(
+              cleanName
+            ) &&
           existingTypeId ===
             productTypeId
         );
-      }
-    );
+      });
 
     if (duplicate) {
       return `"${cleanName}" already exists for this Product Type`;
@@ -424,9 +464,10 @@ export function BrandFormPage({
     return null;
   };
 
-  /*
-   * Save Brand.
-   */
+  /* =======================================================
+     SAVE
+  ======================================================= */
+
   const handleSave = async () => {
     const error = validate();
 
@@ -442,20 +483,7 @@ export function BrandFormPage({
       toCode(cleanName);
 
     /*
-     * Prepare specification data.
-     *
-     * Example:
-     *
-     * [
-     *   {
-     *     specification: "19mm",
-     *     price: 2450
-     *   },
-     *   {
-     *     specification: "18mm",
-     *     price: 2300
-     *   }
-     * ]
+     * Save specification + individual price.
      */
     const specificationData =
       specifications.map(
@@ -472,18 +500,12 @@ export function BrandFormPage({
 
     try {
       if (!isEdit) {
-        /*
-         * CREATE BRAND
-         */
         await createBrand.mutateAsync({
           name: cleanName,
           code,
-          categoryId: productTypeId,
+          categoryId:
+            productTypeId,
           isActive: true,
-
-          /*
-           * Specification + Price
-           */
           specifications:
             specificationData,
         });
@@ -492,21 +514,15 @@ export function BrandFormPage({
           "Brand created"
         );
       } else {
-        /*
-         * UPDATE BRAND
-         */
         await updateBrand.mutateAsync({
           id,
 
           patch: {
             name: cleanName,
             code,
-            categoryId: productTypeId,
+            categoryId:
+              productTypeId,
             isActive: true,
-
-            /*
-             * Specification + Price
-             */
             specifications:
               specificationData,
           },
@@ -537,17 +553,24 @@ export function BrandFormPage({
     }
   };
 
-  /*
-   * Close form.
-   */
+  /* =======================================================
+     CLOSE
+  ======================================================= */
+
   const close = () => {
     if (onClose) {
       onClose();
       return;
     }
 
-    navigate("/master/brands");
+    navigate(
+      "/master/brands"
+    );
   };
+
+  /* =======================================================
+     UI
+  ======================================================= */
 
   return (
     <Sheet
@@ -607,7 +630,10 @@ export function BrandFormPage({
             handleSave();
           }}
         >
-          {/* Header */}
+          {/* =================================================
+              HEADER
+          ================================================= */}
+
           <div className="rounded-xl border border-line bg-bg/50 p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-500/10">
@@ -620,34 +646,21 @@ export function BrandFormPage({
                 </div>
 
                 <p className="mt-0.5 text-[11px] leading-4 text-muted">
-                  Add brand details and configure
-                  specification prices.
+                  Add brand details and configure specification prices.
                 </p>
               </div>
             </div>
           </div>
 
-        
+          {/* =================================================
+              BRAND NAME
+          ================================================= */}
 
-          {/* Brand Name */}
+          {/* =================================================
+              PRODUCT TYPE
+          ================================================= */}
+
           <Field
-            label="Brand Name"
-            required
-          >
-            <Input
-              value={brandName}
-              onChange={(event) =>
-                setBrandName(
-                  event.target.value
-                )
-              }
-              placeholder="e.g. Sharon Gold"
-              autoFocus
-              maxLength={100}
-            />
-          </Field>
-
-            <Field
             label="Product Type"
             required
             hint="Choose the Product Type this brand belongs to."
@@ -681,7 +694,29 @@ export function BrandFormPage({
             </Select>
           </Field>
 
-          {/* Specification + Price */}
+          
+          <Field
+            label="Brand Name"
+            required
+          >
+            <Input
+              value={brandName}
+              onChange={(event) =>
+                setBrandName(
+                  event.target.value
+                )
+              }
+              placeholder="e.g. Sharon Gold"
+              autoFocus
+              maxLength={100}
+            />
+          </Field>
+
+
+          {/* =================================================
+              SPECIFICATIONS + PRICE
+          ================================================= */}
+
           {productTypeId && (
             <div className="rounded-xl border border-line bg-bg/50 p-4">
               <div className="mb-4">
@@ -689,15 +724,11 @@ export function BrandFormPage({
                   Specifications & Price
                 </div>
 
-                <p className="mt-0.5 text-[11px] leading-4 text-muted">
-                  Specifications are automatically
-                  loaded. Add a price for each one.
-                </p>
+               
               </div>
 
-              {/* Column Header */}
               {specifications.length > 0 && (
-                <div className="mb-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 px-1">
+                <div className="mb-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_36px] items-center gap-3 px-1">
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">
                     Specification
                   </div>
@@ -705,6 +736,8 @@ export function BrandFormPage({
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">
                     Price
                   </div>
+
+                  <div />
                 </div>
               )}
 
@@ -714,37 +747,28 @@ export function BrandFormPage({
                     item,
                     index
                   ) => (
+                    /*
+                     * IMPORTANT:
+                     * Exactly 3 columns:
+                     *
+                     * 1. Specification
+                     * 2. Price
+                     * 3. Minus
+                     *
+                     * This keeps every row aligned.
+                     */
                     <div
                       key={`${item.specification}-${index}`}
-                      className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3"
+                      className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_36px] items-center gap-3"
                     >
                       {/* Specification */}
-                      <div className="flex min-w-0 items-center gap-2">
-                        <div className="min-w-0 flex-1">
-                          <Input
-                            value={
-                              item.specification
-                            }
-                            readOnly
-                            className="bg-bg"
-                          />
-                        </div>
-
-                        {/* Minus ONLY beside Specification */}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            removeSpecification(
-                              index
-                            )
-                          }
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 transition hover:bg-red-500/10"
-                          title="Remove Specification"
-                          aria-label={`Remove ${item.specification}`}
-                        >
-                          <Minus className="h-4 w-4" />
-                        </button>
-                      </div>
+                      <Input
+                        value={
+                          item.specification
+                        }
+                        readOnly
+                        className="h-9 bg-bg"
+                      />
 
                       {/* Price */}
                       <Input
@@ -764,20 +788,36 @@ export function BrandFormPage({
                           )
                         }
                         placeholder="Enter price"
+                        className="h-9 min-w-0"
                       />
+
+                      {/* Minus */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          removeSpecification(
+                            index
+                          )
+                        }
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 transition hover:bg-red-500/10"
+                        title="Remove Specification"
+                        aria-label={`Remove ${item.specification}`}
+                      >
+                        <Minus className="h-4 w-4" />
+                      </button>
                     </div>
                   )
                 )}
 
-                {specifications.length === 0 && (
+                {specifications.length ===
+                  0 && (
                   <div className="rounded-lg border border-dashed border-line p-5 text-center">
                     <div className="text-sm font-semibold text-ink">
                       No Specifications
                     </div>
 
                     <p className="mt-1 text-xs text-muted">
-                      Select a Product Type to
-                      load its Specifications.
+                      Select a Product Type to load its Specifications.
                     </p>
                   </div>
                 )}
@@ -785,7 +825,10 @@ export function BrandFormPage({
             </div>
           )}
 
-          {/* Preview */}
+          {/* =================================================
+              BRAND CONFIGURATION
+          ================================================= */}
+
           {productTypeId && (
             <div className="rounded-xl border border-primary-500/15 bg-primary-500/5 p-3.5">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-primary-600">
@@ -815,7 +858,9 @@ export function BrandFormPage({
                   </div>
 
                   <div className="mt-0.5 text-sm font-bold text-ink">
-                    {specifications.length}
+                    {
+                      specifications.length
+                    }
                   </div>
                 </div>
               </div>
