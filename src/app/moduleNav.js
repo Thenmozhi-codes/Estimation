@@ -8,8 +8,8 @@ export const SIDEBAR = [
 
 export const MODULE_TABS = {
   master: [
-    { label: "Attributes", path: "/master/attributes" },
-    { label: "Products", path: "/master/products" },
+    { label: "Specifications", path: "/master/attributes" },
+    { label: "Brand", path: "/master/brands" },
     { label: "Customers", path: "/master/customers" },
   ],
   bills: [

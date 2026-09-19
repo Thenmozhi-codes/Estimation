@@ -8,9 +8,8 @@ import { DashboardPage } from "@/modules/dashboard/DashboardPage";
 
 /* ── Master ── */
 import { AttributesPage }    from "@/modules/master/AttributesPage";
-import { ProductsPage }      from "@/modules/master/ProductsPage";
-import { ProductFormPage }   from "@/modules/master/ProductFormPage";
-import { ProductDetailPage } from "@/modules/master/ProductDetailPage";
+import { BrandsPage }        from "@/modules/master/BrandsPage";
+import { BrandFormPage }     from "@/modules/master/BrandFormPage";
 import { CustomersPage }     from "@/modules/master/CustomersPage";
 import { CustomerDetailPage } from "@/modules/master/CustomerDetailPage";
 
@@ -47,10 +46,12 @@ export function AppRouter() {
         <Route path="/master" element={<Navigate to="/master/attributes" replace />} />
         <Route path="/master/product-types" element={<Navigate to="/master/attributes" replace />} />
         <Route path="/master/attributes"    element={<AttributesPage />} />
-        <Route path="/master/products"      element={<ProductsPage />} />
-        <Route path="/master/products/new"  element={<ProductFormPage />} />
-        <Route path="/master/products/:id/edit" element={<ProductFormPage />} />
-        <Route path="/master/products/:id"  element={<ProductDetailPage />} />
+        <Route path="/master/brands"        element={<BrandsPage />} />
+        <Route path="/master/brands/new"    element={<BrandFormPage />} />
+        <Route path="/master/brands/:id/edit" element={<BrandFormPage />} />
+        {/* Legacy Product Master routes are kept as redirects so old bookmarks do not break. */}
+        <Route path="/master/products" element={<Navigate to="/master/brands" replace />} />
+        <Route path="/master/products/*" element={<Navigate to="/master/brands" replace />} />
         <Route path="/master/customers"     element={<CustomersPage />} />
         <Route path="/master/customers/:id" element={<CustomerDetailPage />} />
 

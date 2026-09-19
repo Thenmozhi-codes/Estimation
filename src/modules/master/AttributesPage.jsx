@@ -33,22 +33,22 @@ import {
 } from "@/lib/api/repos";
 
 /*
- * ATTRIBUTE MASTER
+ * SPECIFICATION MASTER
  *
  * Main page
- *   - Clean attribute list
+ *   - Clean specification list
  *   - Search
- *   - Add Attribute button
- *   - Edit Values for an existing attribute
+ *   - Add Specification button
+ *   - Edit Values for an existing specification
  *
- * Add Attribute
+ * Add Specification
  *   Product Type
- *   Attribute Name
+ *   Specification Name
  *   Allowed Values
  *
  * Edit Values
  *   Product Type
- *   Attribute (read-only)
+ *   Specification (read-only)
  *   Allowed Values
  *
  * Product Types are fixed:
@@ -190,8 +190,6 @@ export function AttributesPage() {
 
   /*
    * De-duplicate Product Types by name.
-   * This also prevents duplicate options when the local store contains
-   * more than one category record for the same Product Type.
    */
   const activeCategories = useMemo(() => {
     const byName = new Map();
@@ -214,7 +212,7 @@ export function AttributesPage() {
   }, [categories]);
 
   /*
-   * Seed the six standard Product Type attributes when they do not exist.
+   * Seed the six standard Product Type specifications.
    * Existing user data is never overwritten.
    */
   useEffect(() => {
@@ -243,10 +241,6 @@ export function AttributesPage() {
             ? currentMappings
             : [];
 
-          /*
-           * Prefer an attribute with the expected name already mapped
-           * to this Product Type.
-           */
           const matchingAttributes = attributes.filter(
             (item) =>
               normalize(item?.name) === normalize(config.attribute),
@@ -258,10 +252,6 @@ export function AttributesPage() {
             ),
           );
 
-          /*
-           * Do not reuse a Thickness/Size attribute belonging to another
-           * Product Type because their values can be different.
-           */
           if (!attribute) {
             for (const candidate of matchingAttributes) {
               const allMappings = await categoryAttributeRepo.list({
@@ -284,7 +274,10 @@ export function AttributesPage() {
           if (!attribute) {
             attribute = await createAttribute.mutateAsync({
               name: config.attribute,
-              code: makeCode(`${type.code}-${config.attribute}`, "ATTR"),
+              code: makeCode(
+                `${type.code}-${config.attribute}`,
+                "ATTR",
+              ),
               dataType: "select",
               isRequired: true,
               isActive: true,
@@ -332,7 +325,7 @@ export function AttributesPage() {
           }
         } catch (error) {
           console.error(
-            `Attribute setup failed for ${type.name}`,
+            `Specification setup failed for ${type.name}`,
             error,
           );
         } finally {
@@ -355,11 +348,7 @@ export function AttributesPage() {
   ]);
 
   /*
-   * Build the visible table.
-   *
-   * Standard rows are kept to one primary attribute per fixed Product Type.
-   * If a custom attribute is later added through Add Attribute, it is also
-   * shown in the table so the newly-created attribute is not hidden.
+   * Build visible table.
    */
   useEffect(() => {
     let cancelled = false;
@@ -382,54 +371,50 @@ export function AttributesPage() {
           categoryId,
         });
 
-      const mappings = Array.isArray(mappingData) ? mappingData : [];
+        const mappings = Array.isArray(mappingData)
+          ? mappingData
+          : [];
 
-const categoryRows = [];
+        const categoryRows = [];
 
-/*
- * Show ONLY ONE attribute for each Product Type.
- * The configured standard attribute has priority.
- *
- * Plywood   -> Thickness
- * Laminate  -> Thickness
- * Edge Band -> Thickness
- * WPC       -> Size
- * Fevicol   -> Pack Size
- * Hardware  -> Size
- */
-let mappingsToRender = mappings;
+        let mappingsToRender = mappings;
 
-if (config) {
-  const standardAttributeCode = makeCode(
-    `${type.code}-${config.attribute}`,
-    "ATTR",
-  );
+        if (config) {
+          const standardAttributeCode = makeCode(
+            `${type.code}-${config.attribute}`,
+            "ATTR",
+          );
 
-  const standardMapping = mappings.find((mapping) => {
-    const attribute = attributes.find(
-      (item) => item.id === mapping.attributeId,
-    );
+          const standardMapping = mappings.find((mapping) => {
+            const attribute = attributes.find(
+              (item) => item.id === mapping.attributeId,
+            );
 
-    if (!attribute || attribute.isActive === false) return false;
+            if (!attribute || attribute.isActive === false) {
+              return false;
+            }
 
-    return (
-      attribute.code === standardAttributeCode ||
-      normalize(attribute.name) === normalize(config.attribute)
-    );
-  });
+            return (
+              attribute.code === standardAttributeCode ||
+              normalize(attribute.name) ===
+                normalize(config.attribute)
+            );
+          });
 
-  if (standardMapping) {
-    mappingsToRender = [standardMapping];
-  } else if (mappings.length) {
-    mappingsToRender = [mappings[0]];
-  } else {
-    mappingsToRender = [];
-  }
-} else {
-  mappingsToRender = mappings.length ? [mappings[0]] : [];
-}
+          if (standardMapping) {
+            mappingsToRender = [standardMapping];
+          } else if (mappings.length) {
+            mappingsToRender = [mappings[0]];
+          } else {
+            mappingsToRender = [];
+          }
+        } else {
+          mappingsToRender = mappings.length
+            ? [mappings[0]]
+            : [];
+        }
 
-for (const mapping of mappingsToRender) {
+        for (const mapping of mappingsToRender) {
           const attribute = attributes.find(
             (item) => item.id === mapping.attributeId,
           );
@@ -441,7 +426,9 @@ for (const mapping of mappingsToRender) {
           });
 
           const values = Array.isArray(storedValues)
-            ? storedValues.filter((item) => item?.isActive !== false)
+            ? storedValues.filter(
+                (item) => item?.isActive !== false,
+              )
             : [];
 
           categoryRows.push({
@@ -454,19 +441,17 @@ for (const mapping of mappingsToRender) {
             values,
             fallbackValues:
               config &&
-              normalize(attribute.name) === normalize(config.attribute)
+              normalize(attribute.name) ===
+                normalize(config.attribute)
                 ? config.values
                 : [],
             isStandard:
               config &&
-              normalize(attribute.name) === normalize(config.attribute),
+              normalize(attribute.name) ===
+                normalize(config.attribute),
           });
         }
 
-        /*
-         * During the first setup render, the mapping can briefly be empty.
-         * Keep the standard row visible with fallback values.
-         */
         if (!categoryRows.length && config) {
           categoryRows.push({
             id: `${categoryId}-${config.attribute}`,
@@ -481,14 +466,13 @@ for (const mapping of mappingsToRender) {
           });
         }
 
-        /*
-         * Put the standard attribute first. Any custom attributes added
-         * later appear immediately after it.
-         */
         categoryRows.sort((a, b) => {
           if (a.isStandard && !b.isStandard) return -1;
           if (!a.isStandard && b.isStandard) return 1;
-          return a.attributeName.localeCompare(b.attributeName);
+
+          return a.attributeName.localeCompare(
+            b.attributeName,
+          );
         });
 
         nextRows.push(...categoryRows);
@@ -516,10 +500,16 @@ for (const mapping of mappingsToRender) {
 
     return rows.filter(
       (row) =>
-        String(row.categoryName || "").toLowerCase().includes(term) ||
-        String(row.attributeName || "").toLowerCase().includes(term) ||
+        String(row.categoryName || "")
+          .toLowerCase()
+          .includes(term) ||
+        String(row.attributeName || "")
+          .toLowerCase()
+          .includes(term) ||
         row.values.some((value) =>
-          String(value?.label || "").toLowerCase().includes(term),
+          String(value?.label || "")
+            .toLowerCase()
+            .includes(term),
         ),
     );
   }, [rows, search]);
@@ -539,15 +529,15 @@ for (const mapping of mappingsToRender) {
   return (
     <div className="page-container min-h-full">
       <PageHeader
-        title="Attributes"
-        description="Manage attributes and the allowed values used for each Product Type."
+        title="Specifications"
+        description="Manage specifications and the allowed values used for each Product Type."
         actions={
           <Button
             size="sm"
             onClick={() => setNewAttributeOpen(true)}
           >
             <Plus className="h-4 w-4" />
-            Add Attribute
+            Add Specification
           </Button>
         }
       />
@@ -555,17 +545,17 @@ for (const mapping of mappingsToRender) {
       <ModuleTabs tabs={MODULE_TABS.master} />
 
       <div className="p-4 pb-24 md:p-6">
-       <div className="w-full space-y-4">
+        <div className="w-full space-y-4">
           <Card>
             <div className="flex flex-col gap-3 border-b border-line px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-5">
               <div>
                 <h2 className="text-sm font-bold text-ink">
-                  Product Attributes
+                  Product Specifications
                 </h2>
 
                 <p className="mt-0.5 text-[10px] text-muted">
-                  Define the attribute and allowed values that users can
-                  select while creating products.
+                  Define the specification and allowed values that users
+                  can select while creating products.
                 </p>
               </div>
 
@@ -573,7 +563,7 @@ for (const mapping of mappingsToRender) {
                 <Toolbar
                   search={search}
                   onSearch={setSearch}
-                  placeholder="Search attributes…"
+                  placeholder="Search specifications…"
                 />
               </div>
             </div>
@@ -596,13 +586,21 @@ for (const mapping of mappingsToRender) {
                         </div>
                       ) : (
                         <div className="text-2xs text-muted">
-                          Custom Attribute
+                          Custom Specification
                         </div>
                       )}
                     </div>
                   ),
                 },
-              
+                {
+                  key: "attributeName",
+                  header: "Specification",
+                  render: (row) => (
+                    <div className="font-semibold text-ink">
+                      {row.attributeName}
+                    </div>
+                  ),
+                },
                 {
                   key: "values",
                   header: "Allowed Values",
@@ -611,10 +609,12 @@ for (const mapping of mappingsToRender) {
                       values={
                         row.values.length
                           ? row.values
-                          : row.fallbackValues.map((label, index) => ({
-                              id: `${row.id}-${index}`,
-                              label,
-                            }))
+                          : row.fallbackValues.map(
+                              (label, index) => ({
+                                id: `${row.id}-${index}`,
+                                label,
+                              }),
+                            )
                       }
                     />
                   ),
@@ -637,15 +637,16 @@ for (const mapping of mappingsToRender) {
                 },
               ]}
               rows={filteredRows}
-              loading={!activeCategories.length || !rows.length}
-              emptyTitle="No attributes configured"
-              emptyDescription="Your Product Type attributes will appear here."
+              loading={
+                !activeCategories.length || !rows.length
+              }
+              emptyTitle="No specifications configured"
+              emptyDescription="Your Product Type specifications will appear here."
             />
           </Card>
         </div>
       </div>
 
-      {/* IMPORTANT: Add Attribute form */}
       <NewAttributeSheet
         open={newAttributeOpen}
         onClose={() => setNewAttributeOpen(false)}
@@ -653,7 +654,6 @@ for (const mapping of mappingsToRender) {
         attributes={attributes}
       />
 
-      {/* Existing attribute value management */}
       <AttributeValuesSheet
         open={valuesSheetOpen}
         onClose={closeValues}
@@ -668,7 +668,11 @@ for (const mapping of mappingsToRender) {
 
 function AllowedValuesPreview({ values }) {
   if (!values?.length) {
-    return <span className="text-2xs text-muted">No values</span>;
+    return (
+      <span className="text-2xs text-muted">
+        No values
+      </span>
+    );
   }
 
   return (
@@ -688,7 +692,7 @@ function AllowedValuesPreview({ values }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* ADD ATTRIBUTE SHEET                                                        */
+/* ADD SPECIFICATION SHEET                                                    */
 /* -------------------------------------------------------------------------- */
 
 function NewAttributeSheet({
@@ -698,8 +702,10 @@ function NewAttributeSheet({
   attributes,
 }) {
   const createAttribute = useCreateAttribute();
-  const upsertCategoryAttribute = useUpsertCategoryAttribute();
-  const createAttributeValue = useCreateAttributeValue();
+  const upsertCategoryAttribute =
+    useUpsertCategoryAttribute();
+  const createAttributeValue =
+    useCreateAttributeValue();
 
   const [categoryId, setCategoryId] = useState("");
   const [attributeName, setAttributeName] = useState("");
@@ -710,14 +716,15 @@ function NewAttributeSheet({
     (item) => item.record.id === categoryId,
   );
 
-  /*
-   * When the Add Attribute sheet opens, select the first Product Type
-   * only as an initial UI value. The user can change it.
-   */
   useEffect(() => {
     if (!open) return;
 
-    setCategoryId((current) => current || categories[0]?.record?.id || "");
+    setCategoryId(
+      (current) =>
+        current ||
+        categories[0]?.record?.id ||
+        "",
+    );
   }, [open, categories]);
 
   const reset = () => {
@@ -738,7 +745,8 @@ function NewAttributeSheet({
     if (!label) return;
 
     const exists = draftValues.some(
-      (value) => normalize(value) === normalize(label),
+      (value) =>
+        normalize(value) === normalize(label),
     );
 
     if (exists) {
@@ -746,75 +754,82 @@ function NewAttributeSheet({
       return;
     }
 
-    setDraftValues((current) => [...current, label]);
+    setDraftValues((current) => [
+      ...current,
+      label,
+    ]);
+
     setValueDraft("");
   };
 
   const removeDraftValue = (label) => {
     setDraftValues((current) =>
-      current.filter((value) => normalize(value) !== normalize(label)),
+      current.filter(
+        (value) =>
+          normalize(value) !== normalize(label),
+      ),
     );
   };
 
   const save = async () => {
-  if (!categoryId) {
-    toast.error("Please select a Product Type");
-    return;
-  }
+    const selectedType = selectedCategory?.name;
+    const config =
+      PRODUCT_TYPE_ATTRIBUTE_CONFIG[selectedType];
 
-  const selectedType = selectedCategory?.name;
-  const config = PRODUCT_TYPE_ATTRIBUTE_CONFIG[selectedType];
+    const cleanName =
+      config?.attribute ||
+      `${selectedType || "Product"} Attribute`;
 
-  const cleanName =
-    config?.attribute || `${selectedType || "Product"} Attribute`;
-
-
-   
-
-    /*
-     * Prevent the same attribute from being mapped twice to one Product Type.
-     */
     try {
-      const existingMappings = await categoryAttributeRepo.list({
-        categoryId,
-      });
+      const existingMappings =
+        await categoryAttributeRepo.list({
+          categoryId,
+        });
 
-      const mappingList = Array.isArray(existingMappings)
+      const mappingList = Array.isArray(
+        existingMappings,
+      )
         ? existingMappings
         : [];
 
       const mappedAttributeIds = new Set(
-        mappingList.map((item) => item.attributeId),
+        mappingList.map(
+          (item) => item.attributeId,
+        ),
       );
 
       const duplicate = attributes.find(
         (item) =>
           mappedAttributeIds.has(item.id) &&
-          normalize(item.name) === normalize(cleanName),
+          normalize(item.name) ===
+            normalize(cleanName),
       );
 
       if (duplicate) {
         toast.error(
-          `${cleanName} is already configured for ${selectedCategory?.name || "this Product Type"}`,
+          `${cleanName} is already configured for ${
+            selectedCategory?.name ||
+            "this Product Type"
+          }`,
         );
+
         return;
       }
 
-      /*
-       * Create a separate Attribute record even when another Product Type
-       * already has an attribute with the same name. This keeps their
-       * allowed values independent.
-       */
-      const attribute = await createAttribute.mutateAsync({
-        name: cleanName,
-        code: makeUniqueCode(
-          `${selectedCategory?.code || "TYPE"}-${cleanName}`,
-          attributes,
-        ),
-        dataType: "select",
-        isRequired: true,
-        isActive: true,
-      });
+      const attribute =
+        await createAttribute.mutateAsync({
+          name: cleanName,
+          code: makeUniqueCode(
+            `${
+              selectedCategory?.code ||
+              "TYPE"
+            }-${cleanName}`,
+            attributes,
+          ),
+          dataType: "select",
+          isRequired: true,
+          isActive: true,
+        });
 
       await upsertCategoryAttribute.mutateAsync({
         categoryId,
@@ -823,33 +838,45 @@ function NewAttributeSheet({
         sortOrder: 0,
       });
 
-      /*
-       * Values are optional. An Attribute can be created first and values
-       * can be added later from Edit Values.
-       */
       const usedValues = [];
 
-      for (let index = 0; index < draftValues.length; index += 1) {
+      for (
+        let index = 0;
+        index < draftValues.length;
+        index += 1
+      ) {
         const label = draftValues[index];
 
         await createAttributeValue.mutateAsync({
           attributeId: attribute.id,
           label,
-          code: makeUniqueCode(label, usedValues),
+          code: makeUniqueCode(
+            label,
+            usedValues,
+          ),
           sortOrder: index,
           isActive: true,
         });
 
         usedValues.push({
           label,
-          code: makeUniqueCode(label, usedValues),
+          code: makeUniqueCode(
+            label,
+            usedValues,
+          ),
         });
       }
 
-      toast.success("Attribute added successfully");
+      toast.success(
+        "Specification added successfully",
+      );
+
       handleClose();
     } catch (error) {
-      toast.error(error?.message || "Could not add attribute");
+      toast.error(
+        error?.message ||
+          "Could not add specification",
+      );
     }
   };
 
@@ -857,8 +884,8 @@ function NewAttributeSheet({
     <Sheet
       open={open}
       onClose={handleClose}
-      title="New Attribute"
-      subtitle="Create an attribute for a Product Type and define its allowed values."
+      title="New Specification"
+      subtitle="Create a specification for a Product Type and define its allowed values."
       footer={
         <>
           <Button
@@ -873,25 +900,36 @@ function NewAttributeSheet({
             onClick={save}
             disabled={
               !categoryId ||
-              !attributeName.trim() ||
               createAttribute.isPending ||
               upsertCategoryAttribute.isPending ||
               createAttributeValue.isPending
             }
           >
             <Check className="h-4 w-4" />
-            {createAttribute.isPending ? "Adding…" : "Add Attribute"}
+
+            {createAttribute.isPending
+              ? "Adding…"
+              : "Add Specification"}
           </Button>
         </>
       }
     >
       <div className="space-y-5">
-        <Field label="Product Type" required>
+        <Field
+          label="Product Type"
+          required
+        >
           <Select
             value={categoryId}
-            onChange={(event) => setCategoryId(event.target.value)}
+            onChange={(event) =>
+              setCategoryId(
+                event.target.value,
+              )
+            }
           >
-            <option value="">Select product type</option>
+            <option value="">
+              Select product type
+            </option>
 
             {categories.map((item) => (
               <option
@@ -904,22 +942,44 @@ function NewAttributeSheet({
           </Select>
         </Field>
 
-       
+        <div className="border-t border-line pt-5">
+          <div className="mb-3">
+            <div className="text-xs font-bold text-ink">
+              Specification
+            </div>
+
+            <p className="mt-0.5 text-[10px] leading-4 text-muted">
+              The specification for this Product
+              Type is configured automatically.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-line bg-bg/30 p-3">
+            <div className="text-sm font-bold text-ink">
+              {PRODUCT_TYPE_ATTRIBUTE_CONFIG[
+                selectedCategory?.name
+              ]?.attribute || "—"}
+            </div>
+          </div>
+        </div>
 
         <div className="border-t border-line pt-5">
           <div className="mb-3">
-            
-
             <p className="mt-0.5 text-[10px] leading-4 text-muted">
-              Add the values users should be able to select for this
-              attribute. Values are optional.
+              Add the values users should be able to
+              select for this specification. Values
+              are optional.
             </p>
           </div>
 
           <div className="flex gap-2">
             <Input
               value={valueDraft}
-              onChange={(event) => setValueDraft(event.target.value)}
+              onChange={(event) =>
+                setValueDraft(
+                  event.target.value,
+                )
+              }
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
@@ -953,7 +1013,9 @@ function NewAttributeSheet({
                     <button
                       type="button"
                       className="rounded-full p-0.5 text-muted transition hover:bg-bg hover:text-ink"
-                      onClick={() => removeDraftValue(value)}
+                      onClick={() =>
+                        removeDraftValue(value)
+                      }
                       aria-label={`Remove ${value}`}
                     >
                       <X className="h-3 w-3" />
@@ -963,7 +1025,8 @@ function NewAttributeSheet({
               </div>
             ) : (
               <div className="py-1 text-[10px] text-muted">
-                No values added yet. You can add them now or later.
+                No values added yet. You can add
+                them now or later.
               </div>
             )}
           </div>
@@ -971,13 +1034,16 @@ function NewAttributeSheet({
 
         <div className="rounded-xl border border-primary-500/15 bg-primary-500/5 p-3">
           <div className="text-[11px] font-bold text-ink">
-            Attribute setup
+            Specification setup
           </div>
 
           <p className="mt-0.5 text-[10px] leading-4 text-muted">
-            This creates the Attribute, connects it to{" "}
-            {selectedCategory?.name || "the selected Product Type"}, and
-            stores each allowed value separately.
+            This creates the specification,
+            connects it to{" "}
+            {selectedCategory?.name ||
+              "the selected Product Type"}
+            , and stores each allowed value
+            separately.
           </p>
         </div>
       </div>
@@ -986,7 +1052,7 @@ function NewAttributeSheet({
 }
 
 /* -------------------------------------------------------------------------- */
-/* EDIT ATTRIBUTE VALUES SHEET                                                */
+/* EDIT SPECIFICATION VALUES SHEET                                            */
 /* -------------------------------------------------------------------------- */
 
 function AttributeValuesSheet({
@@ -997,65 +1063,100 @@ function AttributeValuesSheet({
   setCategoryId,
   categories,
 }) {
-  const { data: attributes = [] } = useAttributes();
-  const { data: mappings = [] } = useCategoryAttributes(categoryId);
+  const { data: attributes = [] } =
+    useAttributes();
 
-  const createValue = useCreateAttributeValue();
-  const updateValue = useUpdateAttributeValue();
-  const deleteValue = useDeleteAttributeValue();
+  const { data: mappings = [] } =
+    useCategoryAttributes(categoryId);
 
-  const [valueDraft, setValueDraft] = useState("");
-  const [editingId, setEditingId] = useState("");
-  const [editingLabel, setEditingLabel] = useState("");
+  const createValue =
+    useCreateAttributeValue();
+
+  const updateValue =
+    useUpdateAttributeValue();
+
+  const deleteValue =
+    useDeleteAttributeValue();
+
+  const [valueDraft, setValueDraft] =
+    useState("");
+
+  const [editingId, setEditingId] =
+    useState("");
+
+  const [editingLabel, setEditingLabel] =
+    useState("");
 
   const selectedCategory = categories.find(
     (item) => item.record.id === categoryId,
   );
 
-  /*
-   * For the current Product Type, prefer the standard attribute.
-   * If the selected row is a custom attribute, the first mapped attribute
-   * is used as the context for this sheet.
-   */
   const config =
-    PRODUCT_TYPE_ATTRIBUTE_CONFIG[selectedCategory?.name] || null;
+    PRODUCT_TYPE_ATTRIBUTE_CONFIG[
+      selectedCategory?.name
+    ] || null;
 
   const attribute = useMemo(() => {
     if (attributeId) {
-      return attributes.find((item) => item.id === attributeId) || null;
-    }
-
-    const expectedName = config?.attribute;
-
-    const standardMapping = mappings.find((mapping) => {
-      const candidate = attributes.find(
-        (attr) => attr.id === mapping.attributeId,
-      );
-
-      return (
-        candidate &&
-        expectedName &&
-        normalize(candidate.name) === normalize(expectedName)
-      );
-    });
-
-    if (standardMapping) {
       return (
         attributes.find(
-          (item) => item.id === standardMapping.attributeId,
+          (item) => item.id === attributeId,
         ) || null
       );
     }
 
-    const firstMapping = mappings.find((mapping) =>
-      attributes.some((attr) => attr.id === mapping.attributeId),
-    );
+    const expectedName =
+      config?.attribute;
+
+    const standardMapping =
+      mappings.find((mapping) => {
+        const candidate =
+          attributes.find(
+            (attr) =>
+              attr.id ===
+              mapping.attributeId,
+          );
+
+        return (
+          candidate &&
+          expectedName &&
+          normalize(candidate.name) ===
+            normalize(expectedName)
+        );
+      });
+
+    if (standardMapping) {
+      return (
+        attributes.find(
+          (item) =>
+            item.id ===
+            standardMapping.attributeId,
+        ) || null
+      );
+    }
+
+    const firstMapping =
+      mappings.find((mapping) =>
+        attributes.some(
+          (attr) =>
+            attr.id ===
+            mapping.attributeId,
+        ),
+      );
 
     return firstMapping
-      ? attributes.find((item) => item.id === firstMapping.attributeId) ||
-          null
+      ? attributes.find(
+          (item) =>
+            item.id ===
+            firstMapping.attributeId,
+        ) || null
       : null;
-  }, [attributeId, mappings, attributes, config]);
+  }, [
+    attributeId,
+    mappings,
+    attributes,
+    config,
+  ]);
 
   const {
     data: storedValues = [],
@@ -1065,7 +1166,10 @@ function AttributeValuesSheet({
   const activeValues = useMemo(
     () =>
       Array.isArray(storedValues)
-        ? storedValues.filter((value) => value?.isActive !== false)
+        ? storedValues.filter(
+            (value) =>
+              value?.isActive !== false,
+          )
         : [],
     [storedValues],
   );
@@ -1086,10 +1190,14 @@ function AttributeValuesSheet({
     if (
       activeValues.some(
         (value) =>
-          normalize(value?.label) === normalize(label),
+          normalize(value?.label) ===
+          normalize(label),
       )
     ) {
-      toast.error("This value already exists");
+      toast.error(
+        "This value already exists",
+      );
+
       return;
     }
 
@@ -1097,15 +1205,22 @@ function AttributeValuesSheet({
       await createValue.mutateAsync({
         attributeId: attribute.id,
         label,
-        code: makeUniqueCode(label, activeValues),
+        code: makeUniqueCode(
+          label,
+          activeValues,
+        ),
         sortOrder: activeValues.length,
         isActive: true,
       });
 
       setValueDraft("");
+
       toast.success("Value added");
     } catch (error) {
-      toast.error(error?.message || "Could not add value");
+      toast.error(
+        error?.message ||
+          "Could not add value",
+      );
     }
   };
 
@@ -1118,10 +1233,14 @@ function AttributeValuesSheet({
       activeValues.some(
         (item) =>
           item.id !== value.id &&
-          normalize(item?.label) === normalize(label),
+          normalize(item?.label) ===
+            normalize(label),
       )
     ) {
-      toast.error("This value already exists");
+      toast.error(
+        "This value already exists",
+      );
+
       return;
     }
 
@@ -1136,14 +1255,24 @@ function AttributeValuesSheet({
 
       setEditingId("");
       setEditingLabel("");
+
       toast.success("Value updated");
     } catch (error) {
-      toast.error(error?.message || "Could not update value");
+      toast.error(
+        error?.message ||
+          "Could not update value",
+      );
     }
   };
 
   const removeValue = async (value) => {
-    if (!window.confirm(`Delete "${value.label}"?`)) return;
+    if (
+      !window.confirm(
+        `Delete "${value.label}"?`,
+      )
+    ) {
+      return;
+    }
 
     try {
       await deleteValue.mutateAsync({
@@ -1153,7 +1282,10 @@ function AttributeValuesSheet({
 
       toast.success("Value deleted");
     } catch (error) {
-      toast.error(error?.message || "Could not delete value");
+      toast.error(
+        error?.message ||
+          "Could not delete value",
+      );
     }
   };
 
@@ -1161,17 +1293,22 @@ function AttributeValuesSheet({
     <Sheet
       open={open}
       onClose={onClose}
-      title="Manage Attribute Values"
+      title="Manage Specification Values"
       subtitle={
         selectedCategory
           ? `${selectedCategory.name} • ${
-              attribute?.name || config?.attribute || "Attribute"
+              attribute?.name ||
+              config?.attribute ||
+              "Specification"
             }`
           : "Manage allowed values"
       }
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button
+            variant="ghost"
+            onClick={onClose}
+          >
             Cancel
           </Button>
 
@@ -1183,17 +1320,25 @@ function AttributeValuesSheet({
       }
     >
       <div className="space-y-5">
-        <Field label="Product Type" required>
+        <Field
+          label="Product Type"
+          required
+        >
           <Select
             value={categoryId}
             onChange={(event) => {
-              setCategoryId(event.target.value);
+              setCategoryId(
+                event.target.value,
+              );
+
               setValueDraft("");
               setEditingId("");
               setEditingLabel("");
             }}
           >
-            <option value="">Select product type</option>
+            <option value="">
+              Select product type
+            </option>
 
             {categories.map((item) => (
               <option
@@ -1208,11 +1353,13 @@ function AttributeValuesSheet({
 
         <div className="rounded-xl border border-line bg-bg/50 p-3">
           <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted">
-            Attribute
+            Specification
           </div>
 
           <div className="mt-1 text-sm font-bold text-ink">
-            {attribute?.name || config?.attribute || "—"}
+            {attribute?.name ||
+              config?.attribute ||
+              "—"}
           </div>
         </div>
 
@@ -1223,14 +1370,19 @@ function AttributeValuesSheet({
             </div>
 
             <p className="mt-0.5 text-[10px] leading-4 text-muted">
-              Add, edit or remove selectable values for this attribute.
+              Add, edit or remove selectable
+              values for this specification.
             </p>
           </div>
 
           <div className="flex gap-2">
             <Input
               value={valueDraft}
-              onChange={(event) => setValueDraft(event.target.value)}
+              onChange={(event) =>
+                setValueDraft(
+                  event.target.value,
+                )
+              }
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
@@ -1238,7 +1390,10 @@ function AttributeValuesSheet({
                 }
               }}
               placeholder="Enter value (e.g. 19mm)"
-              disabled={!attribute?.id || isLoading}
+              disabled={
+                !attribute?.id ||
+                isLoading
+              }
               autoFocus
             />
 
@@ -1260,71 +1415,103 @@ function AttributeValuesSheet({
           <div className="mt-3 overflow-x-auto rounded-xl border border-line bg-bg/30 p-2.5 scrollbar-thin">
             {activeValues.length ? (
               <div className="flex w-max min-w-full flex-nowrap items-center gap-1.5">
-                {activeValues.map((value) => (
-                  <div
-                    key={value.id}
-                    className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-line bg-surface px-2.5 py-1.5 text-2xs font-semibold text-ink"
-                  >
-                    {editingId === value.id ? (
-                      <>
-                        <Input
-                          value={editingLabel}
-                          onChange={(event) =>
-                            setEditingLabel(event.target.value)
-                          }
-                          className="h-6 w-[110px] px-2 text-2xs"
-                          autoFocus
-                        />
+                {activeValues.map(
+                  (value) => (
+                    <div
+                      key={value.id}
+                      className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-line bg-surface px-2.5 py-1.5 text-2xs font-semibold text-ink"
+                    >
+                      {editingId ===
+                      value.id ? (
+                        <>
+                          <Input
+                            value={
+                              editingLabel
+                            }
+                            onChange={(
+                              event,
+                            ) =>
+                              setEditingLabel(
+                                event
+                                  .target
+                                  .value,
+                              )
+                            }
+                            className="h-6 w-[110px] px-2 text-2xs"
+                            autoFocus
+                          />
 
-                        <button
-                          type="button"
-                          className="rounded-full p-1 text-primary-600 hover:bg-primary-500/10"
-                          onClick={() => saveValue(value)}
-                          aria-label="Save value"
-                        >
-                          <Check className="h-3 w-3" />
-                        </button>
+                          <button
+                            type="button"
+                            className="rounded-full p-1 text-primary-600 hover:bg-primary-500/10"
+                            onClick={() =>
+                              saveValue(
+                                value,
+                              )
+                            }
+                            aria-label="Save value"
+                          >
+                            <Check className="h-3 w-3" />
+                          </button>
 
-                        <button
-                          type="button"
-                          className="rounded-full p-1 text-muted hover:bg-bg"
-                          onClick={() => {
-                            setEditingId("");
-                            setEditingLabel("");
-                          }}
-                          aria-label="Cancel editing"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <span>{value.label}</span>
+                          <button
+                            type="button"
+                            className="rounded-full p-1 text-muted hover:bg-bg"
+                            onClick={() => {
+                              setEditingId(
+                                "",
+                              );
 
-                        <button
-                          type="button"
-                          className="rounded-full p-1 text-muted hover:bg-bg hover:text-ink"
-                          onClick={() => {
-                            setEditingId(value.id);
-                            setEditingLabel(value.label || "");
-                          }}
-                          aria-label={`Edit ${value.label}`}
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </button>
+                              setEditingLabel(
+                                "",
+                              );
+                            }}
+                            aria-label="Cancel editing"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span>
+                            {value.label}
+                          </span>
 
-                        <button
-                          type="button"
-                          className="rounded-full p-1 text-muted hover:bg-red-50 hover:text-danger"
-                          onClick={() => removeValue(value)}
-                          aria-label={`Delete ${value.label}`}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                ))}
+                          <button
+                            type="button"
+                            className="rounded-full p-1 text-muted hover:bg-bg hover:text-ink"
+                            onClick={() => {
+                              setEditingId(
+                                value.id,
+                              );
+
+                              setEditingLabel(
+                                value.label ||
+                                  "",
+                              );
+                            }}
+                            aria-label={`Edit ${value.label}`}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+
+                          <button
+                            type="button"
+                            className="rounded-full p-1 text-muted hover:bg-red-50 hover:text-danger"
+                            onClick={() =>
+                              removeValue(
+                                value,
+                              )
+                            }
+                            aria-label={`Delete ${value.label}`}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ),
+                )}
               </div>
             ) : (
               <div className="py-1 text-[10px] text-muted">
@@ -1340,8 +1527,9 @@ function AttributeValuesSheet({
           </div>
 
           <p className="mt-0.5 text-[10px] leading-4 text-muted">
-            Each allowed value is maintained independently and will be
-            available to Product and Billing forms.
+            Each allowed value is maintained
+            independently and will be available
+            to Product and Billing forms.
           </p>
         </div>
       </div>

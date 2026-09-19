@@ -1,152 +1,455 @@
 import { useMemo, useState } from "react";
-import { useQueries } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
+
 import { Input } from "@/components/ui/Input";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
-import { useTaxes, useAttributes } from "@/hooks/useMasters";
+
+import {
+  useTaxes,
+  useAttributes,
+} from "@/hooks/useMasters";
+
 import { attributeValueRepo } from "@/lib/api/repos";
+
 import { ProductPicker } from "./ProductPicker";
-import { formatMoney, round2 } from "@/lib/utils/money";
+
+import {
+  formatMoney,
+  round2,
+} from "@/lib/utils/money";
+
 import { newId } from "@/lib/utils/id";
 import { usePermission } from "@/lib/store/authStore";
+import { useQuery, useQueries } from "@tanstack/react-query";
 
-export function LineItemsEditor({ items, onChange }) {
+/* ------------------------------------------------------------------
+ * Product Types
+ *
+ * These are the business-facing Product Types.
+ * Adhesive is the internal category name, but Fevicol is what the
+ * user sees.
+ * ------------------------------------------------------------------ */
+
+const PRODUCT_TYPES = [
+  {
+    key: "Plywood",
+    label: "Plywood",
+  },
+  {
+    key: "Laminate",
+    label: "Laminate",
+  },
+  {
+    key: "Edge Band",
+    label: "Edge Band",
+  },
+  {
+    key: "WPC",
+    label: "WPC",
+  },
+  {
+    key: "Adhesive",
+    label: "Fevicol",
+  },
+];
+
+/* ------------------------------------------------------------------
+ * Main Editor
+ * ------------------------------------------------------------------ */
+
+export function LineItemsEditor({
+  items,
+  onChange,
+}) {
   const { data: taxes = [] } = useTaxes();
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const canOverridePrice = usePermission("canOverridePrice");
+
+  const [pickerOpen, setPickerOpen] =
+    useState(false);
+
+  const canOverridePrice =
+    usePermission("canOverridePrice");
+
+  /* ---------------------------------------------------------------
+   * Add item
+   * --------------------------------------------------------------- */
 
   const addRow = (picked) => {
-    const taxId = taxes[0]?.id || null;
-    const taxRate = taxes[0]?.rate || 0;
+    const taxId =
+      taxes[0]?.id || null;
+
+    const taxRate =
+      taxes[0]?.rate || 0;
 
     const newRow = {
       tempId: newId(),
+
+      /*
+       * Internal product identity is preserved.
+       */
       productId: picked.product.id,
-      productSku: picked.product.sku,
-      categoryId: picked.product.categoryId,
-      variantId: picked.matchedVariant?.id || null,
-      sku: picked.matchedVariant?.sku || picked.product.sku,
-      productName: picked.product.name,
-      attributeValues: picked.attributeValues || {},
+
+      productSku:
+        picked.product.sku || "",
+
+      categoryId:
+        picked.product.categoryId,
+
+      variantId:
+        picked.matchedVariant?.id ||
+        null,
+
+      sku:
+        picked.matchedVariant?.sku ||
+        picked.product.sku ||
+        "",
+
+      /*
+       * User-facing Brand.
+       */
+      productName:
+        picked.brandName ||
+        picked.product.name,
+
+      brandName:
+        picked.brandName ||
+        "",
+
+      productType:
+        picked.productType ||
+        "",
+
+      attributeValues:
+        picked.attributeValues ||
+        {},
+
       quantity: 1,
-      unitPrice: picked.defaultPrice || 0,
+
+      unitPrice:
+        picked.defaultPrice || 0,
+
       discount: 0,
+
       taxId,
+
       taxRate,
     };
 
-    onChange([...items, newRow]);
+    onChange([
+      ...items,
+      newRow,
+    ]);
   };
 
-  const updateRow = (tempId, patch) => {
+  /* ---------------------------------------------------------------
+   * Update
+   * --------------------------------------------------------------- */
+
+  const updateRow = (
+    tempId,
+    patch,
+  ) => {
     onChange(
-      items.map((it) => {
-        if (it.tempId !== tempId) return it;
-        const next = { ...it, ...patch };
-        if (patch.taxId !== undefined) {
-          const t = taxes.find((x) => x.id === patch.taxId);
-          next.taxRate = t?.rate ?? 0;
+      items.map((item) => {
+        if (
+          item.tempId !== tempId
+        ) {
+          return item;
         }
+
+        const next = {
+          ...item,
+          ...patch,
+        };
+
+        if (
+          patch.taxId !== undefined
+        ) {
+          const tax = taxes.find(
+            (x) =>
+              x.id === patch.taxId,
+          );
+
+          next.taxRate =
+            tax?.rate ?? 0;
+        }
+
         return next;
       }),
     );
   };
 
-  const removeRow = (tempId) => {
-    onChange(items.filter((it) => it.tempId !== tempId));
+  /* ---------------------------------------------------------------
+   * Remove
+   * --------------------------------------------------------------- */
+
+  const removeRow = (
+    tempId,
+  ) => {
+    onChange(
+      items.filter(
+        (item) =>
+          item.tempId !== tempId,
+      ),
+    );
   };
 
-  const lineTotal = (it) => {
-    const gross = round2((it.unitPrice || 0) * (it.quantity || 0));
-    const taxable = round2(gross - (it.discount || 0));
-    const tax = round2((taxable * (it.taxRate || 0)) / 100);
-    return round2(taxable + tax);
+  /* ---------------------------------------------------------------
+   * Line total
+   * --------------------------------------------------------------- */
+
+  const lineTotal = (item) => {
+    const gross = round2(
+      (Number(item.unitPrice) || 0) *
+        (Number(item.quantity) || 0),
+    );
+
+    const taxable = round2(
+      gross -
+        (Number(item.discount) || 0),
+    );
+
+    const tax = round2(
+      (taxable *
+        (Number(item.taxRate) || 0)) /
+        100,
+    );
+
+    return round2(
+      taxable + tax,
+    );
   };
 
-  const totals = {
-    subtotal: round2(
+  /* ---------------------------------------------------------------
+   * Totals
+   *
+   * This stays for now.
+   * In the next phase we'll move it into the 20% sticky summary.
+   * --------------------------------------------------------------- */
+
+  const totals = useMemo(() => {
+    const subtotal = round2(
       items.reduce(
-        (s, it) => s + (it.unitPrice || 0) * (it.quantity || 0),
+        (sum, item) =>
+          sum +
+          (Number(item.unitPrice) || 0) *
+            (Number(item.quantity) || 0),
         0,
       ),
-    ),
-    discount: round2(
-      items.reduce((s, it) => s + (it.discount || 0), 0),
-    ),
-    tax: round2(
-      items.reduce((s, it) => {
-        const gross = (it.unitPrice || 0) * (it.quantity || 0);
-        const taxable = gross - (it.discount || 0);
-        return s + (taxable * (it.taxRate || 0)) / 100;
-      }, 0),
-    ),
-  };
-  const grand = round2(totals.subtotal - totals.discount + totals.tax);
+    );
+
+    const discount = round2(
+      items.reduce(
+        (sum, item) =>
+          sum +
+          (Number(item.discount) || 0),
+        0,
+      ),
+    );
+
+    const tax = round2(
+      items.reduce(
+        (sum, item) => {
+          const gross =
+            (Number(item.unitPrice) ||
+              0) *
+            (Number(item.quantity) ||
+              0);
+
+          const taxable =
+            gross -
+            (Number(item.discount) ||
+              0);
+
+          return (
+            sum +
+            (taxable *
+              (Number(item.taxRate) ||
+                0)) /
+              100
+          );
+        },
+        0,
+      ),
+    );
+
+    return {
+      subtotal,
+      discount,
+      tax,
+      grand: round2(
+        subtotal -
+          discount +
+          tax,
+      ),
+    };
+  }, [items]);
+
+  /* ---------------------------------------------------------------
+   * UI
+   * --------------------------------------------------------------- */
 
   return (
     <div className="space-y-3">
+      {/* ---------------------------------------------------------
+          Empty state
+          --------------------------------------------------------- */}
+
       {items.length === 0 ? (
-        <div className="border border-dashed border-line rounded-xl p-8 text-center">
-          <div className="text-sm font-bold text-ink mb-0.5">No items yet</div>
-          <div className="text-xs text-muted mb-4">
-            Search a product and pick its attribute values.
+        <div className="rounded-xl border border-dashed border-line bg-bg/40 p-8 text-center">
+          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary-500/10">
+            <Plus className="h-5 w-5 text-primary-500" />
           </div>
-          <Button size="sm" variant="outline" onClick={() => setPickerOpen(true)}>
-            <Plus className="h-4 w-4" /> Add first item
+
+          <div className="text-sm font-bold text-ink">
+            No items added
+          </div>
+
+          <div className="mx-auto mt-1 max-w-sm text-xs leading-5 text-muted">
+            Select a Product Type, choose a Brand,
+            then select the available specification
+            values for the quotation item.
+          </div>
+
+          <Button
+            size="sm"
+            className="mt-4"
+            onClick={() =>
+              setPickerOpen(true)
+            }
+          >
+            <Plus className="h-4 w-4" />
+            Add First Item
           </Button>
         </div>
       ) : (
-        <div className="space-y-2.5">
-          {items.map((it, idx) => (
-            <LineItemRow
-              key={it.tempId}
-              item={it}
-              index={idx}
-              taxes={taxes}
-              canOverridePrice={canOverridePrice}
-              lineTotal={lineTotal(it)}
-              onUpdate={(patch) => updateRow(it.tempId, patch)}
-              onRemove={() => removeRow(it.tempId)}
-            />
-          ))}
+        <>
+          {/* -----------------------------------------------------
+              Item cards
+              ----------------------------------------------------- */}
+
+          <div className="space-y-3">
+            {items.map(
+              (item, index) => (
+                <LineItemRow
+                  key={item.tempId}
+                  item={item}
+                  index={index}
+                  taxes={taxes}
+                  canOverridePrice={
+                    canOverridePrice
+                  }
+                  lineTotal={lineTotal(
+                    item,
+                  )}
+                  onUpdate={(
+                    patch,
+                  ) =>
+                    updateRow(
+                      item.tempId,
+                      patch,
+                    )
+                  }
+                  onRemove={() =>
+                    removeRow(
+                      item.tempId,
+                    )
+                  }
+                />
+              ),
+            )}
+          </div>
+
+          {/* -----------------------------------------------------
+              Add item
+              ----------------------------------------------------- */}
 
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setPickerOpen(true)}
-            className="w-full"
+            onClick={() =>
+              setPickerOpen(true)
+            }
+            className="w-full border-dashed"
           >
-            <Plus className="h-4 w-4" /> Add item
+            <Plus className="h-4 w-4" />
+            Add Item
           </Button>
-        </div>
+        </>
       )}
 
+      {/* ---------------------------------------------------------
+          Temporary totals
+          
+          This will move to the sticky 20% Summary in the
+          next quotation phase.
+          --------------------------------------------------------- */}
+
       {items.length > 0 && (
-        <div className="rounded-xl border border-line bg-bg/50 p-4 space-y-1.5 text-sm">
-          <Row label="Subtotal" value={formatMoney(totals.subtotal)} />
-          {totals.discount > 0 && (
-            <Row label="Discount" value={"− " + formatMoney(totals.discount)} />
-          )}
-          {totals.tax > 0 && <Row label="Tax" value={formatMoney(totals.tax)} />}
-          <div className="border-t border-line pt-2.5 mt-2 flex justify-between items-center">
-            <span className="font-bold text-ink">Grand Total</span>
-            <span className="font-black text-lg text-ink">
-              {formatMoney(grand)}
-            </span>
+        <div className="rounded-xl border border-line bg-bg/50 p-4">
+          <div className="space-y-1.5 text-sm">
+            <SummaryRow
+              label="Subtotal"
+              value={formatMoney(
+                totals.subtotal,
+              )}
+            />
+
+            {totals.discount > 0 && (
+              <SummaryRow
+                label="Discount"
+                value={
+                  "− " +
+                  formatMoney(
+                    totals.discount,
+                  )
+                }
+              />
+            )}
+
+            {totals.tax > 0 && (
+              <SummaryRow
+                label="Tax"
+                value={formatMoney(
+                  totals.tax,
+                )}
+              />
+            )}
+
+            <div className="mt-2 flex items-center justify-between border-t border-line pt-2.5">
+              <span className="font-bold text-ink">
+                Grand Total
+              </span>
+
+              <span className="text-lg font-black text-ink">
+                {formatMoney(
+                  totals.grand,
+                )}
+              </span>
+            </div>
           </div>
         </div>
       )}
 
+      {/* ---------------------------------------------------------
+          Picker
+          --------------------------------------------------------- */}
+
       <ProductPicker
         open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onSelect={(picked) => addRow(picked)}
+        onClose={() =>
+          setPickerOpen(false)
+        }
+        onSelect={addRow}
       />
     </div>
   );
 }
+
+/* ==================================================================
+ * LINE ITEM
+ * ================================================================== */
 
 function LineItemRow({
   item,
@@ -158,51 +461,130 @@ function LineItemRow({
   onRemove,
 }) {
   return (
-    <div className="border border-line rounded-xl p-3.5 bg-surface">
-      <div className="flex items-start justify-between gap-2 mb-2.5">
-        <div className="min-w-0">
-          <div className="font-bold text-ink text-sm truncate">
-            {index + 1}. {item.productName}
+    <div
+      className="
+        rounded-xl
+        border
+        border-line
+        bg-surface
+        p-3.5
+        transition
+        hover:border-primary-500/30
+      "
+    >
+      {/* -----------------------------------------------------------
+          Item heading
+          ----------------------------------------------------------- */}
+
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-500/10 text-xs font-black text-primary-600">
+            {index + 1}
           </div>
-          <div className="text-[11px] text-muted font-mono truncate">
-            {item.sku}
+
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold text-ink">
+              {item.brandName ||
+                item.productName}
+            </div>
+
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted">
+              {item.productType && (
+                <span>
+                  {item.productType}
+                </span>
+              )}
+
+              {item.sku && (
+                <>
+                  <span>•</span>
+
+                  <span className="font-mono">
+                    {item.sku}
+                  </span>
+                </>
+              )}
+            </div>
+
+            <AttributeChips
+              attributeValues={
+                item.attributeValues
+              }
+            />
           </div>
-          <AttributeChips attributeValues={item.attributeValues} />
         </div>
+
         <button
+          type="button"
           onClick={onRemove}
-          className="h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-muted hover:text-red-500 hover:bg-red-500/10"
+          className="
+            flex
+            h-8
+            w-8
+            shrink-0
+            items-center
+            justify-center
+            rounded-lg
+            text-muted
+            transition
+            hover:bg-red-500/10
+            hover:text-red-500
+          "
+          aria-label="Remove item"
         >
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <label className="text-[10px] font-bold text-muted uppercase tracking-wide">
+      {/* -----------------------------------------------------------
+          Quantity / Rate / Discount / Tax
+          ----------------------------------------------------------- */}
+
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
           Qty
+
           <Input
             type="number"
             min="0"
             step="any"
             value={item.quantity}
-            onChange={(e) =>
+            onChange={(event) =>
               onUpdate({
-                quantity: e.target.value === "" ? "" : Number(e.target.value),
+                quantity:
+                  event.target.value ===
+                  ""
+                    ? ""
+                    : Number(
+                        event.target
+                          .value,
+                      ),
               })
             }
             className="mt-1"
           />
         </label>
-        <label className="text-[10px] font-bold text-muted uppercase tracking-wide">
+
+        <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
           Rate
+
           <MoneyInput
             value={item.unitPrice}
-            onChange={(e) =>
+            onChange={(event) =>
               onUpdate({
-                unitPrice: e.target.value === "" ? "" : Number(e.target.value),
+                unitPrice:
+                  event.target.value ===
+                  ""
+                    ? ""
+                    : Number(
+                        event.target
+                          .value,
+                      ),
               })
             }
-            disabled={!canOverridePrice}
+            disabled={
+              !canOverridePrice
+            }
             title={
               canOverridePrice
                 ? "Editable"
@@ -211,89 +593,207 @@ function LineItemRow({
             className="mt-1"
           />
         </label>
-        <label className="text-[10px] font-bold text-muted uppercase tracking-wide">
+
+        <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
           Discount
+
           <MoneyInput
             value={item.discount}
-            onChange={(e) =>
+            onChange={(event) =>
               onUpdate({
-                discount: e.target.value === "" ? "" : Number(e.target.value),
+                discount:
+                  event.target.value ===
+                  ""
+                    ? ""
+                    : Number(
+                        event.target
+                          .value,
+                      ),
               })
             }
             className="mt-1"
           />
         </label>
-        <label className="text-[10px] font-bold text-muted uppercase tracking-wide">
+
+        <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
           Tax
+
           <Select
-            value={item.taxId || ""}
-            onChange={(e) => onUpdate({ taxId: e.target.value || null })}
+            value={
+              item.taxId || ""
+            }
+            onChange={(event) =>
+              onUpdate({
+                taxId:
+                  event.target.value ||
+                  null,
+              })
+            }
             className="mt-1"
           >
-            <option value="">None</option>
-            {taxes.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
+            <option value="">
+              None
+            </option>
+
+            {taxes.map((tax) => (
+              <option
+                key={tax.id}
+                value={tax.id}
+              >
+                {tax.name}
               </option>
             ))}
           </Select>
         </label>
       </div>
 
-      <div className="flex justify-end mt-2.5 text-sm">
-        <span className="text-muted mr-2">Line total</span>
-        <span className="font-bold text-ink">{formatMoney(lineTotal)}</span>
+      {/* -----------------------------------------------------------
+          Line total
+          ----------------------------------------------------------- */}
+
+      <div className="mt-3 flex items-center justify-between border-t border-line pt-2.5">
+        <span className="text-xs text-muted">
+          Item Total
+        </span>
+
+        <span className="text-sm font-black text-ink">
+          {formatMoney(
+            lineTotal,
+          )}
+        </span>
       </div>
     </div>
   );
 }
 
-/**
- * Renders the attribute values picked for this line (Thickness: 19mm,
- * Grade: BWR, …), resolved live from Attribute Master so the labels
- * always match whatever is configured there.
- */
-function AttributeChips({ attributeValues }) {
-  const { data: attributes = [] } = useAttributes();
+/* ==================================================================
+ * ATTRIBUTE CHIPS
+ * ================================================================== */
+
+function AttributeChips({
+  attributeValues,
+}) {
+  const { data: attributes = [] } =
+    useQuery({
+      queryKey: [
+        "attributes",
+      ],
+      queryFn: async () => {
+        const {
+          attributeRepo,
+        } = await import(
+          "@/lib/api/repos"
+        );
+
+        return attributeRepo.list({
+          isActive: true,
+        });
+      },
+    });
+
   const pairs = useMemo(
-    () => Object.entries(attributeValues || {}).filter(([, v]) => v),
+    () =>
+      Object.entries(
+        attributeValues || {},
+      ).filter(
+        ([, value]) => value,
+      ),
     [attributeValues],
   );
 
   const valueQueries = useQueries({
-    queries: pairs.map(([, valueId]) => ({
-      queryKey: ["__lineItemAttrValue", valueId],
-      queryFn: () => attributeValueRepo.get(valueId),
-      enabled: !!valueId,
-    })),
+    queries: pairs.map(
+      ([, valueId]) => ({
+        queryKey: [
+          "__quotationAttributeValue",
+          valueId,
+        ],
+
+        queryFn: () =>
+          attributeValueRepo.get(
+            valueId,
+          ),
+
+        enabled: !!valueId,
+      }),
+    ),
   });
 
-  if (!pairs.length) return null;
+  if (!pairs.length) {
+    return null;
+  }
 
   return (
-    <div className="flex flex-wrap gap-1 mt-1.5">
-      {pairs.map(([attributeId, valueId], i) => {
-        const attribute = attributes.find((a) => a.id === attributeId);
-        const value = valueQueries[i]?.data;
-        if (!attribute || !value) return null;
-        return (
-          <span
-            key={attributeId}
-            className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-bg border border-line text-ink text-[10px] font-semibold"
-          >
-            {attribute.name}: {value.label}
-          </span>
-        );
-      })}
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      {pairs.map(
+        (
+          [attributeId, valueId],
+          index,
+        ) => {
+          const attribute =
+            attributes.find(
+              (item) =>
+                item.id ===
+                attributeId,
+            );
+
+          const value =
+            valueQueries[index]
+              ?.data;
+
+          if (
+            !attribute ||
+            !value
+          ) {
+            return null;
+          }
+
+          return (
+            <span
+              key={attributeId}
+              className="
+                inline-flex
+                items-center
+                rounded-md
+                border
+                border-line
+                bg-bg
+                px-1.5
+                py-0.5
+                text-[10px]
+                font-semibold
+                text-ink
+              "
+            >
+              {attribute.name}:{" "}
+              {value.label}
+            </span>
+          );
+        },
+      )}
     </div>
   );
 }
 
-function Row({ label, value }) {
+/* ==================================================================
+ * SUMMARY ROW
+ * ================================================================== */
+
+function SummaryRow({
+  label,
+  value,
+}) {
   return (
     <div className="flex justify-between">
-      <span className="text-muted">{label}</span>
-      <span className="text-ink font-medium">{value}</span>
+      <span className="text-muted">
+        {label}
+      </span>
+
+      <span className="font-medium text-ink">
+        {value}
+      </span>
     </div>
   );
 }
+
+export default LineItemsEditor;
