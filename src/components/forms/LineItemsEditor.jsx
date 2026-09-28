@@ -3,176 +3,117 @@ import { Plus, Trash2 } from "lucide-react";
 
 import { Input } from "@/components/ui/Input";
 import { MoneyInput } from "@/components/ui/MoneyInput";
-import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 
-import {
-  useTaxes,
-  useAttributes,
-} from "@/hooks/useMasters";
-
-import { attributeValueRepo } from "@/lib/api/repos";
-
+import { useTaxes } from "@/hooks/useMasters";
 import { ProductPicker } from "./ProductPicker";
-
-import {
-  formatMoney,
-  round2,
-} from "@/lib/utils/money";
 
 import { newId } from "@/lib/utils/id";
 import { usePermission } from "@/lib/store/authStore";
 import { useQuery, useQueries } from "@tanstack/react-query";
+import { attributeValueRepo } from "@/lib/api/repos";
 
-/* ------------------------------------------------------------------
- * Product Types
- *
- * These are the business-facing Product Types.
- * Adhesive is the internal category name, but Fevicol is what the
- * user sees.
- * ------------------------------------------------------------------ */
-
-const PRODUCT_TYPES = [
-  {
-    key: "Plywood",
-    label: "Plywood",
-  },
-  {
-    key: "Laminate",
-    label: "Laminate",
-  },
-  {
-    key: "Edge Band",
-    label: "Edge Band",
-  },
-  {
-    key: "WPC",
-    label: "WPC",
-  },
-  {
-    key: "Adhesive",
-    label: "Fevicol",
-  },
-];
-
-/* ------------------------------------------------------------------
- * Main Editor
- * ------------------------------------------------------------------ */
-
-export function LineItemsEditor({
-  items,
-  onChange,
-}) {
+export function LineItemsEditor({ items, onChange }) {
   const { data: taxes = [] } = useTaxes();
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  const [pickerOpen, setPickerOpen] =
-    useState(false);
-
-  const canOverridePrice =
-    usePermission("canOverridePrice");
-
-  /* ---------------------------------------------------------------
-   * Add item
-   * --------------------------------------------------------------- */
+  const canOverridePrice = usePermission("canOverridePrice");
 
   const addRow = (picked) => {
-    const taxId =
-      taxes[0]?.id || null;
+    const taxId = taxes[0]?.id || null;
+    const taxRate = taxes[0]?.rate || 0;
 
-    const taxRate =
-      taxes[0]?.rate || 0;
+    const product = picked?.product || null;
 
     const newRow = {
       tempId: newId(),
 
-      /*
-       * Internal product identity is preserved.
-       */
-      productId: picked.product.id,
+      productId:
+        picked?.productId ||
+        product?.id ||
+        null,
 
       productSku:
-        picked.product.sku || "",
+        product?.sku ||
+        picked?.sku ||
+        "",
 
       categoryId:
-        picked.product.categoryId,
+        picked?.categoryId ||
+        product?.categoryId ||
+        null,
+
+      brandId:
+        picked?.brandId ||
+        product?.brandId ||
+        null,
 
       variantId:
-        picked.matchedVariant?.id ||
+        picked?.matchedVariant?.id ||
         null,
 
       sku:
-        picked.matchedVariant?.sku ||
-        picked.product.sku ||
+        picked?.sku ||
+        picked?.matchedVariant?.sku ||
+        product?.sku ||
         "",
 
-      /*
-       * User-facing Brand.
-       */
       productName:
-        picked.brandName ||
-        picked.product.name,
+        picked?.brandName ||
+        product?.name ||
+        "",
 
       brandName:
-        picked.brandName ||
+        picked?.brandName ||
+        product?.name ||
         "",
 
       productType:
-        picked.productType ||
+        picked?.productType ||
         "",
 
       attributeValues:
-        picked.attributeValues ||
+        picked?.attributeValues ||
         {},
+
+      specifications:
+        Array.isArray(picked?.specifications)
+          ? picked.specifications
+          : [],
+
+      selectedSpecification:
+        picked?.selectedSpecification ||
+        "",
 
       quantity: 1,
 
       unitPrice:
-        picked.defaultPrice || 0,
+        Number(picked?.defaultPrice) || 0,
 
       discount: 0,
-
       taxId,
-
       taxRate,
     };
 
-    onChange([
-      ...items,
-      newRow,
-    ]);
+    onChange([...items, newRow]);
   };
 
-  /* ---------------------------------------------------------------
-   * Update
-   * --------------------------------------------------------------- */
-
-  const updateRow = (
-    tempId,
-    patch,
-  ) => {
+  const updateRow = (tempId, patch) => {
     onChange(
       items.map((item) => {
-        if (
-          item.tempId !== tempId
-        ) {
-          return item;
-        }
+        if (item.tempId !== tempId) return item;
 
         const next = {
           ...item,
           ...patch,
         };
 
-        if (
-          patch.taxId !== undefined
-        ) {
+        if (patch.taxId !== undefined) {
           const tax = taxes.find(
-            (x) =>
-              x.id === patch.taxId,
+            (taxItem) => taxItem.id === patch.taxId,
           );
 
-          next.taxRate =
-            tax?.rate ?? 0;
+          next.taxRate = tax?.rate ?? 0;
         }
 
         return next;
@@ -180,122 +121,20 @@ export function LineItemsEditor({
     );
   };
 
-  /* ---------------------------------------------------------------
-   * Remove
-   * --------------------------------------------------------------- */
-
-  const removeRow = (
-    tempId,
-  ) => {
+  const removeRow = (tempId) => {
     onChange(
-      items.filter(
-        (item) =>
-          item.tempId !== tempId,
-      ),
+      items.filter((item) => item.tempId !== tempId),
     );
   };
 
-  /* ---------------------------------------------------------------
-   * Line total
-   * --------------------------------------------------------------- */
-
-  const lineTotal = (item) => {
-    const gross = round2(
-      (Number(item.unitPrice) || 0) *
-        (Number(item.quantity) || 0),
-    );
-
-    const taxable = round2(
-      gross -
-        (Number(item.discount) || 0),
-    );
-
-    const tax = round2(
-      (taxable *
-        (Number(item.taxRate) || 0)) /
-        100,
-    );
-
-    return round2(
-      taxable + tax,
-    );
+  const lineAmount = (item) => {
+    const quantity = Number(item.quantity) || 0;
+    const price = Number(item.unitPrice) || 0;
+    return quantity * price;
   };
-
-  /* ---------------------------------------------------------------
-   * Totals
-   *
-   * This stays for now.
-   * In the next phase we'll move it into the 20% sticky summary.
-   * --------------------------------------------------------------- */
-
-  const totals = useMemo(() => {
-    const subtotal = round2(
-      items.reduce(
-        (sum, item) =>
-          sum +
-          (Number(item.unitPrice) || 0) *
-            (Number(item.quantity) || 0),
-        0,
-      ),
-    );
-
-    const discount = round2(
-      items.reduce(
-        (sum, item) =>
-          sum +
-          (Number(item.discount) || 0),
-        0,
-      ),
-    );
-
-    const tax = round2(
-      items.reduce(
-        (sum, item) => {
-          const gross =
-            (Number(item.unitPrice) ||
-              0) *
-            (Number(item.quantity) ||
-              0);
-
-          const taxable =
-            gross -
-            (Number(item.discount) ||
-              0);
-
-          return (
-            sum +
-            (taxable *
-              (Number(item.taxRate) ||
-                0)) /
-              100
-          );
-        },
-        0,
-      ),
-    );
-
-    return {
-      subtotal,
-      discount,
-      tax,
-      grand: round2(
-        subtotal -
-          discount +
-          tax,
-      ),
-    };
-  }, [items]);
-
-  /* ---------------------------------------------------------------
-   * UI
-   * --------------------------------------------------------------- */
 
   return (
     <div className="space-y-3">
-      {/* ---------------------------------------------------------
-          Empty state
-          --------------------------------------------------------- */}
-
       {items.length === 0 ? (
         <div className="rounded-xl border border-dashed border-line bg-bg/40 p-8 text-center">
           <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary-500/10">
@@ -307,17 +146,14 @@ export function LineItemsEditor({
           </div>
 
           <div className="mx-auto mt-1 max-w-sm text-xs leading-5 text-muted">
-            Select a Product Type, choose a Brand,
-            then select the available specification
-            values for the quotation item.
+            Add a brand and select the required specification
+            for each quotation item.
           </div>
 
           <Button
             size="sm"
             className="mt-4"
-            onClick={() =>
-              setPickerOpen(true)
-            }
+            onClick={() => setPickerOpen(true)}
           >
             <Plus className="h-4 w-4" />
             Add First Item
@@ -325,52 +161,26 @@ export function LineItemsEditor({
         </div>
       ) : (
         <>
-          {/* -----------------------------------------------------
-              Item cards
-              ----------------------------------------------------- */}
-
           <div className="space-y-3">
-            {items.map(
-              (item, index) => (
-                <LineItemRow
-                  key={item.tempId}
-                  item={item}
-                  index={index}
-                  taxes={taxes}
-                  canOverridePrice={
-                    canOverridePrice
-                  }
-                  lineTotal={lineTotal(
-                    item,
-                  )}
-                  onUpdate={(
-                    patch,
-                  ) =>
-                    updateRow(
-                      item.tempId,
-                      patch,
-                    )
-                  }
-                  onRemove={() =>
-                    removeRow(
-                      item.tempId,
-                    )
-                  }
-                />
-              ),
-            )}
+            {items.map((item, index) => (
+              <LineItemRow
+                key={item.tempId}
+                item={item}
+                index={index}
+                canOverridePrice={canOverridePrice}
+                lineAmount={lineAmount(item)}
+                onUpdate={(patch) =>
+                  updateRow(item.tempId, patch)
+                }
+                onRemove={() => removeRow(item.tempId)}
+              />
+            ))}
           </div>
-
-          {/* -----------------------------------------------------
-              Add item
-              ----------------------------------------------------- */}
 
           <Button
             size="sm"
             variant="outline"
-            onClick={() =>
-              setPickerOpen(true)
-            }
+            onClick={() => setPickerOpen(true)}
             className="w-full border-dashed"
           >
             <Plus className="h-4 w-4" />
@@ -379,103 +189,25 @@ export function LineItemsEditor({
         </>
       )}
 
-      {/* ---------------------------------------------------------
-          Temporary totals
-          
-          This will move to the sticky 20% Summary in the
-          next quotation phase.
-          --------------------------------------------------------- */}
-
-      {items.length > 0 && (
-        <div className="rounded-xl border border-line bg-bg/50 p-4">
-          <div className="space-y-1.5 text-sm">
-            <SummaryRow
-              label="Subtotal"
-              value={formatMoney(
-                totals.subtotal,
-              )}
-            />
-
-            {totals.discount > 0 && (
-              <SummaryRow
-                label="Discount"
-                value={
-                  "− " +
-                  formatMoney(
-                    totals.discount,
-                  )
-                }
-              />
-            )}
-
-            {totals.tax > 0 && (
-              <SummaryRow
-                label="Tax"
-                value={formatMoney(
-                  totals.tax,
-                )}
-              />
-            )}
-
-            <div className="mt-2 flex items-center justify-between border-t border-line pt-2.5">
-              <span className="font-bold text-ink">
-                Grand Total
-              </span>
-
-              <span className="text-lg font-black text-ink">
-                {formatMoney(
-                  totals.grand,
-                )}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ---------------------------------------------------------
-          Picker
-          --------------------------------------------------------- */}
-
       <ProductPicker
         open={pickerOpen}
-        onClose={() =>
-          setPickerOpen(false)
-        }
+        onClose={() => setPickerOpen(false)}
         onSelect={addRow}
       />
     </div>
   );
 }
 
-/* ==================================================================
- * LINE ITEM
- * ================================================================== */
-
 function LineItemRow({
   item,
   index,
-  taxes,
   canOverridePrice,
-  lineTotal,
+  lineAmount,
   onUpdate,
   onRemove,
 }) {
   return (
-    <div
-      className="
-        rounded-xl
-        border
-        border-line
-        bg-surface
-        p-3.5
-        transition
-        hover:border-primary-500/30
-      "
-    >
-      {/* -----------------------------------------------------------
-          Item heading
-          ----------------------------------------------------------- */}
-
+    <div className="rounded-xl border border-line bg-surface p-3.5 transition hover:border-primary-500/30">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2.5">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-500/10 text-xs font-black text-primary-600">
@@ -485,20 +217,18 @@ function LineItemRow({
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-ink">
               {item.brandName ||
-                item.productName}
+                item.productName ||
+                "Brand"}
             </div>
 
             <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted">
-              {item.productType && (
-                <span>
-                  {item.productType}
-                </span>
-              )}
+              <span>
+                {item.productType || "Product Type"}
+              </span>
 
               {item.sku && (
                 <>
                   <span>•</span>
-
                   <span className="font-mono">
                     {item.sku}
                   </span>
@@ -506,10 +236,12 @@ function LineItemRow({
               )}
             </div>
 
-            <AttributeChips
-              attributeValues={
-                item.attributeValues
+            <SpecificationPreview
+              specifications={item.specifications}
+              selectedSpecification={
+                item.selectedSpecification
               }
+              attributeValues={item.attributeValues}
             />
           </div>
         </div>
@@ -517,32 +249,58 @@ function LineItemRow({
         <button
           type="button"
           onClick={onRemove}
-          className="
-            flex
-            h-8
-            w-8
-            shrink-0
-            items-center
-            justify-center
-            rounded-lg
-            text-muted
-            transition
-            hover:bg-red-500/10
-            hover:text-red-500
-          "
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-red-500/10 hover:text-red-500"
           aria-label="Remove item"
         >
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
 
-      {/* -----------------------------------------------------------
-          Quantity / Rate / Discount / Tax
-          ----------------------------------------------------------- */}
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-4">
+        <div className="min-w-0">
+          <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
+            Brand
+          </label>
 
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
-          Qty
+          <Input
+            value={
+              item.brandName ||
+              item.productName ||
+              ""
+            }
+            readOnly
+            className="mt-1"
+          />
+        </div>
+
+        <div className="min-w-0">
+          <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
+            Product Type
+          </label>
+
+          <Input
+            value={item.productType || ""}
+            readOnly
+            placeholder="Product Type"
+            className="mt-1"
+          />
+        </div>
+
+        <div className="min-w-0">
+          <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
+            Specification
+          </label>
+
+          <SpecificationField
+            item={item}
+            onUpdate={onUpdate}
+          />
+        </div>
+
+        <div className="min-w-0">
+          <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
+            Quantity
+          </label>
 
           <Input
             type="number"
@@ -552,39 +310,33 @@ function LineItemRow({
             onChange={(event) =>
               onUpdate({
                 quantity:
-                  event.target.value ===
-                  ""
+                  event.target.value === ""
                     ? ""
-                    : Number(
-                        event.target
-                          .value,
-                      ),
+                    : Number(event.target.value),
               })
             }
             className="mt-1"
           />
-        </label>
+        </div>
+      </div>
 
-        <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
-          Rate
+      <div className="mt-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        <div className="min-w-0">
+          <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
+            Price
+          </label>
 
           <MoneyInput
             value={item.unitPrice}
             onChange={(event) =>
               onUpdate({
                 unitPrice:
-                  event.target.value ===
-                  ""
+                  event.target.value === ""
                     ? ""
-                    : Number(
-                        event.target
-                          .value,
-                      ),
+                    : Number(event.target.value),
               })
             }
-            disabled={
-              !canOverridePrice
-            }
+            disabled={!canOverridePrice}
             title={
               canOverridePrice
                 ? "Editable"
@@ -592,180 +344,165 @@ function LineItemRow({
             }
             className="mt-1"
           />
-        </label>
+        </div>
 
-        <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
-          Discount
+        <div className="min-w-0">
+          <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
+            Amount
+          </label>
 
-          <MoneyInput
-            value={item.discount}
-            onChange={(event) =>
-              onUpdate({
-                discount:
-                  event.target.value ===
-                  ""
-                    ? ""
-                    : Number(
-                        event.target
-                          .value,
-                      ),
-              })
-            }
-            className="mt-1"
-          />
-        </label>
-
-        <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
-          Tax
-
-          <Select
-            value={
-              item.taxId || ""
-            }
-            onChange={(event) =>
-              onUpdate({
-                taxId:
-                  event.target.value ||
-                  null,
-              })
-            }
-            className="mt-1"
-          >
-            <option value="">
-              None
-            </option>
-
-            {taxes.map((tax) => (
-              <option
-                key={tax.id}
-                value={tax.id}
-              >
-                {tax.name}
-              </option>
-            ))}
-          </Select>
-        </label>
-      </div>
-
-      {/* -----------------------------------------------------------
-          Line total
-          ----------------------------------------------------------- */}
-
-      <div className="mt-3 flex items-center justify-between border-t border-line pt-2.5">
-        <span className="text-xs text-muted">
-          Item Total
-        </span>
-
-        <span className="text-sm font-black text-ink">
-          {formatMoney(
-            lineTotal,
-          )}
-        </span>
+          <div className="mt-1 flex h-10 items-center justify-end rounded-lg border border-line bg-bg/50 px-3 text-sm font-black text-ink">
+            {formatAmount(lineAmount)}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ==================================================================
- * ATTRIBUTE CHIPS
- * ================================================================== */
+function SpecificationField({ item }) {
+  if (item.selectedSpecification) {
+    return (
+      <Input
+        value={item.selectedSpecification}
+        readOnly
+        placeholder="Specification"
+        className="mt-1"
+      />
+    );
+  }
 
-function AttributeChips({
+  const attributeEntries = Object.entries(
+    item.attributeValues || {},
+  ).filter(([, value]) => Boolean(value));
+
+  if (!attributeEntries.length) {
+    return (
+      <div className="mt-1 flex h-10 items-center rounded-lg border border-line bg-bg/40 px-3 text-xs text-muted">
+        No specification
+      </div>
+    );
+  }
+
+  const [attributeId, valueId] = attributeEntries[0];
+
+  return (
+    <SpecificationValue
+      attributeId={attributeId}
+      valueId={valueId}
+    />
+  );
+}
+
+function SpecificationValue({ valueId }) {
+  const { data: value, isLoading } = useQuery({
+    queryKey: [
+      "quotationSpecificationValue",
+      valueId,
+    ],
+    queryFn: () => attributeValueRepo.get(valueId),
+    enabled: Boolean(valueId),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="mt-1 flex h-10 items-center rounded-lg border border-line bg-bg/40 px-3 text-xs text-muted">
+        Loading…
+      </div>
+    );
+  }
+
+  return (
+    <Input
+      value={value?.label || ""}
+      readOnly
+      placeholder="Specification"
+      className="mt-1"
+    />
+  );
+}
+
+function SpecificationPreview({
+  specifications,
+  selectedSpecification,
   attributeValues,
 }) {
-  const { data: attributes = [] } =
-    useQuery({
-      queryKey: [
-        "attributes",
-      ],
-      queryFn: async () => {
-        const {
-          attributeRepo,
-        } = await import(
-          "@/lib/api/repos"
-        );
+  if (selectedSpecification) {
+    return (
+      <div className="mt-1.5 flex flex-wrap gap-1">
+        <span className="inline-flex items-center rounded-md border border-line bg-bg px-1.5 py-0.5 text-[10px] font-semibold text-ink">
+          {selectedSpecification}
+        </span>
+      </div>
+    );
+  }
 
-        return attributeRepo.list({
-          isActive: true,
-        });
-      },
-    });
+  const rows = Array.isArray(specifications)
+    ? specifications.filter(
+        (row) => row?.specification,
+      )
+    : [];
 
+  if (rows.length) {
+    return (
+      <div className="mt-1.5 flex flex-wrap gap-1">
+        {rows.map((row, index) => (
+          <span
+            key={`${row.specification}-${index}`}
+            className="inline-flex items-center rounded-md border border-line bg-bg px-1.5 py-0.5 text-[10px] font-semibold text-ink"
+          >
+            {row.specification}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <AttributeSpecificationPreview
+      attributeValues={attributeValues}
+    />
+  );
+}
+
+function AttributeSpecificationPreview({
+  attributeValues,
+}) {
   const pairs = useMemo(
     () =>
-      Object.entries(
-        attributeValues || {},
-      ).filter(
-        ([, value]) => value,
+      Object.entries(attributeValues || {}).filter(
+        ([, value]) => Boolean(value),
       ),
     [attributeValues],
   );
 
   const valueQueries = useQueries({
-    queries: pairs.map(
-      ([, valueId]) => ({
-        queryKey: [
-          "__quotationAttributeValue",
-          valueId,
-        ],
-
-        queryFn: () =>
-          attributeValueRepo.get(
-            valueId,
-          ),
-
-        enabled: !!valueId,
-      }),
-    ),
+    queries: pairs.map(([, valueId]) => ({
+      queryKey: [
+        "quotationAttributeValuePreview",
+        valueId,
+      ],
+      queryFn: () => attributeValueRepo.get(valueId),
+      enabled: Boolean(valueId),
+    })),
   });
 
-  if (!pairs.length) {
-    return null;
-  }
+  if (!pairs.length) return null;
 
   return (
     <div className="mt-1.5 flex flex-wrap gap-1">
       {pairs.map(
-        (
-          [attributeId, valueId],
-          index,
-        ) => {
-          const attribute =
-            attributes.find(
-              (item) =>
-                item.id ===
-                attributeId,
-            );
-
+        ([attributeId, valueId], index) => {
           const value =
-            valueQueries[index]
-              ?.data;
+            valueQueries[index]?.data;
 
-          if (
-            !attribute ||
-            !value
-          ) {
-            return null;
-          }
+          if (!value) return null;
 
           return (
             <span
-              key={attributeId}
-              className="
-                inline-flex
-                items-center
-                rounded-md
-                border
-                border-line
-                bg-bg
-                px-1.5
-                py-0.5
-                text-[10px]
-                font-semibold
-                text-ink
-              "
+              key={`${attributeId}-${valueId}`}
+              className="inline-flex items-center rounded-md border border-line bg-bg px-1.5 py-0.5 text-[10px] font-semibold text-ink"
             >
-              {attribute.name}:{" "}
               {value.label}
             </span>
           );
@@ -775,25 +512,15 @@ function AttributeChips({
   );
 }
 
-/* ==================================================================
- * SUMMARY ROW
- * ================================================================== */
+function formatAmount(value) {
+  const amount = Number(value) || 0;
 
-function SummaryRow({
-  label,
-  value,
-}) {
-  return (
-    <div className="flex justify-between">
-      <span className="text-muted">
-        {label}
-      </span>
-
-      <span className="font-medium text-ink">
-        {value}
-      </span>
-    </div>
-  );
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
 }
 
 export default LineItemsEditor;

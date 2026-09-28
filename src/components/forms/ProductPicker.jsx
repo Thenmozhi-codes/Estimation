@@ -1,54 +1,44 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Check,
+  Package,
   Search,
+  Tag,
   X,
 } from "lucide-react";
 
-import {
-  useProducts,
-} from "@/hooks/useProducts";
+import { mockStore } from "@/lib/store/mockStore";
 
-import {
-  useAttributes,
-  useAttributeValues,
-  useCategories,
-  useCategoryAttributes,
-  useBrands,
-} from "@/hooks/useMasters";
+/* ==========================================================================
+   PRODUCT TYPES
 
-import {
-  formatMoney,
-} from "@/lib/utils/money";
+   Business flow:
+   Product Type → Brand Master → Specification
 
-import { useQueryClient } from "@tanstack/react-query";
-
-/* ------------------------------------------------------------------
- * Product Types
- * ------------------------------------------------------------------ */
+   These are the standard Product Types used by the quotation flow.
+========================================================================== */
 
 const PRODUCT_TYPES = [
   {
     key: "Plywood",
     label: "Plywood",
-    aliases: ["Plywood"],
+    aliases: ["Plywood", "PLYWOOD"],
   },
   {
     key: "Laminate",
     label: "Laminate",
-    aliases: ["Laminate"],
+    aliases: ["Laminate", "LAMINATE"],
   },
   {
     key: "Edge Band",
     label: "Edge Band",
-    aliases: ["Edge Band"],
+    aliases: [
+      "Edge Band",
+      "EdgeBand",
+      "EDGE_BAND",
+      "Edgeband",
+    ],
   },
   {
     key: "WPC",
@@ -61,13 +51,337 @@ const PRODUCT_TYPES = [
     aliases: [
       "Adhesive",
       "Fevicol",
+      "FEVICOL",
     ],
   },
 ];
 
-/* ------------------------------------------------------------------
- * Picker
- * ------------------------------------------------------------------ */
+/* ==========================================================================
+   HELPERS
+========================================================================== */
+
+function toArray(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (Array.isArray(value?.data)) {
+    return value.data;
+  }
+
+  if (Array.isArray(value?.items)) {
+    return value.items;
+  }
+
+  return [];
+}
+
+function normalize(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function sameId(a, b) {
+  return String(a ?? "") === String(b ?? "");
+}
+
+function formatMoney(value) {
+  const amount = Number(value);
+
+  if (!Number.isFinite(amount)) {
+    return "₹0.00";
+  }
+
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function getTypeConfig(typeKey) {
+  return (
+    PRODUCT_TYPES.find(
+      (type) => type.key === typeKey,
+    ) || null
+  );
+}
+
+/* ==========================================================================
+   CATEGORY / PRODUCT TYPE RESOLVER
+========================================================================== */
+
+function categoryMatchesType(category, typeConfig) {
+  if (!category || !typeConfig) {
+    return false;
+  }
+
+  const values = [
+    category.name,
+    category.label,
+    category.slug,
+    category.code,
+    category.key,
+    category.type,
+  ];
+
+  return values.some((value) =>
+    typeConfig.aliases.some(
+      (alias) =>
+        normalize(value) === normalize(alias),
+    ),
+  );
+}
+
+/* ==========================================================================
+   BRAND → PRODUCT TYPE
+
+   PRIMARY RULE:
+   Brand Master saves categoryId.
+
+   So we first check:
+
+       brand.categoryId === selected category.id
+
+   This is the important flow.
+
+   Other fields are only compatibility fallbacks for existing mock data.
+========================================================================== */
+
+function brandMatchesProductType({
+  brand,
+  typeConfig,
+  categories,
+}) {
+  if (!brand || brand.isActive === false) {
+    return false;
+  }
+
+  if (!typeConfig) {
+    return false;
+  }
+
+  /*
+   * --------------------------------------------------------------
+   * 1. PRIMARY:
+   *    Brand Master → categoryId
+   * --------------------------------------------------------------
+   */
+
+  const brandCategoryIds = [
+    brand.categoryId,
+    brand.productTypeId,
+    brand.productCategoryId,
+  ].filter(Boolean);
+
+  if (brandCategoryIds.length > 0) {
+    const mappedCategory = categories.find(
+      (category) =>
+        brandCategoryIds.some((id) =>
+          sameId(id, category?.id),
+        ),
+    );
+
+    if (mappedCategory) {
+      return categoryMatchesType(
+        mappedCategory,
+        typeConfig,
+      );
+    }
+  }
+
+  /*
+   * --------------------------------------------------------------
+   * 2. Compatibility:
+   *    Some old records may directly store product type text.
+   * --------------------------------------------------------------
+   */
+
+  const directTypeValues = [
+    brand.productType,
+    brand.productTypeName,
+    brand.category,
+    brand.categoryName,
+    brand.type,
+  ];
+
+  if (
+    directTypeValues.some((value) =>
+      typeConfig.aliases.some(
+        (alias) =>
+          normalize(value) ===
+          normalize(alias),
+      ),
+    )
+  ) {
+    return true;
+  }
+
+  /*
+   * --------------------------------------------------------------
+   * 3. Arrays used by older mock records.
+   * --------------------------------------------------------------
+   */
+
+  const typeArrays = [
+    brand.productTypes,
+    brand.types,
+    brand.categories,
+  ];
+
+  for (const values of typeArrays) {
+    if (!Array.isArray(values)) {
+      continue;
+    }
+
+    const found = values.some((value) => {
+      if (typeof value === "string") {
+        return typeConfig.aliases.some(
+          (alias) =>
+            normalize(value) ===
+            normalize(alias),
+        );
+      }
+
+      return (
+        typeConfig.aliases.some(
+          (alias) =>
+            normalize(value?.name) ===
+            normalize(alias),
+        ) ||
+        typeConfig.aliases.some(
+          (alias) =>
+            normalize(value?.label) ===
+            normalize(alias),
+        ) ||
+        typeConfig.aliases.some(
+          (alias) =>
+            normalize(value?.type) ===
+            normalize(alias),
+        )
+      );
+    });
+
+    if (found) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/* ==========================================================================
+   BRAND SPECIFICATIONS
+
+   Brand Master stores:
+
+   specifications: [
+      {
+        specification: "19mm",
+        price: 2450
+      }
+   ]
+
+   We read ONLY the selected Brand's saved specifications.
+========================================================================== */
+
+function normalizeBrandSpecifications(brand) {
+  const raw =
+    brand?.specifications ??
+    brand?.specs ??
+    [];
+
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const result = [];
+
+  raw.forEach((item, index) => {
+    /*
+     * Old/simple format:
+     *
+     * ["19mm", "18mm"]
+     */
+
+    if (typeof item === "string") {
+      const label = item.trim();
+
+      if (!label) {
+        return;
+      }
+
+      result.push({
+        id: `brand-spec-${index}`,
+        label,
+        price: 0,
+      });
+
+      return;
+    }
+
+    /*
+     * Current Brand Master format:
+     *
+     * {
+     *   specification: "19mm",
+     *   price: 2450
+     * }
+     */
+
+    const label = String(
+      item?.specification ??
+        item?.name ??
+        item?.label ??
+        item?.value ??
+        "",
+    ).trim();
+
+    if (!label) {
+      return;
+    }
+
+    const rawPrice =
+      item?.price ??
+      item?.defaultPrice ??
+      item?.sellingPrice ??
+      item?.amount ??
+      0;
+
+    result.push({
+      id:
+        item?.id ||
+        `brand-spec-${index}`,
+      label,
+      price:
+        Number(rawPrice) || 0,
+    });
+  });
+
+  /*
+   * Remove duplicate specifications.
+   */
+
+  const seen = new Set();
+
+  return result.filter((item) => {
+    const key = normalize(item.label);
+
+    if (!key || seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+/* ==========================================================================
+   MAIN PRODUCT PICKER
+========================================================================== */
 
 export function ProductPicker({
   open,
@@ -80,220 +394,207 @@ export function ProductPicker({
   const [selectedBrand, setSelectedBrand] =
     useState(null);
 
+  const [selectedSpecification, setSelectedSpecification] =
+    useState(null);
+
   const [query, setQuery] =
     useState("");
 
-  const inputRef =
-    useRef(null);
+  const inputRef = useRef(null);
 
-  const {
-    data: brands = [],
-  } = useBrands();
+  /*
+   * IMPORTANT:
+   *
+   * Read directly from mockStore.
+   *
+   * This means:
+   *
+   * Brand Master save
+   *        ↓
+   * mockStore.brands
+   *        ↓
+   * ProductPicker
+   *
+   * No backend required.
+   */
 
-  const {
-    data: products = [],
-  } = useProducts();
+  const db = mockStore.get();
 
-  const {
-    data: categories = [],
-  } = useCategories();
+  const brands = toArray(db.brands);
+  const categories = toArray(db.categories);
+
+  /* ------------------------------------------------------------------------
+     RESET WHEN PICKER OPENS
+  ------------------------------------------------------------------------ */
 
   useEffect(() => {
     if (!open) {
       return;
     }
 
+    /*
+     * Read fresh data every time picker opens.
+     *
+     * This is important because user may have just created
+     * a new Brand in Brand Master.
+     */
+
     setSelectedType("");
     setSelectedBrand(null);
+    setSelectedSpecification(null);
     setQuery("");
 
-    setTimeout(
-      () =>
-        inputRef.current?.focus(),
-      30,
-    );
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 80);
+
+    return () => {
+      clearTimeout(timer);
+    };
   }, [open]);
 
-  /* ---------------------------------------------------------------
-   * Category lookup
-   * --------------------------------------------------------------- */
+  /* ------------------------------------------------------------------------
+     AVAILABLE BRANDS
 
-  const categoryByName =
-    useMemo(
-      () =>
-        Object.fromEntries(
-          categories.map(
-            (category) => [
-              category.name
-                .toLowerCase(),
-              category,
-            ],
-          ),
-        ),
-      [categories],
+     ONLY BRANDS SAVED IN BRAND MASTER
+  ------------------------------------------------------------------------ */
+
+  const availableBrands = useMemo(() => {
+    const typeConfig =
+      getTypeConfig(selectedType);
+
+    if (!typeConfig) {
+      return [];
+    }
+
+    /*
+     * Only active Brand Master records.
+     */
+
+    const activeBrands = brands.filter(
+      (brand) =>
+        brand?.id &&
+        brand?.isActive !== false,
     );
 
-  const selectedCategory =
-    useMemo(() => {
-      if (!selectedType) {
-        return null;
+    /*
+     * Filter using Brand Master Product Type.
+     */
+
+    const matchingBrands =
+      activeBrands.filter((brand) =>
+        brandMatchesProductType({
+          brand,
+          typeConfig,
+          categories,
+        }),
+      );
+
+    /*
+     * Remove duplicate IDs.
+     */
+
+    const unique = [];
+
+    const seen = new Set();
+
+    for (const brand of matchingBrands) {
+      const key = String(brand.id);
+
+      if (seen.has(key)) {
+        continue;
       }
 
-      const config =
-        PRODUCT_TYPES.find(
-          (item) =>
-            item.key ===
-            selectedType,
-        );
+      seen.add(key);
+      unique.push(brand);
+    }
 
-      if (!config) {
-        return null;
-      }
+    /*
+     * Search.
+     */
 
+    const searchValue =
+      normalize(query);
+
+    if (!searchValue) {
+      return unique;
+    }
+
+    return unique.filter((brand) => {
       return (
-        config.aliases
-          .map(
-            (name) =>
-              categoryByName[
-                name.toLowerCase()
-              ],
-          )
-          .find(Boolean) ||
-        null
+        normalize(brand.name).includes(
+          searchValue,
+        ) ||
+        normalize(brand.code).includes(
+          searchValue,
+        )
       );
-    }, [
-      selectedType,
-      categoryByName,
-    ]);
+    });
+  }, [
+    brands,
+    categories,
+    selectedType,
+    query,
+  ]);
 
-  /* ---------------------------------------------------------------
-   * Brands for selected Product Type
-   * --------------------------------------------------------------- */
+  /* ------------------------------------------------------------------------
+     SELECTED BRAND SPECIFICATIONS
+  ------------------------------------------------------------------------ */
 
-  const availableBrands =
-    useMemo(() => {
-      if (
-        !selectedType
-      ) {
-        return [];
-      }
+  const specifications = useMemo(() => {
+    if (!selectedBrand) {
+      return [];
+    }
 
-      const categoryId =
-        selectedCategory?.id;
+    return normalizeBrandSpecifications(
+      selectedBrand,
+    );
+  }, [selectedBrand]);
 
-      const matching =
-        brands.filter(
-          (brand) => {
-            /*
-             * New Brand records
-             * already contain categoryId.
-             */
-            if (
-              brand.categoryId &&
-              categoryId
-            ) {
-              return (
-                brand.categoryId ===
-                categoryId
-              );
-            }
-
-            /*
-             * Legacy brands may not
-             * contain categoryId.
-             *
-             * Match against existing
-             * product records.
-             */
-            return products.some(
-              (product) =>
-                product.brandId ===
-                  brand.id &&
-                product.categoryId ===
-                  categoryId,
-            );
-          },
-        );
-
-      const q =
-        query.trim().toLowerCase();
-
-      if (!q) {
-        return matching;
-      }
-
-      return matching.filter(
-        (brand) =>
-          brand.name
-            .toLowerCase()
-            .includes(q) ||
-          (brand.code || "")
-            .toLowerCase()
-            .includes(q),
-      );
-    }, [
-      brands,
-      products,
-      selectedType,
-      selectedCategory,
-      query,
-    ]);
+  /* ------------------------------------------------------------------------
+     CLOSE
+  ------------------------------------------------------------------------ */
 
   if (!open) {
     return null;
   }
 
+  const selectedTypeConfig =
+    getTypeConfig(selectedType);
+
+  /* ==========================================================================
+     UI
+  ========================================================================== */
+
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/40 p-3 backdrop-blur-sm md:p-6">
-      <div
-        className="
-          relative
-          flex
-          max-h-[88vh]
-          w-full
-          max-w-2xl
-          flex-col
-          overflow-hidden
-          rounded-2xl
-          border
-          border-line
-          bg-surface
-          shadow-2xl
-        "
-      >
-        {/* =========================================================
-            HEADER
-            ========================================================= */}
 
-        <div className="flex items-center gap-2 border-b border-line px-4 py-3">
-          {(selectedType ||
-            selectedBrand) && (
+      <div className="relative flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl">
+
+        {/* ================================================================
+            HEADER
+        ================================================================ */}
+
+        <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-3">
+
+          {(selectedType || selectedBrand) && (
             <button
               type="button"
               onClick={() => {
-                if (
-                  selectedBrand
-                ) {
-                  setSelectedBrand(
-                    null,
-                  );
+                if (selectedBrand) {
+                  setSelectedBrand(null);
+                  setSelectedSpecification(null);
+                  setQuery("");
                   return;
                 }
 
                 setSelectedType("");
+                setSelectedBrand(null);
+                setSelectedSpecification(null);
                 setQuery("");
               }}
-              className="
-                flex
-                h-8
-                w-8
-                shrink-0
-                items-center
-                justify-center
-                rounded-lg
-                text-muted
-                hover:bg-bg
-              "
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-bg hover:text-ink"
+              aria-label="Back"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
@@ -301,12 +602,20 @@ export function ProductPicker({
 
           {!selectedType &&
             !selectedBrand && (
-              <Search className="h-4 w-4 shrink-0 text-muted" />
+              <Package className="h-4 w-4 shrink-0 text-primary-600" />
+            )}
+
+          {selectedType &&
+            selectedBrand && (
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-500/10">
+                <Tag className="h-4 w-4 text-primary-600" />
+              </div>
             )}
 
           <div className="min-w-0 flex-1">
+
             {!selectedType ? (
-              <div>
+              <>
                 <div className="text-sm font-bold text-ink">
                   Add Item
                 </div>
@@ -314,37 +623,37 @@ export function ProductPicker({
                 <div className="text-[10px] text-muted">
                   Select a Product Type
                 </div>
-              </div>
+              </>
             ) : selectedBrand ? (
-              <div>
+              <>
                 <div className="truncate text-sm font-bold text-ink">
                   {selectedBrand.name}
                 </div>
 
                 <div className="text-[10px] text-muted">
-                  Select specifications
+                  Select Specification
                 </div>
-              </div>
+              </>
             ) : (
-              <div>
+              <>
                 <div className="text-sm font-bold text-ink">
-                  {PRODUCT_TYPES.find(
-                    (item) =>
-                      item.key ===
-                      selectedType,
-                  )?.label}
+                  {selectedTypeConfig?.label}
                 </div>
 
                 <div className="text-[10px] text-muted">
-                  Select a Brand
+                  Select Brand
                 </div>
-              </div>
+              </>
             )}
+
           </div>
+
+          {/* Search only on Brand step */}
 
           {selectedType &&
             !selectedBrand && (
-              <div className="relative w-48">
+              <div className="relative hidden w-52 sm:block">
+
                 <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
 
                 <input
@@ -355,847 +664,584 @@ export function ProductPicker({
                       event.target.value,
                     )
                   }
-                  placeholder="Search brands..."
-                  className="
-                    h-8
-                    w-full
-                    rounded-lg
-                    border
-                    border-line
-                    bg-bg
-                    pl-8
-                    pr-2
-                    text-xs
-                    text-ink
-                    outline-none
-                    focus:border-primary-500
-                  "
+                  placeholder="Search brand..."
+                  className="h-8 w-full rounded-lg border border-line bg-bg pl-8 pr-2 text-xs text-ink outline-none transition focus:border-primary-500"
                 />
+
               </div>
             )}
 
           <button
             type="button"
             onClick={onClose}
-            className="
-              flex
-              h-8
-              w-8
-              shrink-0
-              items-center
-              justify-center
-              rounded-lg
-              text-muted
-              hover:bg-bg
-            "
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-bg hover:text-ink"
+            aria-label="Close"
           >
             <X className="h-4 w-4" />
           </button>
+
         </div>
 
-        {/* =========================================================
-            BODY
-            ========================================================= */}
+        {/* ================================================================
+            CONTENT
+        ================================================================ */}
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {/* Product Type */}
-          {!selectedType ? (
+
+          {/* ==============================================================
+              STEP 1 — PRODUCT TYPE
+          ============================================================== */}
+
+          {!selectedType && (
             <ProductTypeStep
               onSelect={(type) => {
-                setSelectedType(
-                  type.key,
-                );
+                setSelectedType(type.key);
+                setSelectedBrand(null);
+                setSelectedSpecification(null);
                 setQuery("");
               }}
             />
-          ) : !selectedBrand ? (
-            <BrandStep
-              brands={
-                availableBrands
-              }
-              selectedType={
-                selectedType
-              }
-              onSelect={(brand) =>
-                setSelectedBrand(
-                  brand,
-                )
-              }
-            />
-          ) : (
-            <AttributePicker
-              brand={
-                selectedBrand
-              }
-              productType={
-                selectedType
-              }
-              category={
-                selectedCategory
-              }
-              products={
-                products
-              }
-              onSelect={(payload) => {
-                onSelect(
-                  payload,
-                );
-                onClose();
-              }}
-            />
           )}
+
+          {/* ==============================================================
+              STEP 2 — BRAND MASTER
+          ============================================================== */}
+
+          {selectedType &&
+            !selectedBrand && (
+              <BrandStep
+                brands={availableBrands}
+                selectedType={selectedType}
+                query={query}
+                onQueryChange={setQuery}
+                inputRef={inputRef}
+                onSelect={(brand) => {
+                  setSelectedBrand(brand);
+                  setSelectedSpecification(null);
+                  setQuery("");
+                }}
+              />
+            )}
+
+          {/* ==============================================================
+              STEP 3 — SPECIFICATION
+          ============================================================== */}
+
+          {selectedType &&
+            selectedBrand && (
+              <SpecificationStep
+                brand={selectedBrand}
+                productType={selectedType}
+                specifications={specifications}
+                selectedSpecification={
+                  selectedSpecification
+                }
+                onSelectSpecification={
+                  setSelectedSpecification
+                }
+                onAdd={() => {
+                  if (
+                    !selectedSpecification
+                  ) {
+                    return;
+                  }
+
+                  /*
+                   * Keep the payload compatible with
+                   * the quotation form.
+                   */
+
+                  onSelect({
+                    product: null,
+
+                    productId: null,
+
+                    categoryId:
+                      selectedBrand?.categoryId ||
+                      null,
+
+                    brandName:
+                      selectedBrand?.name ||
+                      "",
+
+                    brandId:
+                      selectedBrand?.id ||
+                      null,
+
+                    productType:
+                      selectedTypeConfig?.label ||
+                      selectedType,
+
+                    attributeValues: {},
+
+                    specifications: [
+                      {
+                        specification:
+                          selectedSpecification.label,
+
+                        price:
+                          Number(
+                            selectedSpecification.price,
+                          ) || 0,
+                      },
+                    ],
+
+                    selectedSpecification:
+                      selectedSpecification.label,
+
+                    matchedVariant: null,
+
+                    defaultPrice:
+                      Number(
+                        selectedSpecification.price,
+                      ) || 0,
+
+                    sku:
+                      selectedBrand?.code ||
+                      "",
+                  });
+
+                  onClose();
+                }}
+              />
+            )}
+
         </div>
       </div>
     </div>
   );
 }
 
-/* ==================================================================
- * PRODUCT TYPE STEP
- * ================================================================== */
+/* ==========================================================================
+   PRODUCT TYPE STEP
+========================================================================== */
 
 function ProductTypeStep({
   onSelect,
 }) {
   return (
     <div className="p-4">
-      <div className="mb-3 text-xs font-semibold text-muted">
-        Choose the Product Type for
-        this quotation item.
+
+      <div className="mb-3">
+        <div className="text-xs font-semibold text-muted">
+          Choose the Product Type for this
+          quotation item.
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {PRODUCT_TYPES.map(
-          (type) => (
-            <button
-              key={type.key}
-              type="button"
-              onClick={() =>
-                onSelect(type)
-              }
-              className="
-                group
-                rounded-xl
-                border
-                border-line
-                bg-surface
-                p-4
-                text-left
-                transition
-                hover:border-primary-500/50
-                hover:bg-primary-500/5
-              "
-            >
+
+        {PRODUCT_TYPES.map((type) => (
+          <button
+            key={type.key}
+            type="button"
+            onClick={() =>
+              onSelect(type)
+            }
+            className="group flex items-center gap-3 rounded-xl border border-line bg-surface p-4 text-left transition hover:border-primary-500/50 hover:bg-primary-500/5"
+          >
+
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-500/10">
+              <Package className="h-4 w-4 text-primary-600" />
+            </div>
+
+            <div className="min-w-0 flex-1">
+
               <div className="text-sm font-bold text-ink">
                 {type.label}
               </div>
 
-              <div className="mt-1 text-[11px] text-muted">
+              <div className="mt-0.5 text-[11px] text-muted">
                 Select {type.label} brand
               </div>
-            </button>
-          ),
-        )}
+
+            </div>
+
+            <div className="text-xs font-bold text-primary-600">
+              →
+            </div>
+
+          </button>
+        ))}
+
       </div>
     </div>
   );
 }
 
-/* ==================================================================
- * BRAND STEP
- * ================================================================== */
+/* ==========================================================================
+   BRAND STEP
+
+   IMPORTANT:
+   These are NOT hardcoded brands.
+
+   They come from:
+
+       mockStore.brands
+
+   and are filtered according to:
+
+       selected Product Type
+========================================================================== */
 
 function BrandStep({
   brands,
   selectedType,
+  query,
+  onQueryChange,
+  inputRef,
   onSelect,
 }) {
-  if (!brands.length) {
-    return (
-      <div className="p-8 text-center">
-        <div className="text-sm font-bold text-ink">
-          No brands available
-        </div>
+  return (
+    <div>
 
-        <div className="mt-1 text-xs leading-5 text-muted">
-          Add a brand for{" "}
-          <b>{selectedType}</b>{" "}
-          in Brand Master first.
+      {/* Mobile search */}
+
+      <div className="border-b border-line p-3 sm:hidden">
+
+        <div className="relative">
+
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) =>
+              onQueryChange(
+                event.target.value,
+              )
+            }
+            placeholder="Search brand..."
+            className="h-9 w-full rounded-lg border border-line bg-bg pl-8 pr-3 text-xs text-ink outline-none focus:border-primary-500"
+          />
+
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div className="divide-y divide-line">
-      {brands.map(
-        (brand) => (
-          <button
-            key={brand.id}
-            type="button"
-            onClick={() =>
-              onSelect(brand)
-            }
-            className="
-              flex
-              w-full
-              items-center
-              justify-between
-              gap-3
-              px-4
-              py-3
-              text-left
-              transition
-              hover:bg-bg
-            "
-          >
-            <div className="min-w-0">
-              <div className="truncate text-sm font-bold text-ink">
-                {brand.name}
+      {/* Product Type */}
+
+      <div className="border-b border-line bg-bg/30 px-4 py-3">
+
+        <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
+          Product Type
+        </div>
+
+        <div className="mt-0.5 text-sm font-black text-ink">
+          {getTypeConfig(selectedType)?.label ||
+            selectedType}
+        </div>
+
+      </div>
+
+      {/* Brands */}
+
+      {!brands.length ? (
+        <div className="p-10 text-center">
+
+          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-bg">
+            <Tag className="h-5 w-5 text-muted" />
+          </div>
+
+          <div className="mt-3 text-sm font-bold text-ink">
+            No brands found
+          </div>
+
+          <div className="mx-auto mt-1 max-w-sm text-xs leading-5 text-muted">
+            Add a Brand in Brand Master
+            under this Product Type first.
+          </div>
+
+        </div>
+      ) : (
+        <div className="divide-y divide-line">
+
+          {brands.map((brand) => (
+            <button
+              key={brand.id}
+              type="button"
+              onClick={() =>
+                onSelect(brand)
+              }
+              className="group flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition hover:bg-bg"
+            >
+
+              <div className="flex min-w-0 items-center gap-3">
+
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-500/10">
+                  <Tag className="h-4 w-4 text-primary-600" />
+                </div>
+
+                <div className="min-w-0">
+
+                  <div className="truncate text-sm font-bold text-ink">
+                    {brand.name}
+                  </div>
+
+                  {brand.code && (
+                    <div className="mt-0.5 font-mono text-[10px] text-muted">
+                      {brand.code}
+                    </div>
+                  )}
+
+                </div>
+
               </div>
 
-              {brand.code && (
-                <div className="mt-0.5 font-mono text-[10px] text-muted">
-                  {brand.code}
-                </div>
-              )}
-            </div>
+              <div className="shrink-0 text-xs font-bold text-primary-600 transition group-hover:translate-x-0.5">
+                Select →
+              </div>
 
-            <div className="shrink-0 text-xs font-bold text-primary-600">
-              Select →
-            </div>
-          </button>
-        ),
+            </button>
+          ))}
+
+        </div>
       )}
+
     </div>
   );
 }
 
-/* ==================================================================
- * ATTRIBUTE PICKER
- * ================================================================== */
+/* ==========================================================================
+   SPECIFICATION STEP
 
-function AttributePicker({
+   Specifications come ONLY from the selected Brand.
+
+   Example:
+
+   Brand Master:
+
+   Sharon Gold
+   Product Type: Plywood
+
+   Specifications:
+   19mm → ₹2450
+   18mm → ₹2250
+   16mm → ₹2050
+
+   Quotation:
+
+   Plywood
+      ↓
+   Sharon Gold
+      ↓
+   19mm / 18mm / 16mm
+========================================================================== */
+
+function SpecificationStep({
   brand,
   productType,
-  category,
-  products,
-  onSelect,
+  specifications,
+  selectedSpecification,
+  onSelectSpecification,
+  onAdd,
 }) {
-  const qc =
-    useQueryClient();
-
-  const {
-    data: schemaMappings = [],
-  } =
-    useCategoryAttributes(
-      category?.id,
-    );
-
-  const {
-    data: attributes = [],
-  } =
-    useAttributes();
-
-  /*
-   * Find the existing Product record
-   * that belongs to this Brand + Product Type.
-   *
-   * This keeps the existing quotation
-   * save architecture intact.
-   */
-  const product =
-    useMemo(() => {
-      if (!brand) {
-        return null;
-      }
-
-      const matches =
-        products.filter(
-          (item) => {
-            if (
-              item.brandId ===
-              brand.id
-            ) {
-              if (
-                category?.id
-              ) {
-                return (
-                  item.categoryId ===
-                  category.id
-                );
-              }
-
-              return true;
-            }
-
-            return false;
-          },
-        );
-
-      return (
-        matches[0] || null
-      );
-    }, [
-      brand,
-      products,
-      category,
-    ]);
-
-  const schemaAttrs =
-    useMemo(
-      () =>
-        schemaMappings
-          .map(
-            (mapping) => ({
-              mapping,
-              attribute:
-                attributes.find(
-                  (attribute) =>
-                    attribute.id ===
-                    mapping.attributeId,
-                ),
-            }),
-          )
-          .filter(
-            (item) =>
-              item.attribute,
-          )
-          .sort(
-            (a, b) =>
-              (a.mapping.sortOrder ??
-                0) -
-              (b.mapping.sortOrder ??
-                0),
-          ),
-      [
-        schemaMappings,
-        attributes,
-      ],
-    );
-
-  const [
-    picked,
-    setPicked,
-  ] = useState({});
-
-  const [
-    matchedVariant,
-    setMatchedVariant,
-  ] = useState(null);
-
-  const [
-    matchedPrice,
-    setMatchedPrice,
-  ] = useState(0);
-
-  const [
-    checking,
-    setChecking,
-  ] = useState(false);
-
-  const allPicked =
-    schemaAttrs.length ===
-      0 ||
-    schemaAttrs.every(
-      ({
-        attribute,
-      }) =>
-        picked[
-          attribute.id
-        ],
-    );
-
-  /* ---------------------------------------------------------------
-   * Variant lookup
-   * --------------------------------------------------------------- */
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function lookup() {
-      if (
-        !product ||
-        !allPicked
-      ) {
-        setMatchedVariant(
-          null,
-        );
-        setMatchedPrice(0);
-        return;
-      }
-
-      setChecking(true);
-
-      try {
-        const {
-          variantRepo,
-          variantAttributeRepo,
-          priceRepo,
-        } = await import(
-          "@/lib/api/repos"
-        );
-
-        const variants =
-          await qc.fetchQuery({
-            queryKey: [
-              "variants",
-              product.id,
-            ],
-            queryFn: () =>
-              variantRepo.list({
-                productId:
-                  product.id,
-              }),
-          });
-
-        const list =
-          Array.isArray(
-            variants,
-          )
-            ? variants
-            : variants?.data ||
-              [];
-
-        const attrRows =
-          await Promise.all(
-            list.map(
-              (variant) =>
-                qc.fetchQuery({
-                  queryKey: [
-                    "variantAttributes",
-                    variant.id,
-                  ],
-                  queryFn: () =>
-                    variantAttributeRepo.list(
-                      {
-                        variantId:
-                          variant.id,
-                      },
-                    ),
-                }),
-            ),
-          );
-
-        const pairs =
-          Object.entries(
-            picked,
-          ).filter(
-            ([, value]) =>
-              value,
-          );
-
-        const match =
-          list.find(
-            (_, index) => {
-              const attrs =
-                attrRows[
-                  index
-                ] || [];
-
-              if (
-                attrs.length !==
-                pairs.length
-              ) {
-                return false;
-              }
-
-              return pairs.every(
-                ([
-                  attributeId,
-                  valueId,
-                ]) =>
-                  attrs.some(
-                    (attribute) =>
-                      attribute.attributeId ===
-                        attributeId &&
-                      attribute.attributeValueId ===
-                        valueId,
-                  ),
-              );
-            },
-          );
-
-        if (cancelled) {
-          return;
-        }
-
-        if (match) {
-          setMatchedVariant(
-            match,
-          );
-
-          const prices =
-            await qc.fetchQuery({
-              queryKey: [
-                "prices",
-                match.id,
-              ],
-              queryFn: () =>
-                priceRepo.list({
-                  variantId:
-                    match.id,
-                }),
-            });
-
-          const selling =
-            (prices || [])
-              .find(
-                (price) =>
-                  price.priceType ===
-                  "selling",
-              )
-              ?.amount ?? 0;
-
-          setMatchedPrice(
-            selling,
-          );
-        } else {
-          setMatchedVariant(
-            null,
-          );
-
-          setMatchedPrice(0);
-        }
-      } catch (error) {
-        console.error(
-          "Variant lookup failed",
-          error,
-        );
-
-        setMatchedVariant(
-          null,
-        );
-
-        setMatchedPrice(0);
-      } finally {
-        if (!cancelled) {
-          setChecking(false);
-        }
-      }
-    }
-
-    lookup();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    product,
-    allPicked,
-    picked,
-    qc,
-  ]);
-
-  /* ---------------------------------------------------------------
-   * No existing product
-   *
-   * Important: don't fabricate a productId.
-   * --------------------------------------------------------------- */
-
-  if (!product) {
-    return (
-      <div className="p-4">
-        <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
-          <div className="text-sm font-bold text-ink">
-            {brand.name}
-          </div>
-
-          <div className="mt-1 text-xs leading-5 text-muted">
-            This Brand is available in
-            Brand Master, but there is
-            no existing Product record
-            connected to it yet.
-          </div>
-
-          <div className="mt-3 rounded-lg bg-surface p-3 text-[11px] leading-5 text-muted">
-            We are keeping the existing
-            quotation data architecture
-            safe instead of creating a
-            fake product record here.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  /* ---------------------------------------------------------------
-   * No specification mapping
-   * --------------------------------------------------------------- */
-
-  if (
-    schemaAttrs.length === 0
-  ) {
-    return (
-      <div className="p-4">
-        <div className="rounded-xl border border-line bg-bg/50 p-4">
-          <div className="text-sm font-bold text-ink">
-            {brand.name}
-          </div>
-
-          <div className="mt-1 text-xs text-muted">
-            {productType}
-          </div>
-
-          <div className="mt-3 text-xs leading-5 text-muted">
-            No specifications are
-            configured for this Product
-            Type yet.
-          </div>
-        </div>
-
-        <div className="mt-4 flex justify-end">
-          <button
-            type="button"
-            onClick={() =>
-              onSelect({
-                product,
-                brandName:
-                  brand.name,
-                productType,
-                attributeValues:
-                  {},
-                matchedVariant:
-                  null,
-                defaultPrice: 0,
-              })
-            }
-            className="
-              rounded-lg
-              bg-primary-500
-              px-4
-              py-2
-              text-sm
-              font-bold
-              text-white
-              hover:brightness-105
-            "
-          >
-            Add to Line →
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  /* ---------------------------------------------------------------
-   * Specification selection
-   * --------------------------------------------------------------- */
-
   return (
     <div className="space-y-4 p-4">
-      {/* Brand summary */}
+
+      {/* Selected Brand */}
 
       <div className="rounded-xl border border-line bg-bg/50 p-3">
-        <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
-          Selected Brand
+
+        <div className="flex items-center gap-3">
+
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-500/10">
+            <Tag className="h-4 w-4 text-primary-600" />
+          </div>
+
+          <div className="min-w-0">
+
+            <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
+              Selected Brand
+            </div>
+
+            <div className="mt-0.5 truncate text-sm font-black text-ink">
+              {brand?.name ||
+                "Unknown Brand"}
+            </div>
+
+            <div className="mt-0.5 text-[10px] text-muted">
+              {getTypeConfig(
+                productType,
+              )?.label || productType}
+            </div>
+
+          </div>
+
         </div>
 
-        <div className="mt-1 text-sm font-black text-ink">
-          {brand.name}
-        </div>
-
-        <div className="mt-0.5 text-[10px] text-muted">
-          {productType}
-        </div>
       </div>
 
       {/* Specifications */}
 
-      <div>
-        <div className="mb-2 text-xs font-bold text-ink">
-          Specifications
+      {!specifications.length ? (
+        <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
+
+          <div className="text-sm font-bold text-ink">
+            No specifications configured
+          </div>
+
+          <div className="mt-1 text-xs leading-5 text-muted">
+            This Brand does not have any
+            Specifications configured in
+            Brand Master yet.
+          </div>
+
         </div>
+      ) : (
+        <div>
 
-        <div className="space-y-3">
-          {schemaAttrs.map(
-            ({
-              attribute,
-            }) => (
-              <AttributeValueField
-                key={
-                  attribute.id
-                }
-                attribute={
-                  attribute
-                }
-                value={
-                  picked[
-                    attribute.id
-                  ] || ""
-                }
-                onChange={(
-                  valueId,
-                ) =>
-                  setPicked(
-                    (previous) => ({
-                      ...previous,
-                      [attribute.id]:
-                        valueId,
-                    }),
-                  )
-                }
-              />
-            ),
-          )}
+          <div className="mb-2 flex items-center justify-between">
+
+            <div>
+              <div className="text-xs font-bold text-ink">
+                Specifications
+              </div>
+
+              <div className="mt-0.5 text-[10px] text-muted">
+                Select one specification
+              </div>
+            </div>
+
+            <div className="text-[10px] font-semibold text-muted">
+              {specifications.length}{" "}
+              available
+            </div>
+
+          </div>
+
+          <div className="space-y-2">
+
+            {specifications.map(
+              (specification) => {
+                const selected =
+                  selectedSpecification?.id ===
+                  specification.id;
+
+                return (
+                  <button
+                    key={specification.id}
+                    type="button"
+                    onClick={() =>
+                      onSelectSpecification(
+                        specification,
+                      )
+                    }
+                    className={[
+                      "flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition",
+                      selected
+                        ? "border-primary-500 bg-primary-500/5 ring-1 ring-primary-500/20"
+                        : "border-line bg-surface hover:border-primary-500/40 hover:bg-bg",
+                    ].join(" ")}
+                  >
+
+                    <div className="flex min-w-0 items-center gap-3">
+
+                      <div
+                        className={[
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                          selected
+                            ? "bg-primary-500 text-white"
+                            : "bg-bg text-muted",
+                        ].join(" ")}
+                      >
+                        {selected ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <span className="text-xs font-bold">
+                            •
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+
+                        <div className="truncate text-sm font-bold text-ink">
+                          {specification.label}
+                        </div>
+
+                        <div className="mt-0.5 text-[10px] text-muted">
+                          Specification
+                        </div>
+
+                      </div>
+
+                    </div>
+
+                    <div className="shrink-0 text-sm font-black text-ink">
+                      {formatMoney(
+                        specification.price,
+                      )}
+                    </div>
+
+                  </button>
+                );
+              },
+            )}
+
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Price information */}
+      {/* Selected specification */}
 
-      <div className="rounded-xl border border-line bg-bg/60 p-3 text-xs">
-        {!allPicked ? (
-          <span className="text-muted">
-            Select a value for
-            every required
-            specification.
-          </span>
-        ) : checking ? (
-          <span className="text-muted">
-            Looking up existing
-            rate…
-          </span>
-        ) : matchedVariant ? (
-          <span className="text-ink">
-            <b>
-              Existing
-              combination:
-            </b>{" "}
-            <span className="font-mono text-muted">
-              {
-                matchedVariant.sku
-              }
-            </span>{" "}
-            · Rate{" "}
-            <b>
-              {formatMoney(
-                matchedPrice,
-              )}
-            </b>
-          </span>
+      <div className="rounded-xl border border-line bg-bg/60 p-3">
+
+        {selectedSpecification ? (
+          <div className="flex items-center justify-between gap-3">
+
+            <div>
+
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                Selected
+              </div>
+
+              <div className="mt-0.5 text-sm font-bold text-ink">
+                {selectedSpecification.label}
+              </div>
+
+            </div>
+
+            <div className="text-right">
+
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                Price
+              </div>
+
+              <div className="mt-0.5 text-sm font-black text-ink">
+                {formatMoney(
+                  selectedSpecification.price,
+                )}
+              </div>
+
+            </div>
+
+          </div>
         ) : (
-          <span className="text-muted">
-            New specification
-            combination — rate
-            can be entered after
-            adding the item.
+          <span className="text-xs text-muted">
+            Select a specification to
+            continue.
           </span>
         )}
+
       </div>
 
-      {/* Confirm */}
+      {/* Add */}
 
-      <div className="flex justify-end">
+      <div className="flex justify-end border-t border-line pt-3">
+
         <button
           type="button"
-          onClick={() =>
-            onSelect({
-              product,
-              brandName:
-                brand.name,
-              productType,
-              attributeValues:
-                picked,
-              matchedVariant,
-              defaultPrice:
-                matchedPrice,
-            })
-          }
-          disabled={!allPicked}
-          className="
-            inline-flex
-            items-center
-            gap-2
-            rounded-lg
-            bg-primary-500
-            px-4
-            py-2
-            text-sm
-            font-bold
-            text-white
-            hover:brightness-105
-            disabled:cursor-not-allowed
-            disabled:opacity-40
-          "
+          disabled={!selectedSpecification}
+          onClick={onAdd}
+          className="inline-flex items-center gap-2 rounded-lg bg-primary-500 px-5 py-2.5 text-sm font-bold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Check className="h-4 w-4" />
           Add to Line
         </button>
+
       </div>
+
     </div>
-  );
-}
-
-/* ==================================================================
- * ATTRIBUTE VALUE FIELD
- * ================================================================== */
-
-function AttributeValueField({
-  attribute,
-  value,
-  onChange,
-}) {
-  const {
-    data: values = [],
-  } =
-    useAttributeValues(
-      attribute.id,
-    );
-
-  const activeValues =
-    values.filter(
-      (item) =>
-        item.isActive !==
-        false,
-    );
-
-  return (
-    <label className="block">
-      <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-muted">
-        {attribute.name}
-      </div>
-
-      <select
-        value={value}
-        onChange={(event) =>
-          onChange(
-            event.target.value,
-          )
-        }
-        className="
-          h-10
-          w-full
-          rounded-lg
-          border
-          border-line
-          bg-surface
-          px-3
-          text-sm
-          text-ink
-          outline-none
-          focus:border-primary-500
-          focus:ring-2
-          focus:ring-primary-500/15
-        "
-      >
-        <option value="">
-          Select{" "}
-          {attribute.name}
-          …
-        </option>
-
-        {activeValues.map(
-          (item) => (
-            <option
-              key={item.id}
-              value={item.id}
-            >
-              {item.label}
-            </option>
-          ),
-        )}
-      </select>
-    </label>
   );
 }
 
