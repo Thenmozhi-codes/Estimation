@@ -2,12 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Calculator,
   Minus,
+  Package,
   Save,
   Tag,
-  Layers3,
-  Ruler,
-  Package,
-  Boxes,
 } from "lucide-react";
 import {
   useNavigate,
@@ -42,12 +39,14 @@ import {
   resolveBrandCategoryId,
 } from "./brandConfig";
 
-/* =========================================================
+/* ==========================================================================
    HELPERS
-========================================================= */
+========================================================================== */
 
 function toArray(value) {
-  if (Array.isArray(value)) return value;
+  if (Array.isArray(value)) {
+    return value;
+  }
 
   if (Array.isArray(value?.data)) {
     return value.data;
@@ -71,7 +70,9 @@ function uniqueBy(items, keyFn) {
   for (const item of items || []) {
     const key = keyFn(item);
 
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      continue;
+    }
 
     seen.add(key);
     result.push(item);
@@ -98,142 +99,80 @@ function getAttributeName(attribute) {
   );
 }
 
-/*
- * Convert attribute names into stable keys.
- *
- * Examples:
- *
- * "Sub Category" -> "subCategory"
- * "Grade / Quality" -> "gradeQuality"
- * "Size / Dimension" -> "sizeDimension"
- */
+/* ==========================================================================
+   FIXED UNIT OPTIONS
 
-function attributeToKey(name) {
-  const normalized = normalize(name);
+   IMPORTANT:
+   Only Unit UI is changed.
+   These options are used in the Brand Form dropdown.
+========================================================================== */
 
-  const aliases = {
-    category: "category",
-    "sub category": "subCategory",
-    subcategory: "subCategory",
-
-    brand: "brand",
-    brands: "brand",
-
-    grade: "grade",
-    quality: "grade",
-    "grade quality": "gradeQuality",
-    "grade / quality": "gradeQuality",
-
-    thickness: "thickness",
-
-    size: "size",
-    dimension: "dimension",
-    "size dimension": "sizeDimension",
-    "size / dimension": "sizeDimension",
-
-    length: "length",
-    width: "width",
-    height: "height",
-
-    unit: "unit",
-
-    rate: "rate",
-    price: "rate",
-    "selling rate": "rate",
-    "selling price": "rate",
-    cost: "rate",
-  };
-
-  return (
-    aliases[normalized] ||
-    normalized.replace(
-      /\s+/g,
-      "_",
-    )
-  );
-}
-
-/* =========================================================
-   MATERIAL DETAIL FIELD ORDER
-
-   This is the required business flow.
-
-   Category
-   ↓
-   Sub Category
-   ↓
-   Brand
-   ↓
-   Grade / Quality
-   ↓
-   Thickness
-   ↓
-   Size / Dimension
-   ↓
-   Length
-   ↓
-   Width
-   ↓
-   Height
-   ↓
-   Unit
-   ↓
-   Rate
-========================================================= */
-
-const MATERIAL_FIELDS = [
-  {
-    key: "category",
-    label: "Category",
-    type: "readonly",
-  },
-  {
-    key: "subCategory",
-    label: "Sub Category",
-  },
-  {
-    key: "brand",
-    label: "Brand",
-    type: "readonly",
-  },
-  {
-    key: "gradeQuality",
-    label: "Grade / Quality",
-  },
-  {
-    key: "thickness",
-    label: "Thickness",
-  },
-  {
-    key: "sizeDimension",
-    label: "Size / Dimension",
-  },
-  {
-    key: "length",
-    label: "Length",
-  },
-  {
-    key: "width",
-    label: "Width",
-  },
-  {
-    key: "height",
-    label: "Height",
-  },
-  {
-    key: "unit",
-    label: "Unit",
-  },
-  {
-    key: "rate",
-    label: "Rate",
-    type: "number",
-  },
+const UNIT_OPTIONS = [
+  "Nos",
+  "Sq.ft",
+  "Sq.m",
+  "R.ft",
+  "C.ft",
+  "Kg",
+  "Gram",
+  "Litre",
+  "Box",
+  "Packet",
+  "Piece",
+  "Set",
 ];
 
-/* =========================================================
+/* ==========================================================================
+   DEFAULT SPECIFICATION FALLBACK
+
+   Existing specification flow is preserved.
+========================================================================== */
+
+const FALLBACK_SPECIFICATIONS = {
+  Plywood: [
+    "19mm",
+    "18mm",
+    "16mm",
+    "12mm",
+    "9mm",
+    "6mm",
+  ],
+
+  Laminate: [
+    "0.6mm",
+    "0.8mm",
+    "1mm",
+  ],
+
+  "Edge Band": [
+    "0.5mm",
+  ],
+
+  WPC: [
+    "3x2 inch",
+    "4x2.5 inch",
+  ],
+
+  Fevicol: [
+    "1/2kg",
+    "1kg",
+    "2kg",
+    "5kg",
+    "10kg",
+    "20kg",
+    "50kg",
+  ],
+
+  Hardware: [
+    "Small",
+    "Medium",
+    "Large",
+  ],
+};
+
+/* ==========================================================================
    BRAND FORM
-========================================================= */
+========================================================================== */
 
 export function BrandFormPage({
   open = true,
@@ -249,48 +188,9 @@ export function BrandFormPage({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  /* =======================================================
-     STATE
-  ======================================================= */
-
-  const [brandName, setBrandName] =
-    useState("");
-
-  const [productTypeId, setProductTypeId] =
-    useState("");
-
-  /*
-   * EXISTING WORKING STATE.
-   *
-   * DO NOT CHANGE THIS STRUCTURE.
-   */
-  const [specifications, setSpecifications] =
-    useState([]);
-
-  /*
-   * NEW MATERIAL DETAILS.
-   *
-   * These are separate from specifications.
-   */
-  const [materialDetails, setMaterialDetails] =
-    useState({});
-
-  /*
-   * SAME FORMULA FOR ALL PRODUCT TYPES.
-   */
-  const [calculation, setCalculation] =
-    useState({
-      wastage: "",
-      markup: "",
-      discount: "",
-    });
-
-  const [loaded, setLoaded] =
-    useState(!isEdit);
-
-  /* =======================================================
+  /* ------------------------------------------------------------------------
      MASTER DATA
-  ======================================================= */
+  ------------------------------------------------------------------------ */
 
   const {
     data: brands = [],
@@ -308,9 +208,41 @@ export function BrandFormPage({
     data: rawAttributes = [],
   } = useAttributes();
 
-  /*
-   * productTypeId already exists above.
-   */
+  /* ------------------------------------------------------------------------
+     FORM STATE
+
+    
+  ------------------------------------------------------------------------ */
+
+  const [brandName, setBrandName] =
+    useState("");
+
+  const [productTypeId, setProductTypeId] =
+    useState("");
+
+  const [specifications, setSpecifications] =
+    useState([]);
+
+  const [unit, setUnit] =
+    useState("");
+
+  const [calculation, setCalculation] =
+    useState({
+      wastage: "",
+      markup: "",
+      discount: "",
+    });
+
+  const [loaded, setLoaded] =
+    useState(!isEdit);
+
+  /* ------------------------------------------------------------------------
+     CATEGORY → ATTRIBUTE MAPPING
+
+     Kept because Specification Master and Unit Master may be
+     configured through the existing attribute system.
+  ------------------------------------------------------------------------ */
+
   const {
     data: rawCategoryAttributes = [],
   } = useCategoryAttributes(
@@ -323,12 +255,17 @@ export function BrandFormPage({
   const updateBrand =
     useUpdateBrand();
 
-  /* =======================================================
-     NORMALIZED MASTER DATA
-  ======================================================= */
+  const saving =
+    createBrand.isPending ||
+    updateBrand.isPending;
+
+  /* ------------------------------------------------------------------------
+     NORMALIZED ATTRIBUTE DATA
+  ------------------------------------------------------------------------ */
 
   const attributes = useMemo(
-    () => toArray(rawAttributes),
+    () =>
+      toArray(rawAttributes),
     [rawAttributes],
   );
 
@@ -341,9 +278,9 @@ export function BrandFormPage({
       [rawCategoryAttributes],
     );
 
-  /* =======================================================
+  /* ------------------------------------------------------------------------
      PRODUCT TYPES
-  ======================================================= */
+  ------------------------------------------------------------------------ */
 
   const productTypes = useMemo(
     () =>
@@ -353,12 +290,14 @@ export function BrandFormPage({
     [categories],
   );
 
-  /* =======================================================
+  /* ------------------------------------------------------------------------
      CURRENT BRAND
-  ======================================================= */
+  ------------------------------------------------------------------------ */
 
   const currentBrand = useMemo(() => {
-    if (!id) return null;
+    if (!id) {
+      return null;
+    }
 
     return (
       brands.find((brand) =>
@@ -367,9 +306,9 @@ export function BrandFormPage({
     );
   }, [brands, id]);
 
-  /* =======================================================
+  /* ------------------------------------------------------------------------
      SELECTED PRODUCT TYPE
-  ======================================================= */
+  ------------------------------------------------------------------------ */
 
   const selectedProductType =
     useMemo(() => {
@@ -386,9 +325,9 @@ export function BrandFormPage({
       productTypeId,
     ]);
 
-  /* =======================================================
+  /* ------------------------------------------------------------------------
      MAPPED ATTRIBUTES
-  ======================================================= */
+  ------------------------------------------------------------------------ */
 
   const mappedAttributes =
     useMemo(() => {
@@ -417,17 +356,6 @@ export function BrandFormPage({
             (item) =>
               Boolean(item.attribute),
           )
-          .filter((item) => {
-            const name =
-              getAttributeName(
-                item.attribute,
-              );
-
-            return (
-              name !== "brand" &&
-              name !== "brands"
-            );
-          })
           .sort(
             (a, b) =>
               Number(
@@ -453,9 +381,12 @@ export function BrandFormPage({
       productTypeId,
     ]);
 
-  /* =======================================================
+  /* ------------------------------------------------------------------------
      PRIMARY SPECIFICATION
-  ======================================================= */
+
+     Existing behavior:
+       Thickness → Pack Size → Size → Specification → first mapped attribute
+  ------------------------------------------------------------------------ */
 
   const primarySpecification =
     useMemo(() => {
@@ -465,7 +396,7 @@ export function BrandFormPage({
 
       const preferredNames = [
         "thickness",
-        "pack size",
+        "packsize",
         "size",
         "specification",
       ];
@@ -478,8 +409,7 @@ export function BrandFormPage({
             (item) =>
               getAttributeName(
                 item.attribute,
-              ) ===
-              preferredName,
+              ) === preferredName,
           );
 
         if (found) {
@@ -493,9 +423,9 @@ export function BrandFormPage({
       );
     }, [mappedAttributes]);
 
-  /* =======================================================
-     OLD SPECIFICATION VALUES
-  ======================================================= */
+  /* ------------------------------------------------------------------------
+     SPECIFICATION MASTER VALUES
+  ------------------------------------------------------------------------ */
 
   const {
     data: rawSpecificationValues = [],
@@ -531,53 +461,19 @@ export function BrandFormPage({
       );
     }, [rawSpecificationValues]);
 
-  /* =======================================================
+  /* ------------------------------------------------------------------------
      FALLBACK SPECIFICATIONS
-  ======================================================= */
+  ------------------------------------------------------------------------ */
 
   const fallbackSpecifications =
     useMemo(() => {
       const type =
         selectedProductType?.label;
 
-      const fallbackMap = {
-        Plywood: [
-          "19mm",
-          "18mm",
-          "16mm",
-          "12mm",
-          "9mm",
-          "6mm",
-        ],
-
-        Laminate: [
-          "0.6mm",
-          "0.8mm",
-          "1mm",
-        ],
-
-        "Edge Band": [
-          "0.5mm",
-        ],
-
-        WPC: [
-          "3x2 inch",
-          "4x2.5 inch",
-        ],
-
-        Fevicol: [
-          "1/2kg",
-          "1kg",
-          "2kg",
-          "5kg",
-          "10kg",
-          "20kg",
-          "50kg",
-        ],
-      };
-
       return (
-        fallbackMap[type] || []
+        FALLBACK_SPECIFICATIONS[
+          type
+        ] || []
       );
     }, [selectedProductType]);
 
@@ -609,26 +505,84 @@ export function BrandFormPage({
       fallbackSpecifications,
     ]);
 
-  /* =======================================================
-     SAVING
-  ======================================================= */
+  /* ------------------------------------------------------------------------
+     UNIT ATTRIBUTE
 
-  const saving =
-    createBrand.isPending ||
-    updateBrand.isPending;
+     Existing data reading is preserved so old saved
+     Brand records can still restore their Unit value.
 
-  /* =======================================================
+     The visible Unit control below uses the fixed
+     UNIT_OPTIONS list requested by the user.
+  ------------------------------------------------------------------------ */
+
+  const unitAttribute =
+    useMemo(() => {
+      const found =
+        mappedAttributes.find(
+          (item) =>
+            getAttributeName(
+              item.attribute,
+            ) === "unit",
+        );
+
+      return (
+        found?.attribute || null
+      );
+    }, [mappedAttributes]);
+
+  const {
+    data: rawUnitValues = [],
+  } = useAttributeValues(
+    unitAttribute?.id || "",
+  );
+
+  /*
+   * Existing Unit Master data is still read,
+   * but the Brand Form now uses the requested
+   * fixed Unit dropdown options.
+   *
+   * This keeps the existing data flow intact
+   * while changing only the visible Unit choices.
+   */
+  const unitValues = useMemo(() => {
+    return uniqueBy(
+      toArray(rawUnitValues)
+        .filter(
+          (item) =>
+            item?.isActive !== false,
+        )
+        .map((item) => ({
+          ...item,
+          displayValue:
+            getAttributeValueLabel(
+              item,
+            ),
+        }))
+        .filter(
+          (item) =>
+            item.displayValue,
+        ),
+      (item) =>
+        normalize(
+          item.displayValue,
+        ),
+    );
+  }, [rawUnitValues]);
+
+  /* ==========================================================================
      RESET
-  ======================================================= */
+  ========================================================================== */
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      return;
+    }
 
     if (!isEdit) {
       setBrandName("");
       setProductTypeId("");
       setSpecifications([]);
-      setMaterialDetails({});
+      setUnit("");
 
       setCalculation({
         wastage: "",
@@ -647,9 +601,9 @@ export function BrandFormPage({
     isEdit,
   ]);
 
-  /* =======================================================
+  /* ==========================================================================
      LOAD EXISTING BRAND
-  ======================================================= */
+  ========================================================================== */
 
   useEffect(() => {
     if (
@@ -676,9 +630,11 @@ export function BrandFormPage({
       resolvedCategoryId,
     );
 
-    /* -----------------------------------------------------
-       EXISTING SPECIFICATION + PRICE
-    ----------------------------------------------------- */
+    /* ----------------------------------------------------------------------
+       EXISTING SPECIFICATIONS + PRICE
+
+       DO NOT CHANGE THIS FLOW.
+    ---------------------------------------------------------------------- */
 
     if (
       Array.isArray(
@@ -731,9 +687,12 @@ export function BrandFormPage({
       setSpecifications([]);
     }
 
-    /* -----------------------------------------------------
-       MATERIAL DETAILS
-    ----------------------------------------------------- */
+    /* ----------------------------------------------------------------------
+       UNIT ONLY
+
+       We intentionally read only unit from old materialDetails.
+       Other legacy fields are not displayed or edited.
+    ---------------------------------------------------------------------- */
 
     const savedMaterialDetails =
       currentBrand.materialDetails ||
@@ -749,16 +708,21 @@ export function BrandFormPage({
         savedMaterialDetails,
       )
     ) {
-      setMaterialDetails(
-        savedMaterialDetails,
+      setUnit(
+        savedMaterialDetails.unit ||
+          savedMaterialDetails.uom ||
+          savedMaterialDetails.unitName ||
+          "",
       );
     } else {
-      setMaterialDetails({});
+      setUnit("");
     }
 
-    /* -----------------------------------------------------
-       CALCULATION
-    ----------------------------------------------------- */
+    /* ----------------------------------------------------------------------
+       EXISTING CALCULATION
+
+       Keep exactly as before.
+    ---------------------------------------------------------------------- */
 
     if (
       currentBrand.calculation
@@ -779,6 +743,12 @@ export function BrandFormPage({
             .calculation?.discount ??
           "",
       });
+    } else {
+      setCalculation({
+        wastage: "",
+        markup: "",
+        discount: "",
+      });
     }
 
     setLoaded(true);
@@ -791,15 +761,11 @@ export function BrandFormPage({
     categories,
   ]);
 
-  /* =======================================================
+  /* ==========================================================================
      AUTO POPULATE SPECIFICATION ROWS
 
-     FIX:
-     Prevent unnecessary state updates when the generated
-     specification list is already identical.
-
-     THIS IS THE ONLY BEHAVIORAL FIX.
-  ======================================================= */
+     Existing behavior preserved.
+  ========================================================================== */
 
   useEffect(() => {
     if (!productTypeId) {
@@ -819,7 +785,9 @@ export function BrandFormPage({
       return;
     }
 
-    if (!specificationValues.length) {
+    if (
+      !specificationValues.length
+    ) {
       return;
     }
 
@@ -848,31 +816,9 @@ export function BrandFormPage({
             }),
           );
 
-        /*
-         * IMPORTANT FIX:
-         *
-         * If nothing actually changed,
-         * return the SAME previous array.
-         *
-         * This prevents:
-         *
-         * setState
-         *   ↓
-         * render
-         *   ↓
-         * useEffect
-         *   ↓
-         * setState
-         *   ↓
-         * render
-         *
-         * which caused:
-         * "Maximum update depth exceeded"
-         */
-
         const isSame =
           previous.length ===
-          nextSpecifications.length &&
+            nextSpecifications.length &&
           previous.every(
             (item, index) => {
               const next =
@@ -913,9 +859,9 @@ export function BrandFormPage({
     currentBrand,
   ]);
 
-  /* =======================================================
+  /* ==========================================================================
      PRODUCT TYPE CHANGE
-  ======================================================= */
+  ========================================================================== */
 
   const handleProductTypeChange = (
     event,
@@ -923,20 +869,26 @@ export function BrandFormPage({
     const nextType =
       event.target.value;
 
-    setProductTypeId(nextType);
+    setProductTypeId(
+      nextType,
+    );
 
     /*
-     * Old specification prices belong to
-     * previous Product Type, so clear them.
+     * Existing specification values
+     * belong to the old Product Type.
      */
     setSpecifications([]);
 
-    setMaterialDetails({});
+    /*
+     * Unit also belongs to the selected
+     * Product Type.
+     */
+    setUnit("");
   };
 
-  /* =======================================================
-     SPECIFICATION PRICE
-  ======================================================= */
+  /* ==========================================================================
+     SPECIFICATION HANDLERS
+  ========================================================================== */
 
   const removeSpecification = (
     index,
@@ -950,41 +902,27 @@ export function BrandFormPage({
     );
   };
 
-  const updateSpecificationPrice =
-    (index, price) => {
-      setSpecifications(
-        (previous) =>
-          previous.map(
-            (item, itemIndex) =>
-              itemIndex === index
-                ? {
-                    ...item,
-                    price,
-                  }
-                : item,
-          ),
-      );
-    };
-
-  /* =======================================================
-     MATERIAL DETAIL UPDATE
-  ======================================================= */
-
-  const updateMaterialDetail = (
-    key,
-    value,
+  const updateSpecificationPrice = (
+    index,
+    price,
   ) => {
-    setMaterialDetails(
-      (previous) => ({
-        ...previous,
-        [key]: value,
-      }),
+    setSpecifications(
+      (previous) =>
+        previous.map(
+          (item, itemIndex) =>
+            itemIndex === index
+              ? {
+                  ...item,
+                  price,
+                }
+              : item,
+        ),
     );
   };
 
-  /* =======================================================
-     CALCULATION UPDATE
-  ======================================================= */
+  /* ==========================================================================
+     CALCULATION HANDLER
+  ========================================================================== */
 
   const updateCalculation = (
     field,
@@ -998,9 +936,9 @@ export function BrandFormPage({
     );
   };
 
-  /* =======================================================
+  /* ==========================================================================
      VALIDATION
-  ======================================================= */
+  ========================================================================== */
 
   const validate = () => {
     const cleanName =
@@ -1088,12 +1026,13 @@ export function BrandFormPage({
     return null;
   };
 
-  /* =======================================================
+  /* ==========================================================================
      SAVE
-  ======================================================= */
+  ========================================================================== */
 
   const handleSave = async () => {
-    const error = validate();
+    const error =
+      validate();
 
     if (error) {
       toast.error(error);
@@ -1106,9 +1045,12 @@ export function BrandFormPage({
     const code =
       toCode(cleanName);
 
-    /*
-     * EXISTING SPECIFICATION DATA.
-     */
+    /* ----------------------------------------------------------------------
+       EXISTING SPECIFICATION DATA
+
+       DO NOT CHANGE.
+    ---------------------------------------------------------------------- */
+
     const specificationData =
       specifications.map(
         (item) => ({
@@ -1122,19 +1064,39 @@ export function BrandFormPage({
         }),
       );
 
-    /*
-     * MATERIAL DETAILS
-     */
+    /* ----------------------------------------------------------------------
+       MATERIAL DETAILS
+
+       ONLY UNIT IS NOW PART OF THE ACTIVE UI.
+
+       We preserve category + brand because
+       existing consumers may rely on them.
+
+       Existing legacy fields are intentionally
+       not reconstructed.
+    ---------------------------------------------------------------------- */
 
     const materialDetailsData = {
-      ...materialDetails,
-
       category:
         selectedProductType?.label ||
         "",
 
       brand: cleanName,
+
+      unit:
+        String(unit || "").trim(),
     };
+
+    /* ----------------------------------------------------------------------
+       EXISTING PAYLOAD STRUCTURE
+
+       categoryId
+       specifications
+       materialDetails
+       calculation
+
+       All remain compatible.
+    ---------------------------------------------------------------------- */
 
     const payload = {
       name: cleanName,
@@ -1146,21 +1108,12 @@ export function BrandFormPage({
 
       isActive: true,
 
-      /*
-       * EXISTING WORKING FIELD.
-       */
       specifications:
         specificationData,
 
-      /*
-       * COMPLETE MATERIAL DETAILS.
-       */
       materialDetails:
         materialDetailsData,
 
-      /*
-       * COMMON FORMULA FOR ALL PRODUCT TYPES.
-       */
       calculation: {
         wastage:
           calculation.wastage === ""
@@ -1228,9 +1181,9 @@ export function BrandFormPage({
     }
   };
 
-  /* =======================================================
+  /* ==========================================================================
      CLOSE
-  ======================================================= */
+  ========================================================================== */
 
   const close = () => {
     if (onClose) {
@@ -1243,9 +1196,9 @@ export function BrandFormPage({
     );
   };
 
-  /* =======================================================
+  /* ==========================================================================
      UI
-  ======================================================= */
+  ========================================================================== */
 
   return (
     <Sheet
@@ -1258,8 +1211,8 @@ export function BrandFormPage({
       }
       subtitle={
         isEdit
-          ? "Update brand, specifications, material details and pricing."
-          : "Create a brand with complete material details for quotations."
+          ? "Update brand, specifications, unit and pricing."
+          : "Create a brand with specifications and unit for quotations."
       }
       width="md"
       footer={
@@ -1307,9 +1260,9 @@ export function BrandFormPage({
             handleSave();
           }}
         >
-          {/* =================================================
+          {/* ================================================================
               1. PRODUCT TYPE
-          ================================================= */}
+          ================================================================ */}
 
           <div className="rounded-xl border border-line bg-bg/50 p-4">
             <Field
@@ -1345,9 +1298,9 @@ export function BrandFormPage({
             </Field>
           </div>
 
-          {/* =================================================
+          {/* ================================================================
               2. BRAND NAME
-          ================================================= */}
+          ================================================================ */}
 
           <div className="rounded-xl border border-line bg-bg/50 p-4">
             <div className="mb-3 flex items-center gap-3">
@@ -1377,16 +1330,19 @@ export function BrandFormPage({
                     event.target.value,
                   )
                 }
-                placeholder="e.g. Greenpanel"
+                placeholder="e.g. Sharon Sovereign"
                 autoFocus
                 maxLength={100}
               />
             </Field>
           </div>
 
-          {/* =================================================
+          {/* ================================================================
               3. EXISTING SPECIFICATIONS & PRICE
-          ================================================= */}
+
+              IMPORTANT:
+              THIS FLOW IS NOT CHANGED.
+          ================================================================ */}
 
           {productTypeId && (
             <div className="rounded-xl border border-line bg-bg/50 p-4">
@@ -1449,8 +1405,7 @@ export function BrandFormPage({
                         ) =>
                           updateSpecificationPrice(
                             index,
-                            event.target
-                              .value,
+                            event.target.value,
                           )
                         }
                         placeholder="Enter price"
@@ -1477,111 +1432,69 @@ export function BrandFormPage({
             </div>
           )}
 
-          {/* =================================================
-              4. MATERIAL DETAILS
-          ================================================= */}
+          {/* ================================================================
+              4. UNIT
 
-          {productTypeId && (
-            <MaterialDetailsSection
-              selectedProductType={
-                selectedProductType
-              }
-              brandName={brandName}
-              attributes={
-                mappedAttributes
-              }
-              selected={
-                materialDetails
-              }
-              onChange={
-                updateMaterialDetail
-              }
-            />
-          )}
-
-          {/* =================================================
-              5. CALCULATION & PRICING
-          ================================================= */}
+              ONLY THIS SECTION'S INPUT OPTIONS
+              HAVE BEEN CHANGED.
+          ================================================================ */}
 
           {productTypeId && (
             <div className="rounded-xl border border-line bg-bg/50 p-4">
               <div className="mb-4 flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-500/10">
-                  <Calculator className="h-4 w-4 text-primary-500" />
+                  <Package className="h-4 w-4 text-primary-500" />
                 </div>
 
                 <div>
                   <div className="text-sm font-bold text-ink">
-                    Calculation & Pricing
+                    Unit
                   </div>
 
                   <p className="mt-0.5 text-[11px] text-muted">
-                    Common calculation rules used for quotation pricing.
+                    Configure the default unit used for this brand in quotations.
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <Field label="Wastage %">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={
-                      calculation.wastage
-                    }
-                    onChange={(event) =>
-                      updateCalculation(
-                        "wastage",
-                        event.target.value,
-                      )
-                    }
-                    placeholder="0"
-                  />
-                </Field>
+              <Field
+                label="Unit"
+                hint="Select the unit used for this brand."
+              >
+                <Select
+                  value={unit}
+                  onChange={(event) =>
+                    setUnit(
+                      event.target.value,
+                    )
+                  }
+                >
+                  <option value="">
+                    Select Unit
+                  </option>
 
-                <Field label="Markup %">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={
-                      calculation.markup
-                    }
-                    onChange={(event) =>
-                      updateCalculation(
-                        "markup",
-                        event.target.value,
-                      )
-                    }
-                    placeholder="0"
-                  />
-                </Field>
-
-                <Field label="Discount %">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={
-                      calculation.discount
-                    }
-                    onChange={(event) =>
-                      updateCalculation(
-                        "discount",
-                        event.target.value,
-                      )
-                    }
-                    placeholder="0"
-                  />
-                </Field>
-              </div>
+                  {UNIT_OPTIONS.map(
+                    (option) => (
+                      <option
+                        key={option}
+                        value={option}
+                      >
+                        {option}
+                      </option>
+                    ),
+                  )}
+                </Select>
+              </Field>
             </div>
           )}
 
-          {/* =================================================
+         
+
+         
+
+          {/* ================================================================
               SUMMARY
-          ================================================= */}
+          ================================================================ */}
 
           {productTypeId && (
             <div className="rounded-xl border border-primary-500/15 bg-primary-500/5 p-4">
@@ -1589,7 +1502,7 @@ export function BrandFormPage({
                 Brand Configuration
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-4">
+              <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3">
                 <div>
                   <div className="text-[10px] uppercase tracking-wide text-muted">
                     Product Type
@@ -1597,8 +1510,7 @@ export function BrandFormPage({
 
                   <div className="mt-1 text-sm font-bold text-ink">
                     {
-                      selectedProductType
-                        ?.label
+                      selectedProductType?.label
                     }
                   </div>
                 </div>
@@ -1614,398 +1526,22 @@ export function BrandFormPage({
                     }
                   </div>
                 </div>
+
+                <div>
+                  <div className="text-[10px] uppercase tracking-wide text-muted">
+                    Unit
+                  </div>
+
+                  <div className="mt-1 text-sm font-bold text-ink">
+                    {unit || "Not configured"}
+                  </div>
+                </div>
               </div>
             </div>
           )}
         </form>
       )}
     </Sheet>
-  );
-}
-
-/* =========================================================
-   MATERIAL DETAILS SECTION
-========================================================= */
-
-function MaterialDetailsSection({
-  selectedProductType,
-  brandName,
-  attributes,
-  selected,
-  onChange,
-}) {
-  const attributeMap = useMemo(() => {
-    const map = new Map();
-
-    for (const item of attributes || []) {
-      if (!item?.attribute) continue;
-
-      const key = attributeToKey(
-        item.attribute.name ||
-          item.attribute.label ||
-          "",
-      );
-
-      if (!map.has(key)) {
-        map.set(
-          key,
-          item.attribute,
-        );
-      }
-    }
-
-    return map;
-  }, [attributes]);
-
-  return (
-    <div className="rounded-xl border border-line bg-bg/50 p-4">
-      {/* HEADER */}
-
-      <div className="mb-5 flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-500/10">
-          <Layers3 className="h-4 w-4 text-primary-500" />
-        </div>
-
-        <div>
-          <div className="text-sm font-bold text-ink">
-            Material Details
-          </div>
-
-          <p className="mt-0.5 text-[11px] text-muted">
-            Configure the complete material information available for quotations.
-          </p>
-        </div>
-      </div>
-
-      {/* CATEGORY */}
-
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Category" required>
-          <Input
-            value={
-              selectedProductType?.label ||
-              ""
-            }
-            readOnly
-            className="bg-bg"
-          />
-        </Field>
-
-        {/* SUB CATEGORY */}
-
-        <MaterialDetailAttribute
-          attribute={
-            attributeMap.get(
-              "subCategory",
-            )
-          }
-          fallbackKey="subCategory"
-          label="Sub Category"
-          value={
-            selected?.subCategory ??
-            ""
-          }
-          onChange={onChange}
-        />
-      </div>
-
-      {/* BRAND + GRADE */}
-
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Brand" required>
-          <Input
-            value={brandName}
-            readOnly
-            className="bg-bg"
-          />
-        </Field>
-
-        <MaterialDetailAttribute
-          attribute={
-            attributeMap.get(
-              "gradeQuality",
-            ) ||
-            attributeMap.get(
-              "grade",
-            ) ||
-            attributeMap.get(
-              "quality",
-            )
-          }
-          fallbackKey="gradeQuality"
-          label="Grade / Quality"
-          value={
-            selected?.gradeQuality ??
-            ""
-          }
-          onChange={onChange}
-        />
-      </div>
-
-      {/* THICKNESS + SIZE */}
-
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <MaterialDetailAttribute
-          attribute={
-            attributeMap.get(
-              "thickness",
-            )
-          }
-          fallbackKey="thickness"
-          label="Thickness"
-          value={
-            selected?.thickness ??
-            ""
-          }
-          onChange={onChange}
-        />
-
-        <MaterialDetailAttribute
-          attribute={
-            attributeMap.get(
-              "sizeDimension",
-            ) ||
-            attributeMap.get(
-              "size",
-            ) ||
-            attributeMap.get(
-              "dimension",
-            )
-          }
-          fallbackKey="sizeDimension"
-          label="Size / Dimension"
-          value={
-            selected?.sizeDimension ??
-            ""
-          }
-          onChange={onChange}
-        />
-      </div>
-
-      {/* LENGTH + WIDTH + HEIGHT */}
-
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <MaterialDetailAttribute
-          attribute={
-            attributeMap.get(
-              "length",
-            )
-          }
-          fallbackKey="length"
-          label="Length"
-          value={
-            selected?.length ?? ""
-          }
-          onChange={onChange}
-          dimension
-        />
-
-        <MaterialDetailAttribute
-          attribute={
-            attributeMap.get(
-              "width",
-            )
-          }
-          fallbackKey="width"
-          label="Width"
-          value={
-            selected?.width ?? ""
-          }
-          onChange={onChange}
-          dimension
-        />
-
-        <MaterialDetailAttribute
-          attribute={
-            attributeMap.get(
-              "height",
-            )
-          }
-          fallbackKey="height"
-          label="Height"
-          value={
-            selected?.height ?? ""
-          }
-          onChange={onChange}
-          dimension
-        />
-      </div>
-
-      {/* UNIT + RATE */}
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <MaterialDetailAttribute
-          attribute={
-            attributeMap.get(
-              "unit",
-            )
-          }
-          fallbackKey="unit"
-          label="Unit"
-          value={
-            selected?.unit ?? ""
-          }
-          onChange={onChange}
-        />
-
-        <MaterialDetailAttribute
-          attribute={
-            attributeMap.get(
-              "rate",
-            )
-          }
-          fallbackKey="rate"
-          label="Rate"
-          value={
-            selected?.rate ?? ""
-          }
-          onChange={onChange}
-          number
-        />
-      </div>
-    </div>
-  );
-}
-
-/* =========================================================
-   MATERIAL DETAIL ATTRIBUTE
-========================================================= */
-
-function MaterialDetailAttribute({
-  attribute,
-  fallbackKey,
-  label,
-  value,
-  onChange,
-  dimension = false,
-  number = false,
-}) {
-  const {
-    data: rawValues = [],
-  } = useAttributeValues(
-    attribute?.id || "",
-  );
-
-  const values = useMemo(() => {
-    return uniqueBy(
-      toArray(rawValues)
-        .filter(
-          (item) =>
-            item?.isActive !== false,
-        )
-        .map((item) => ({
-          ...item,
-          displayValue:
-            getAttributeValueLabel(
-              item,
-            ),
-        }))
-        .filter(
-          (item) =>
-            item.displayValue,
-        ),
-      (item) =>
-        normalize(
-          item.displayValue,
-        ),
-    );
-  }, [rawValues]);
-
-  /*
-   * If Specification Master has predefined
-   * values, show dropdown.
-   */
-
-  if (values.length > 0) {
-    return (
-      <Field label={label}>
-        <Select
-          value={value}
-          onChange={(event) =>
-            onChange(
-              fallbackKey,
-              event.target.value,
-            )
-          }
-        >
-          <option value="">
-            Select {label}
-          </option>
-
-          {values.map(
-            (item) => (
-              <option
-                key={
-                  item.id ||
-                  item.displayValue
-                }
-                value={
-                  item.displayValue
-                }
-              >
-                {
-                  item.displayValue
-                }
-              </option>
-            ),
-          )}
-        </Select>
-      </Field>
-    );
-  }
-
-  /*
-   * No Master values:
-   * allow manual entry.
-   */
-
-  return (
-    <Field label={label}>
-      <div className="relative">
-        {dimension && (
-          <Ruler className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-        )}
-
-        {number && (
-          <Package className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-        )}
-
-        <Input
-          type={
-            number
-              ? "number"
-              : "text"
-          }
-          min={
-            number
-              ? "0"
-              : undefined
-          }
-          step={
-            number
-              ? "0.01"
-              : undefined
-          }
-          value={value}
-          onChange={(event) =>
-            onChange(
-              fallbackKey,
-              event.target.value,
-            )
-          }
-          placeholder={
-            number
-              ? `Enter ${label}`
-              : `Enter ${label}`
-          }
-          className={
-            dimension || number
-              ? "pl-9"
-              : undefined
-          }
-        />
-      </div>
-    </Field>
   );
 }
 

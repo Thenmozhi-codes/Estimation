@@ -501,12 +501,43 @@ export function QuotationFormPage() {
       return;
     }
 
+    /* ----------------------------------------------------------------------
+       PRODUCT ID SAFETY
+
+       ProductPicker now always sends a real Product Master id.
+       This fallback also repairs older quotation drafts where the id may
+       only have been stored inside item.product.id.
+
+       IMPORTANT: quotation calculation / item flow is unchanged.
+    ---------------------------------------------------------------------- */
+
+    const normalizedItems =
+      items.map((item) => ({
+        ...item,
+        productId:
+          item?.productId ||
+          item?.product?.id ||
+          null,
+      }));
+
+    const invalidItemIndex =
+      normalizedItems.findIndex(
+        (item) => !item.productId,
+      );
+
+    if (invalidItemIndex !== -1) {
+      toast.error(
+        `Item ${invalidItemIndex + 1} is missing its Product Master reference. Please remove it and add the item again.`,
+      );
+      return;
+    }
+
     setSaving(true);
 
     try {
       const enrichedItems =
         await Promise.all(
-          items.map(
+          normalizedItems.map(
             async (item) => {
               const variant =
                 await variantResolver.resolveOrCreate(

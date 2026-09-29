@@ -12,13 +12,7 @@ import {
   useCategoryAttributes,
 } from "@/hooks/useMasters";
 
-/**
- * Live, read-only view of what Attribute Master has configured for a
- * Product Type. This is the single place both Product Master (form +
- * detail) pull from, so anything added/edited/removed on the
- * Attributes page shows up here immediately — no duplication, no
- * stale copies.
- */
+
 export function useAttributeConfig(categoryId) {
   const { data: mappings = [], isLoading: mappingsLoading } =
     useCategoryAttributes(categoryId);
