@@ -38,11 +38,7 @@ export function LineItemsEditor({
       "canOverridePrice",
     );
 
-  /* ==========================================================================
-     ADD ROW
-
-     Existing quotation item structure is preserved.
-  ========================================================================== */
+  
 
   const addRow = (picked) => {
     if (!picked) {
@@ -234,13 +230,7 @@ export function LineItemsEditor({
     ]);
   };
 
-  /* ==========================================================================
-     EDIT / ADD FROM PRODUCT PICKER
-
-     Existing add flow is preserved.
-     When editing, the same ProductPicker flow is used and the selected
-     product replaces the existing row instead of creating a second row.
-  ========================================================================== */
+ 
 
   const handlePickerSelect = (picked) => {
     if (!picked) {

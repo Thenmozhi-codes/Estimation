@@ -16,11 +16,7 @@ import { formatMoney } from "@/lib/utils/money";
 import { newId } from "@/lib/utils/id";
 import { toCode } from "@/lib/utils/code";
 
-/* ==========================================================================
-   PRODUCT TYPES
 
-   Existing quotation Product Type flow is preserved.
-========================================================================== */
 
 const PRODUCT_TYPES = [
   {
@@ -173,13 +169,7 @@ function categoryMatchesType(
   );
 }
 
-/* ==========================================================================
-   LEGACY BRAND MATCHING
 
-   Existing seeded data may not always contain categoryId.
-
-   This fallback keeps old data working.
-========================================================================== */
 
 function legacyBrandMatchesType(
   brand,
@@ -227,19 +217,7 @@ function legacyBrandMatchesType(
   return false;
 }
 
-/* ==========================================================================
-   BRAND → PRODUCT TYPE
 
-   PRIMARY:
-
-       Brand Master
-            ↓
-       categoryId
-            ↓
-       Category/Product Type
-
-   Compatibility fallbacks are retained for old data.
-========================================================================== */
 
 function brandMatchesType({
   brand,
@@ -610,12 +588,7 @@ function getVariantAttributes({
   return result;
 }
 
-/* ==========================================================================
-   EXISTING VARIANT PRICE
 
-   This is kept because existing Product Master / Variant flow
-   still needs to work.
-========================================================================== */
 
 function getVariantPrice({
   variantId,
@@ -659,20 +632,7 @@ function getVariantPrice({
   );
 }
 
-/* ==========================================================================
-   SPECIFICATION → VARIANT MATCH
 
-   Brand Master specification is used first.
-
-   If a matching existing variant can be found,
-   that variant is used.
-
-   If no exact match exists, the normal existing
-   Product Master default variant is retained.
-
-   This prevents the quotation save flow from
-   losing productId / variant data.
-========================================================================== */
 
 function variantMatchesSpecification(
   variant,
@@ -996,12 +956,7 @@ export function ProductPicker({
       query,
     ]);
 
-  /* ------------------------------------------------------------------------
-     PRODUCTS FOR SELECTED BRAND
-
-     IMPORTANT:
-     Existing Product Master relationship remains.
-  ------------------------------------------------------------------------ */
+ 
 
   const brandProducts =
     useMemo(() => {
@@ -1030,17 +985,7 @@ export function ProductPicker({
       selectedBrand,
     ]);
 
-  /* ------------------------------------------------------------------------
-     BRAND → PRODUCT ID BRIDGE
 
-     The existing quotation save flow requires a real Product Master
-     productId before variantResolver.resolveOrCreate() can run.
-
-     Existing Product Master records are reused. If a newly-created Brand
-     does not have a Product Master row yet, one is created automatically
-     from that Brand. The user flow remains: Product Type → Brand →
-     Specification → Add.
-  ------------------------------------------------------------------------ */
 
   function ensureProductForBrand(brand) {
     if (!brand?.id) {
@@ -1119,11 +1064,7 @@ export function ProductPicker({
     return product;
   }
 
-  /* ------------------------------------------------------------------------
-     VARIANTS FOR SELECTED PRODUCT
-
-     Existing variant calculation is preserved.
-  ------------------------------------------------------------------------ */
+ 
 
   const productVariants =
     useMemo(() => {
@@ -1424,13 +1365,7 @@ export function ProductPicker({
       return;
     }
 
-    /*
-     * Use exact matching variant first.
-     *
-     * Otherwise use selected variant.
-     *
-     * Otherwise preserve old default variant behavior.
-     */
+  
 
     const variant =
       selectedSpecification
@@ -1464,16 +1399,7 @@ export function ProductPicker({
         "",
     };
 
-    /*
-     * BRAND MASTER PRICE HAS PRIORITY.
-
-     * If the selected specification
-     * has a configured price, use it.
-
-     * Otherwise fall back to the
-     * existing variant price.
-     */
-
+   
     const brandPrice =
       safeNumber(
         selectedSpecification.price,
@@ -1565,15 +1491,7 @@ export function ProductPicker({
         variant ||
         null,
 
-      /* --------------------------------------------------------------
-         EXISTING ATTRIBUTE VALUES
-
-         DO NOT REMOVE THIS.
-
-         QuotationFormPage passes these into:
-
-           variantResolver.resolveOrCreate()
-      -------------------------------------------------------------- */
+     
 
       attributeValues:
         attributeValuesPayload,
@@ -1923,13 +1841,7 @@ export function ProductPicker({
               />
             )}
 
-          {/* ==============================================================
-              STEP 3
-
-              Product identity is resolved automatically from the selected
-              Brand. The user continues directly to Brand Master
-              specifications.
-          ============================================================== */}
+         
 
           {selectedProduct && (
             <SpecificationStep
