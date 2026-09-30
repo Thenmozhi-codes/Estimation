@@ -396,7 +396,7 @@ export function BrandFormPage({
 
       const preferredNames = [
         "thickness",
-        "packsize",
+        "pack size",
         "size",
         "specification",
       ];
@@ -463,6 +463,9 @@ export function BrandFormPage({
 
   /* ------------------------------------------------------------------------
      FALLBACK SPECIFICATIONS
+
+     FIX: match the Product Type label against the fixed list using
+     normalize(), so "Fevicol", "fevicol ", etc. all resolve correctly.
   ------------------------------------------------------------------------ */
 
   const fallbackSpecifications =
@@ -470,15 +473,42 @@ export function BrandFormPage({
       const type =
         selectedProductType?.label;
 
-      return (
-        FALLBACK_SPECIFICATIONS[
-          type
-        ] || []
+      // FIX: normalized lookup of the fixed Product Type list
+      const fixedKey = Object.keys(
+        FALLBACK_SPECIFICATIONS,
+      ).find(
+        (key) =>
+          normalize(key) ===
+          normalize(type || ""),
       );
+
+      return fixedKey
+        ? FALLBACK_SPECIFICATIONS[
+            fixedKey
+          ]
+        : [];
     }, [selectedProductType]);
+
+  /* ------------------------------------------------------------------------
+     SPECIFICATION VALUES
+
+     FIX: For fixed Product Types (Plywood, Laminate, Edge Band, WPC,
+     Fevicol, Hardware) the Product Type-specific list is ALWAYS used.
+     The generic Specification Master values are used only when the
+     Product Type has no fixed list.
+  ------------------------------------------------------------------------ */
 
   const specificationValues =
     useMemo(() => {
+      // FIX: fixed Product Type list takes priority
+      if (fallbackSpecifications.length) {
+        return uniqueBy(
+          fallbackSpecifications,
+          (value) =>
+            normalize(value),
+        );
+      }
+
       const masterValues =
         masterSpecificationValues
           .map(
@@ -487,16 +517,8 @@ export function BrandFormPage({
           )
           .filter(Boolean);
 
-      if (masterValues.length) {
-        return uniqueBy(
-          masterValues,
-          (value) =>
-            normalize(value),
-        );
-      }
-
       return uniqueBy(
-        fallbackSpecifications,
+        masterValues,
         (value) =>
           normalize(value),
       );
