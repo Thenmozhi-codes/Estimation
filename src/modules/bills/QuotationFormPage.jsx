@@ -501,15 +501,7 @@ export function QuotationFormPage() {
       return;
     }
 
-    /* ----------------------------------------------------------------------
-       PRODUCT ID SAFETY
-
-       ProductPicker now always sends a real Product Master id.
-       This fallback also repairs older quotation drafts where the id may
-       only have been stored inside item.product.id.
-
-       IMPORTANT: quotation calculation / item flow is unchanged.
-    ---------------------------------------------------------------------- */
+    
 
     const normalizedItems =
       items.map((item) => ({
