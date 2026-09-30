@@ -23,6 +23,47 @@ const PRODUCT_TYPES = [
 ];
 
 /* ==========================================================================
+   MEASUREMENT BY PRODUCT TYPE
+
+   Which fields are asked and how the billing quantity is calculated.
+   Change a type here and the popup follows automatically.
+
+   fields : any of "length" | "width" | "height"  (all in feet)
+   unit   : billing unit when the measurement is filled
+   label  : name of the calculated result
+   Quantity = product of the fields × Pcs.
+   ========================================================================== */
+
+const MEASURE_LABELS = {
+  length: "Length (ft)",
+  width: "Width (ft)",
+  height: "Height (ft)",
+};
+
+const MEASURE_NAMES = {
+  length: "Length",
+  width: "Width",
+  height: "Height",
+};
+
+const MEASUREMENT_BY_TYPE = {
+  Plywood: { fields: ["length", "width"], unit: "sq.ft", label: "Area" },
+  Laminate: { fields: ["length", "width"], unit: "sq.ft", label: "Area" },
+  "Edge Band": { fields: ["length"], unit: "rft", label: "Length" },
+  WPC: {
+    fields: ["length", "width", "height"],
+    unit: "cu.ft",
+    label: "Volume",
+  },
+  Adhesive: { fields: [], unit: "pcs", label: "" },
+};
+
+const NO_MEASUREMENT = { fields: [], unit: "pcs", label: "" };
+
+/* true = L / W / H shown for the product type must be filled before adding */
+const MEASUREMENT_REQUIRED = true;
+
+/* ==========================================================================
    HELPERS
    ========================================================================== */
 
@@ -57,6 +98,24 @@ function uniqueBy(items, keyFn) {
     seen.add(key);
     return true;
   });
+}
+
+function calcMeasurement(typeKey, values, pcs) {
+  const config = MEASUREMENT_BY_TYPE[typeKey] || NO_MEASUREMENT;
+
+  const numbers = config.fields.map((field) => safeNumber(values?.[field]));
+
+  const active = config.fields.length > 0 && numbers.every((n) => n > 0);
+
+  const qty = active
+    ? numbers.reduce((product, n) => product * n, 1) * pcs
+    : 0;
+
+  return { ...config, active, qty };
+}
+
+function formatMeasureQty(measure) {
+  return measure.qty.toFixed(measure.unit === "cu.ft" ? 3 : 2);
 }
 
 function getTypeConfig(type) {
@@ -344,6 +403,7 @@ export function ProductPicker({
   /* MEASUREMENT STATE (these were missing before) */
   const [length, setLength] = useState("");
   const [width, setWidth] = useState("");
+  const [height, setHeight] = useState("");
   const [pcs, setPcs] = useState(1);
 
   const inputRef = useRef(null);
@@ -364,6 +424,7 @@ export function ProductPicker({
   function resetDimensions() {
     setLength("");
     setWidth("");
+    setHeight("");
   }
 
   /* CLOSE ON ESCAPE */
@@ -390,6 +451,7 @@ export function ProductPicker({
     setQuery("");
     setLength("");
     setWidth("");
+    setHeight("");
     setPcs(1);
 
     const timer = setTimeout(() => {
@@ -446,6 +508,11 @@ export function ProductPicker({
     setWidth(
       initialItem?.width !== undefined && initialItem?.width !== null
         ? String(initialItem.width)
+        : "",
+    );
+    setHeight(
+      initialItem?.height !== undefined && initialItem?.height !== null
+        ? String(initialItem.height)
         : "",
     );
     setPcs(Math.max(1, safeNumber(initialItem?.pcs) || 1));
@@ -674,12 +741,18 @@ export function ProductPicker({
     const variantPrice = safeNumber(variant?.price);
     const rate = brandPrice > 0 ? brandPrice : variantPrice;
 
-    /* MEASUREMENT */
-    const numericLength = safeNumber(length);
-    const numericWidth = safeNumber(width);
+    /* MEASUREMENT (fields depend on the product type) */
     const numericPcs = Math.max(1, safeNumber(pcs) || 1);
-    const hasArea = numericLength > 0 && numericWidth > 0;
-    const area = hasArea ? numericLength * numericWidth * numericPcs : 0;
+    const dims = {
+      length: safeNumber(length),
+      width: safeNumber(width),
+      height: safeNumber(height),
+    };
+    const measure = calcMeasurement(selectedType, dims, numericPcs);
+
+    if (MEASUREMENT_REQUIRED && measure.fields.length > 0 && !measure.active) {
+      return;
+    }
 
     onSelect({
       product: selectedProduct,
@@ -712,12 +785,17 @@ export function ProductPicker({
 
       stock: safeNumber(variant?.stock),
 
-      /* Quantity = area (sq.ft) when dimensions are entered */
-      quantity: hasArea ? Number(area.toFixed(2)) : numericPcs,
-      unit: hasArea ? "sq.ft" : attributeValuesPayload.Unit || "pcs",
+      /* Quantity = measurement result when filled, otherwise Pcs */
+      quantity: measure.active
+        ? Number(formatMeasureQty(measure))
+        : numericPcs,
+      unit: measure.active
+        ? measure.unit
+        : attributeValuesPayload.Unit || "pcs",
 
-      length: numericLength || attributeValuesPayload.Length || "",
-      width: numericWidth || attributeValuesPayload.Width || "",
+      length: dims.length || attributeValuesPayload.Length || "",
+      width: dims.width || attributeValuesPayload.Width || "",
+      height: dims.height || attributeValuesPayload.Height || "",
       pcs: numericPcs,
 
       thickness: attributeValuesPayload.Thickness || "",
@@ -861,13 +939,16 @@ export function ProductPicker({
           {/* SPECIFICATION + MEASUREMENT */}
           {selectedBrand && selectedProduct && (
             <SpecificationStep
+              typeKey={selectedType}
               specifications={specifications}
               selectedSpecification={selectedSpecification}
               length={length}
               width={width}
+              height={height}
               pcs={pcs}
               onLengthChange={setLength}
               onWidthChange={setWidth}
+              onHeightChange={setHeight}
               onSelectSpecification={(specification) => {
                 setSelectedSpecification(specification);
                 setSelectedVariant(specification?.matchedVariant || null);
@@ -887,30 +968,37 @@ export function ProductPicker({
    ========================================================================== */
 
 function SpecificationStep({
+  typeKey,
   specifications,
   selectedSpecification,
 
   length,
   width,
+  height,
   pcs,
 
   onLengthChange,
   onWidthChange,
+  onHeightChange,
 
   onSelectSpecification,
   onAdd,
 }) {
-  const numericLength = safeNumber(length);
-  const numericWidth = safeNumber(width);
   const numericPcs = Math.max(1, safeNumber(pcs) || 1);
 
-  const hasDimensions = numericLength > 0 && numericWidth > 0;
-  const area = hasDimensions ? numericLength * numericWidth * numericPcs : 0;
+  const fieldValues = { length, width, height };
+  const fieldHandlers = {
+    length: onLengthChange,
+    width: onWidthChange,
+    height: onHeightChange,
+  };
 
-  /* Billing quantity: area when L × W entered, otherwise number of pieces */
-  const billingQty = hasDimensions ? area : numericPcs;
-  const qtyLabel = hasDimensions
-    ? `${area.toFixed(2)} sq.ft`
+  const measure = calcMeasurement(typeKey, fieldValues, numericPcs);
+
+  /* Billing quantity: measurement result when filled, otherwise pieces */
+  const billingQty = measure.active ? measure.qty : numericPcs;
+  const qtyLabel = measure.active
+    ? `${formatMeasureQty(measure)} ${measure.unit}`
     : `${numericPcs} pcs`;
 
   const formatINR = (value, digits = 2) =>
@@ -922,15 +1010,23 @@ function SpecificationStep({
       : safeNumber(specification?.matchedVariant?.price);
 
   const selectedRate = selectedSpecification ? rateOf(selectedSpecification) : 0;
-  const total = selectedSpecification ? billingQty * selectedRate : 0;
+  const needsMeasurement =
+    MEASUREMENT_REQUIRED && measure.fields.length > 0 && !measure.active;
+
+  const missingLabel = measure.fields
+    .map((field) => MEASURE_LABELS[field].replace(" (ft)", ""))
+    .join(", ");
+
+  const total =
+    selectedSpecification && !needsMeasurement ? billingQty * selectedRate : 0;
 
   return (
     <section className="space-y-4">
       <div>
         <div className="text-xs font-bold text-ink">Specifications & Price</div>
         <div className="mt-0.5 text-[10px] text-muted">
-          Rate is loaded from Brand Master. Amount changes with Pcs and
-          measurement.
+          Price is the default rate from Brand Master and does not change with
+          Pcs. Only the Total changes.
         </div>
       </div>
 
@@ -945,10 +1041,9 @@ function SpecificationStep({
         <>
           {/* SPECIFICATION TABLE */}
           <div className="overflow-hidden rounded-lg border border-line">
-            <div className="grid grid-cols-[1fr_90px_110px_32px] items-center gap-2 border-b border-line bg-bg/60 px-2.5 py-2 text-[9px] font-bold uppercase tracking-wide text-muted">
+            <div className="grid grid-cols-[1fr_110px_32px] items-center gap-2 border-b border-line bg-bg/60 px-2.5 py-2 text-[9px] font-bold uppercase tracking-wide text-muted">
               <div>Specification</div>
-              <div className="text-right">Rate (₹)</div>
-              <div className="text-right">Amount (₹)</div>
+              <div className="text-right">Price (₹)</div>
               <div />
             </div>
 
@@ -963,7 +1058,7 @@ function SpecificationStep({
                     type="button"
                     onClick={() => onSelectSpecification(specification)}
                     className={[
-                      "grid w-full grid-cols-[1fr_90px_110px_32px] items-center gap-2 px-2.5 py-2.5 text-left transition",
+                      "grid w-full grid-cols-[1fr_110px_32px] items-center gap-2 px-2.5 py-2.5 text-left transition",
                       selected ? "bg-primary-500/5" : "hover:bg-bg/60",
                     ].join(" ")}
                   >
@@ -971,12 +1066,8 @@ function SpecificationStep({
                       {specification.label}
                     </div>
 
-                    <div className="text-right text-xs font-semibold text-muted">
-                      {rate > 0 ? formatINR(rate) : "—"}
-                    </div>
-
                     <div className="text-right text-xs font-bold text-ink">
-                      {rate > 0 ? formatINR(billingQty * rate) : "—"}
+                      {rate > 0 ? formatINR(rate) : "—"}
                     </div>
 
                     <div className="flex justify-end">
@@ -997,32 +1088,54 @@ function SpecificationStep({
             </div>
           </div>
 
-          {/* MEASUREMENT (optional) */}
+          {/* MEASUREMENT (fields change with the product type) */}
           <div>
-            <div className="mb-2 text-xs font-bold text-ink">
-              Measurement{" "}
-              <span className="font-normal text-muted">(optional)</span>
+            <div className="mb-2">
+              <div className="text-xs font-bold text-ink">
+                Measurement
+                {measure.fields.length > 0 && MEASUREMENT_REQUIRED && (
+                  <span className="ml-0.5 text-red-500">*</span>
+                )}
+              </div>
+
+              <div className="mt-0.5 text-[10px] text-muted">
+                {measure.fields.length
+                  ? `${measure.label} = ${measure.fields
+                      .map((field) => MEASURE_NAMES[field])
+                      .join(" × ")} × Pcs`
+                  : "Not needed for this product type. Total = Price × Pcs."}
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <MeasurementField
-                label="L (ft)"
-                value={length}
-                onChange={(event) => onLengthChange(event.target.value)}
-                placeholder="0"
-              />
+            <div
+              className={[
+                "grid grid-cols-2 gap-2",
+                [
+                  "",
+                  "sm:grid-cols-1",
+                  "sm:grid-cols-2",
+                  "sm:grid-cols-3",
+                  "sm:grid-cols-4",
+                  "sm:grid-cols-5",
+                ][measure.fields.length + (measure.fields.length ? 2 : 1)],
+              ].join(" ")}
+            >
+              {measure.fields.map((field) => (
+                <MeasurementField
+                  key={field}
+                  label={MEASURE_LABELS[field]}
+                  value={fieldValues[field]}
+                  onChange={(event) => fieldHandlers[field](event.target.value)}
+                  placeholder={MEASURE_NAMES[field]}
+                />
+              ))}
 
-              <MeasurementField
-                label="W (ft)"
-                value={width}
-                onChange={(event) => onWidthChange(event.target.value)}
-                placeholder="0"
-              />
-
-              <ReadOnlyMetric
-                label="Area (sq.ft)"
-                value={area > 0 ? area.toFixed(2) : "—"}
-              />
+              {measure.fields.length > 0 && (
+                <ReadOnlyMetric
+                  label={`${measure.label} (${measure.unit})`}
+                  value={measure.active ? formatMeasureQty(measure) : "—"}
+                />
+              )}
 
               <ReadOnlyMetric
                 label="Total (₹)"
@@ -1044,7 +1157,9 @@ function SpecificationStep({
               </div>
 
               <div className="mt-0.5 text-[10px] text-muted">
-                {selectedSpecification
+                {selectedSpecification && needsMeasurement
+                  ? `Enter ${missingLabel} to continue.`
+                  : selectedSpecification
                   ? selectedRate > 0
                     ? `${qtyLabel} × ₹${formatINR(selectedRate)}`
                     : "No price set in Brand Master"
@@ -1064,7 +1179,7 @@ function SpecificationStep({
 
               <button
                 type="button"
-                disabled={!selectedSpecification}
+                disabled={!selectedSpecification || needsMeasurement}
                 onClick={onAdd}
                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-xs font-bold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -1082,7 +1197,7 @@ function SpecificationStep({
 function MeasurementField({ label, value, onChange, placeholder, min }) {
   return (
     <label className="min-w-0">
-      <span className="mb-1 block text-[9px] font-bold uppercase tracking-wide text-muted sm:hidden">
+      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
         {label}
       </span>
 
@@ -1102,7 +1217,7 @@ function MeasurementField({ label, value, onChange, placeholder, min }) {
 function ReadOnlyMetric({ label, value, strong = false }) {
   return (
     <div className="min-w-0">
-      <span className="mb-1 block text-[9px] font-bold uppercase tracking-wide text-muted sm:hidden">
+      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
         {label}
       </span>
 

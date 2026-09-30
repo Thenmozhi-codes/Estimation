@@ -60,6 +60,7 @@ function buildPickedFields(picked) {
     /* Measurement */
     length: picked?.length ?? "",
     width: picked?.width ?? "",
+    height: picked?.height ?? "",
     pcs: picked?.pcs ?? 1,
 
     /* Quantity comes from the picker (area in sq.ft when L × W entered) */
@@ -301,15 +302,17 @@ function RowActions({ onEdit, onRemove }) {
 }
 
 function MeasurementSummary({ item }) {
-  const length = Number(item?.length) || 0;
-  const width = Number(item?.width) || 0;
+  const dims = [item?.length, item?.width, item?.height]
+    .map((value) => Number(value) || 0)
+    .filter((value) => value > 0);
+
   const pcs = Number(item?.pcs) || 0;
 
-  if (!(length > 0 && width > 0)) return null;
+  if (!dims.length) return null;
 
   return (
     <div className="mt-0.5 text-[10px] text-muted">
-      {length} × {width} ft × {pcs || 1} pcs
+      {dims.join(" × ")} ft × {pcs || 1} pcs
     </div>
   );
 }
