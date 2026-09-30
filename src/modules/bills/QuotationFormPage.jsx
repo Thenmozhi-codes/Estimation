@@ -354,7 +354,7 @@ export function QuotationFormPage() {
     <div className="page-container min-h-full">
       <PageHeader
         title="New Quotation"
-        description="Create a quotation for your customer"
+       
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -401,7 +401,7 @@ export function QuotationFormPage() {
             <section className="p-4 md:p-5">
               <SectionHeading
                 title="Quotation Details"
-                subtitle="Enter the customer and quotation information."
+               
               />
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -465,8 +465,7 @@ export function QuotationFormPage() {
             <section className="p-4 md:p-5">
               <SectionHeading
                 title="Items"
-                subtitle="Add the products and quantities included in this quotation."
-              />
+               />
 
               <LineItemsEditor items={items} onChange={setItems} />
             </section>
@@ -506,7 +505,7 @@ export function QuotationFormPage() {
                   <h3 className="text-sm font-semibold text-ink">
                     Quotation Summary
                   </h3>
-                  <p className="text-xs text-muted">Live calculation</p>
+                  
                 </div>
               </div>
 
@@ -587,10 +586,7 @@ export function QuotationFormPage() {
 
               {/* Footer note */}
               <div className="border-t border-line px-4 py-3">
-                <p className="text-[11px] leading-4 text-muted">
-                  Amount updates automatically when items, quantity, price or
-                  discount changes.
-                </p>
+                
               </div>
             </div>
           </aside>
