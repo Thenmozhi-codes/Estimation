@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, Package, X } from "lucide-react";
 
 import { mockStore } from "@/lib/store/mockStore";
@@ -360,11 +361,22 @@ export function ProductPicker({
   const stock = toArray(db.stock);
   const categories = toArray(db.categories);
 
-  function resetMeasurement() {
+  function resetDimensions() {
     setLength("");
     setWidth("");
-    setPcs(1);
   }
+
+  /* CLOSE ON ESCAPE */
+  useEffect(() => {
+    if (!open) return;
+
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") onClose?.();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
 
   /* RESET WHEN OPENED */
   useEffect(() => {
@@ -718,11 +730,20 @@ export function ProductPicker({
     onClose();
   }
 
-  return (
-    <div className="w-full overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
-      <div className="flex max-h-[82vh] w-full flex-col overflow-hidden">
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose?.();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-xl"
+      >
         {/* HEADER */}
-        <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-3 sm:px-4">
+        <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-3">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-500/10">
             <Package className="h-4 w-4 text-primary-600" />
           </div>
@@ -732,7 +753,7 @@ export function ProductPicker({
               {mode === "edit" ? "Edit Item" : "Add Item"}
             </div>
             <div className="text-[10px] text-muted">
-              Select Product Type, Brand and Specification
+              Select Product Type, Brand and Pcs, then choose a specification
             </div>
           </div>
 
@@ -747,118 +768,117 @@ export function ProductPicker({
         </div>
 
         {/* CONTENT */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-          <div className="space-y-4">
-            {/* 1. PRODUCT TYPE */}
-            <section>
-              <div className="mb-2">
-                <div className="text-xs font-bold text-ink">Product Type</div>
-                <div className="text-[10px] text-muted">
-                  Choose the material category first.
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-                {PRODUCT_TYPES.map((type) => {
-                  const active = selectedType === type.key;
-
-                  return (
-                    <button
-                      key={type.key}
-                      type="button"
-                      onClick={() => {
-                        setSelectedType(type.key);
-                        setSelectedBrand(null);
-                        setSelectedProduct(null);
-                        setSelectedSpecification(null);
-                        setSelectedVariant(null);
-                        setQuery("");
-                        resetMeasurement();
-                      }}
-                      className={[
-                        "min-h-10 rounded-lg border px-2.5 py-2 text-xs font-bold transition",
-                        active
-                          ? "border-primary-500 bg-primary-500 text-white shadow-sm"
-                          : "border-line bg-surface text-ink hover:border-primary-500/40 hover:bg-primary-500/5",
-                      ].join(" ")}
-                    >
-                      {type.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-
-            {/* 2. BRAND */}
-            {selectedType && (
-              <section className="rounded-xl border border-line bg-bg/30 p-3 sm:p-4">
-                <div className="mb-2">
-                  <div className="text-xs font-bold text-ink">Brand Name</div>
-                  <div className="text-[10px] text-muted">
-                    Select a brand from Brand Master.
-                  </div>
-                </div>
-
-                <select
-                  ref={inputRef}
-                  value={selectedBrand?.id || ""}
-                  onChange={(event) => {
-                    const brand =
-                      availableBrands.find((item) =>
-                        sameId(item.id, event.target.value),
-                      ) || null;
-
-                    const product = brand ? ensureProductForBrand(brand) : null;
-
-                    setSelectedBrand(brand);
-                    setSelectedProduct(product);
-                    setSelectedSpecification(null);
-                    setSelectedVariant(null);
-                    resetMeasurement();
-                    setQuery("");
-                  }}
-                  className="h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm font-semibold text-ink outline-none transition focus:border-primary-500"
-                >
-                  <option value="">Select Brand</option>
-
-                  {availableBrands.map((brand) => (
-                    <option key={brand.id} value={brand.id}>
-                      {brand.name}
-                    </option>
-                  ))}
-                </select>
-
-                {!availableBrands.length && (
-                  <div className="mt-2 rounded-lg border border-dashed border-line px-3 py-2 text-[10px] text-muted">
-                    No brands found for this Product Type. Add the brand in
-                    Brand Master first.
-                  </div>
-                )}
-              </section>
-            )}
-
-            {/* 3. SPECIFICATION + MEASUREMENT */}
-            {selectedBrand && selectedProduct && (
-              <SpecificationStep
-                specifications={specifications}
-                selectedSpecification={selectedSpecification}
-                length={length}
-                width={width}
-                pcs={pcs}
-                onLengthChange={setLength}
-                onWidthChange={setWidth}
-                onPcsChange={setPcs}
-                onSelectSpecification={(specification) => {
-                  setSelectedSpecification(specification);
-                  setSelectedVariant(specification?.matchedVariant || null);
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+          {/* SINGLE LINE: PRODUCT TYPE | BRAND | PCS */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_110px]">
+            <label className="min-w-0">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
+                Product Type
+              </span>
+              <select
+                ref={inputRef}
+                value={selectedType}
+                onChange={(event) => {
+                  setSelectedType(event.target.value);
+                  setSelectedBrand(null);
+                  setSelectedProduct(null);
+                  setSelectedSpecification(null);
+                  setSelectedVariant(null);
+                  setQuery("");
+                  resetDimensions();
                 }}
-                onAdd={handleAddToLine}
+                className="h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm font-semibold text-ink outline-none transition focus:border-primary-500"
+              >
+                <option value="">Select Product Type</option>
+                {PRODUCT_TYPES.map((type) => (
+                  <option key={type.key} value={type.key}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="min-w-0">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
+                Brand Name
+              </span>
+              <select
+                value={selectedBrand?.id || ""}
+                disabled={!selectedType}
+                onChange={(event) => {
+                  const brand =
+                    availableBrands.find((item) =>
+                      sameId(item.id, event.target.value),
+                    ) || null;
+
+                  const product = brand ? ensureProductForBrand(brand) : null;
+
+                  setSelectedBrand(brand);
+                  setSelectedProduct(product);
+                  setSelectedSpecification(null);
+                  setSelectedVariant(null);
+                  resetDimensions();
+                  setQuery("");
+                }}
+                className="h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm font-semibold text-ink outline-none transition focus:border-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">Select Brand</option>
+                {availableBrands.map((brand) => (
+                  <option key={brand.id} value={brand.id}>
+                    {brand.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="min-w-0">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
+                Pcs
+              </span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={pcs}
+                onChange={(event) =>
+                  setPcs(
+                    event.target.value === "" ? "" : Number(event.target.value),
+                  )
+                }
+                placeholder="1"
+                className="h-10 w-full rounded-lg border border-line bg-surface px-3 text-center text-sm font-semibold text-ink outline-none transition focus:border-primary-500"
               />
-            )}
+            </label>
           </div>
+
+          {selectedType && !availableBrands.length && (
+            <div className="rounded-lg border border-dashed border-line px-3 py-2 text-[10px] text-muted">
+              No brands found for this Product Type. Add the brand in Brand
+              Master first.
+            </div>
+          )}
+
+          {/* SPECIFICATION + MEASUREMENT */}
+          {selectedBrand && selectedProduct && (
+            <SpecificationStep
+              specifications={specifications}
+              selectedSpecification={selectedSpecification}
+              length={length}
+              width={width}
+              pcs={pcs}
+              onLengthChange={setLength}
+              onWidthChange={setWidth}
+              onSelectSpecification={(specification) => {
+                setSelectedSpecification(specification);
+                setSelectedVariant(specification?.matchedVariant || null);
+              }}
+              onAdd={handleAddToLine}
+            />
+          )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -876,17 +896,10 @@ function SpecificationStep({
 
   onLengthChange,
   onWidthChange,
-  onPcsChange,
 
   onSelectSpecification,
   onAdd,
 }) {
-  const selectedPrice = selectedSpecification
-    ? safeNumber(selectedSpecification.price) > 0
-      ? safeNumber(selectedSpecification.price)
-      : safeNumber(selectedSpecification.matchedVariant?.price)
-    : 0;
-
   const numericLength = safeNumber(length);
   const numericWidth = safeNumber(width);
   const numericPcs = Math.max(1, safeNumber(pcs) || 1);
@@ -896,18 +909,28 @@ function SpecificationStep({
 
   /* Billing quantity: area when L × W entered, otherwise number of pieces */
   const billingQty = hasDimensions ? area : numericPcs;
-  const total = selectedSpecification ? billingQty * selectedPrice : 0;
+  const qtyLabel = hasDimensions
+    ? `${area.toFixed(2)} sq.ft`
+    : `${numericPcs} pcs`;
 
   const formatINR = (value, digits = 2) =>
     Number(value).toLocaleString("en-IN", { maximumFractionDigits: digits });
 
+  const rateOf = (specification) =>
+    safeNumber(specification?.price) > 0
+      ? safeNumber(specification.price)
+      : safeNumber(specification?.matchedVariant?.price);
+
+  const selectedRate = selectedSpecification ? rateOf(selectedSpecification) : 0;
+  const total = selectedSpecification ? billingQty * selectedRate : 0;
+
   return (
-    <section className="rounded-xl border border-line bg-surface p-3 sm:p-4">
-      <div className="mb-3">
+    <section className="space-y-4">
+      <div>
         <div className="text-xs font-bold text-ink">Specifications & Price</div>
         <div className="mt-0.5 text-[10px] text-muted">
-          Select specification configured for this brand. Price is automatically
-          loaded from Brand Master.
+          Rate is loaded from Brand Master. Amount changes with Pcs and
+          measurement.
         </div>
       </div>
 
@@ -921,21 +944,18 @@ function SpecificationStep({
       ) : (
         <>
           {/* SPECIFICATION TABLE */}
-          <div className="overflow-hidden rounded-xl border border-line">
-            <div className="hidden grid-cols-[1fr_130px_42px] items-center border-b border-line bg-bg/60 px-2.5 py-2 text-[9px] font-bold uppercase tracking-wide text-muted sm:grid">
+          <div className="overflow-hidden rounded-lg border border-line">
+            <div className="grid grid-cols-[1fr_90px_110px_32px] items-center gap-2 border-b border-line bg-bg/60 px-2.5 py-2 text-[9px] font-bold uppercase tracking-wide text-muted">
               <div>Specification</div>
-              <div>Price (₹)</div>
-              <div>Select</div>
+              <div className="text-right">Rate (₹)</div>
+              <div className="text-right">Amount (₹)</div>
+              <div />
             </div>
 
             <div className="divide-y divide-line">
               {specifications.map((specification) => {
                 const selected = selectedSpecification?.id === specification.id;
-
-                const price =
-                  safeNumber(specification.price) > 0
-                    ? safeNumber(specification.price)
-                    : safeNumber(specification.matchedVariant?.price);
+                const rate = rateOf(specification);
 
                 return (
                   <button
@@ -943,47 +963,33 @@ function SpecificationStep({
                     type="button"
                     onClick={() => onSelectSpecification(specification)}
                     className={[
-                      "grid w-full grid-cols-1 gap-2 px-2.5 py-2.5 text-left transition sm:grid-cols-[1fr_130px_42px] sm:items-center sm:gap-2",
+                      "grid w-full grid-cols-[1fr_90px_110px_32px] items-center gap-2 px-2.5 py-2.5 text-left transition",
                       selected ? "bg-primary-500/5" : "hover:bg-bg/60",
                     ].join(" ")}
                   >
-                    <div className="flex min-w-0 items-center gap-2">
+                    <div className="truncate text-xs font-bold text-ink">
+                      {specification.label}
+                    </div>
+
+                    <div className="text-right text-xs font-semibold text-muted">
+                      {rate > 0 ? formatINR(rate) : "—"}
+                    </div>
+
+                    <div className="text-right text-xs font-bold text-ink">
+                      {rate > 0 ? formatINR(billingQty * rate) : "—"}
+                    </div>
+
+                    <div className="flex justify-end">
                       <div
                         className={[
-                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-[10px] font-bold",
+                          "flex h-4 w-4 items-center justify-center rounded-full border",
                           selected
                             ? "border-primary-500 bg-primary-500 text-white"
-                            : "border-line bg-bg text-muted",
-                        ].join(" ")}
-                      >
-                        {selected ? <Check className="h-3.5 w-3.5" /> : "•"}
-                      </div>
-
-                      <div className="min-w-0">
-                        <div className="truncate text-xs font-bold text-ink">
-                          {specification.label}
-                        </div>
-                        <div className="mt-0.5 text-[9px] text-muted sm:hidden">
-                          Price: ₹ {formatINR(price)}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="hidden sm:block">
-                      <div className="text-xs font-bold text-ink">
-                        ₹ {formatINR(price)}
-                      </div>
-                    </div>
-
-                    <div className="hidden justify-end sm:flex">
-                      <div
-                        className={[
-                          "h-4 w-4 rounded-full border",
-                          selected
-                            ? "border-primary-500 bg-primary-500"
                             : "border-line bg-surface",
                         ].join(" ")}
-                      />
+                      >
+                        {selected && <Check className="h-3 w-3" />}
+                      </div>
                     </div>
                   </button>
                 );
@@ -991,72 +997,43 @@ function SpecificationStep({
             </div>
           </div>
 
-          {/* MEASUREMENT GRID */}
-          <div className="mt-4">
-            <div className="mb-2 text-xs font-bold text-ink">Measurement</div>
+          {/* MEASUREMENT (optional) */}
+          <div>
+            <div className="mb-2 text-xs font-bold text-ink">
+              Measurement{" "}
+              <span className="font-normal text-muted">(optional)</span>
+            </div>
 
-            <div className="overflow-hidden rounded-xl border border-line">
-              <div className="hidden grid-cols-6 gap-2 border-b border-line bg-bg/60 px-2.5 py-2 sm:grid">
-                {["L (ft)", "W (ft)", "Pcs", "Area (sq.ft)", "Price (₹)", "Total (₹)"].map(
-                  (heading) => (
-                    <div
-                      key={heading}
-                      className="text-[9px] font-bold uppercase tracking-wide text-muted"
-                    >
-                      {heading}
-                    </div>
-                  ),
-                )}
-              </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <MeasurementField
+                label="L (ft)"
+                value={length}
+                onChange={(event) => onLengthChange(event.target.value)}
+                placeholder="0"
+              />
 
-              <div className="grid grid-cols-2 gap-2 p-2 sm:grid-cols-6 sm:items-center">
-                <MeasurementField
-                  label="L (ft)"
-                  value={length}
-                  onChange={(event) => onLengthChange(event.target.value)}
-                  placeholder="0"
-                />
+              <MeasurementField
+                label="W (ft)"
+                value={width}
+                onChange={(event) => onWidthChange(event.target.value)}
+                placeholder="0"
+              />
 
-                <MeasurementField
-                  label="W (ft)"
-                  value={width}
-                  onChange={(event) => onWidthChange(event.target.value)}
-                  placeholder="0"
-                />
+              <ReadOnlyMetric
+                label="Area (sq.ft)"
+                value={area > 0 ? area.toFixed(2) : "—"}
+              />
 
-                <MeasurementField
-                  label="Pcs"
-                  value={pcs}
-                  min="1"
-                  onChange={(event) =>
-                    onPcsChange(
-                      event.target.value === "" ? "" : Number(event.target.value),
-                    )
-                  }
-                  placeholder="1"
-                />
-
-                <ReadOnlyMetric
-                  label="Area (sq.ft)"
-                  value={area > 0 ? area.toFixed(2) : "—"}
-                />
-
-                <ReadOnlyMetric
-                  label="Price (₹)"
-                  value={selectedPrice > 0 ? formatINR(selectedPrice) : "—"}
-                />
-
-                <ReadOnlyMetric
-                  label="Total (₹)"
-                  value={total > 0 ? formatINR(total) : "—"}
-                  strong
-                />
-              </div>
+              <ReadOnlyMetric
+                label="Total (₹)"
+                value={total > 0 ? formatINR(total) : "—"}
+                strong
+              />
             </div>
           </div>
 
           {/* SUMMARY + ADD */}
-          <div className="mt-3 flex flex-col gap-3 rounded-xl border border-primary-500/15 bg-primary-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 rounded-lg border border-primary-500/15 bg-primary-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
                 Selected Specification
@@ -1068,12 +1045,10 @@ function SpecificationStep({
 
               <div className="mt-0.5 text-[10px] text-muted">
                 {selectedSpecification
-                  ? selectedPrice > 0
-                    ? hasDimensions
-                      ? `${area.toFixed(2)} sq.ft × ₹${formatINR(selectedPrice)}`
-                      : `${numericPcs} pcs × ₹${formatINR(selectedPrice)}`
-                    : `Price: ₹${formatINR(selectedPrice)}`
-                  : "Select specification and enter dimensions."}
+                  ? selectedRate > 0
+                    ? `${qtyLabel} × ₹${formatINR(selectedRate)}`
+                    : "No price set in Brand Master"
+                  : "Select a specification."}
               </div>
             </div>
 
