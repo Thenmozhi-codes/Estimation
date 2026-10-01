@@ -1,17 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Save } from "lucide-react";
+import {
+  ArrowLeft,
+  Save,
+  Receipt,
+  Package,
+  Percent,
+  IndianRupee,
+} from "lucide-react";
 
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Select } from "@/components/ui/Select";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { Textarea } from "@/components/ui/Textarea";
 import { Field } from "@/components/ui/Field";
 import { MoneyInput } from "@/components/ui/MoneyInput";
-import { Card, CardHeader, CardBody } from "@/components/ui/Card";
-import { FormGrid } from "@/components/ui/FormGrid";
 import { LineItemsEditor } from "@/components/forms/LineItemsEditor";
 
 import { toast } from "@/lib/toast";
@@ -19,6 +24,7 @@ import { toast } from "@/lib/toast";
 import {
   useCreateInvoice,
   useInvoice,
+  useInvoices,
   useInvoiceItems,
   useUpdateInvoice,
 } from "@/hooks/useDocuments";
@@ -26,6 +32,7 @@ import {
 import { useParties } from "@/hooks/useParties";
 
 import { variantResolver } from "@/lib/api/repos";
+import { getNextDocumentNumber } from "@/lib/utils/docNumber";
 import { MODULE_TABS } from "@/app/moduleNav";
 
 /* ==========================================================================
@@ -43,13 +50,9 @@ function todayLocal() {
 }
 
 function normalizeDate(value) {
-  if (!value) {
-    return "";
-  }
+  if (!value) return "";
 
-  if (typeof value === "string") {
-    return value.slice(0, 10);
-  }
+  if (typeof value === "string") return value.slice(0, 10);
 
   try {
     return new Date(value).toISOString().slice(0, 10);
@@ -59,10 +62,95 @@ function normalizeDate(value) {
 }
 
 function getInvoiceIdFromParams(params) {
+  return params.id || params.invoiceId || null;
+}
+
+function money(value) {
+  const amount = Number(value) || 0;
+
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  }).format(amount);
+}
+
+/* Tolerant getters so the summary works with any item shape */
+
+function getQuantity(item) {
+  return Number(item?.quantity ?? item?.qty ?? 0) || 0;
+}
+
+function getUnitPrice(item) {
   return (
-    params.id ||
-    params.invoiceId ||
-    null
+    Number(
+      item?.unitPrice ?? item?.price ?? item?.sellingPrice ?? item?.rate ?? 0,
+    ) || 0
+  );
+}
+
+function getLineDiscount(item) {
+  return Number(item?.discount ?? item?.discountAmount ?? 0) || 0;
+}
+
+function getLineTax(item) {
+  /* Prefer an already calculated tax amount */
+  if (
+    item?.taxAmount !== undefined &&
+    item?.taxAmount !== null &&
+    item?.taxAmount !== ""
+  ) {
+    return Number(item.taxAmount) || 0;
+  }
+
+  const taxRate =
+    Number(
+      item?.taxRate ??
+        item?.gstRate ??
+        item?.taxPercentage ??
+        item?.gstPercentage ??
+        0,
+    ) || 0;
+
+  if (!taxRate) return 0;
+
+  const taxableValue = Math.max(
+    0,
+    getQuantity(item) * getUnitPrice(item) - getLineDiscount(item),
+  );
+
+  return taxableValue * (taxRate / 100);
+}
+
+/* ==========================================================================
+   SMALL UI PIECES
+========================================================================== */
+
+function SectionHeading({ title, subtitle }) {
+  return (
+    <div className="mb-3">
+      <h2 className="text-sm font-bold text-ink">{title}</h2>
+      {subtitle && <p className="mt-0.5 text-xs text-muted">{subtitle}</p>}
+    </div>
+  );
+}
+
+function SummaryRow({ label, children }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm text-muted">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function BackButton({ onClick, disabled, label = "Back" }) {
+  return (
+    <Button variant="ghost" size="sm" onClick={onClick} disabled={disabled}>
+      <ArrowLeft className="h-4 w-4" />
+      <span className="hidden sm:inline">{label}</span>
+    </Button>
   );
 }
 
@@ -74,19 +162,21 @@ export function InvoiceFormPage() {
   const navigate = useNavigate();
   const params = useParams();
 
-  const invoiceId =
-    getInvoiceIdFromParams(params);
-
-  const isEdit =
-    Boolean(invoiceId);
+  const invoiceId = getInvoiceIdFromParams(params);
+  const isEdit = Boolean(invoiceId);
 
   /* ------------------------------------------------------------------------
      MASTER DATA
   ------------------------------------------------------------------------ */
 
-  const {
-    data: parties = [],
-  } = useParties();
+  const { data: parties = [] } = useParties();
+  const { data: allInvoices = [] } = useInvoices();
+
+  /* Preview of the number this invoice will get (confirmed on save) */
+  const nextInvoiceNumber = useMemo(
+    () => getNextDocumentNumber(allInvoices, "INV-"),
+    [allInvoices],
+  );
 
   /* ------------------------------------------------------------------------
      INVOICE DATA
@@ -108,372 +198,212 @@ export function InvoiceFormPage() {
      MUTATIONS
   ------------------------------------------------------------------------ */
 
-  const createMut =
-    useCreateInvoice();
-
-  const updateMut =
-    useUpdateInvoice();
+  const createMut = useCreateInvoice();
+  const updateMut = useUpdateInvoice();
 
   /* ------------------------------------------------------------------------
      FORM STATE
   ------------------------------------------------------------------------ */
 
-  const [partyId, setPartyId] =
-    useState("");
-
-  const [date, setDate] =
-    useState(todayLocal());
-
-  const [dueDate, setDueDate] =
-    useState("");
-
-  const [status, setStatus] =
-    useState("issued");
-
-  const [discount, setDiscount] =
-    useState(0);
-
-  const [notes, setNotes] =
-    useState("");
-
-  const [items, setItems] =
-    useState([]);
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const [loaded, setLoaded] =
-    useState(!isEdit);
+  const [partyId, setPartyId] = useState("");
+  const [date, setDate] = useState(todayLocal());
+  const [dueDate, setDueDate] = useState("");
+  const [status, setStatus] = useState("issued");
+  const [discount, setDiscount] = useState(0);
+  const [notes, setNotes] = useState("");
+  const [items, setItems] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(!isEdit);
 
   /* ------------------------------------------------------------------------
      CUSTOMERS
   ------------------------------------------------------------------------ */
 
-  const customers =
-    parties.filter(
-      (party) =>
-        party.type === "customer" ||
-        party.type === "both",
+  const customers = parties.filter(
+    (party) => party.type === "customer" || party.type === "both",
+  );
+
+  /* ------------------------------------------------------------------------
+     SUMMARY
+
+     NOTE: this hook must stay ABOVE the early returns below.
+  ------------------------------------------------------------------------ */
+
+  const summary = useMemo(() => {
+    let grossSubtotal = 0;
+    let lineDiscountTotal = 0;
+    let taxTotal = 0;
+
+    items.forEach((item) => {
+      grossSubtotal += getQuantity(item) * getUnitPrice(item);
+      lineDiscountTotal += getLineDiscount(item);
+      taxTotal += getLineTax(item);
+    });
+
+    const afterLineDiscount = Math.max(0, grossSubtotal - lineDiscountTotal);
+
+    /* Header discount comes after line discounts */
+    const headerDiscount = Math.min(
+      Math.max(Number(discount) || 0, 0),
+      afterLineDiscount,
     );
+
+    const taxableSubtotal = Math.max(0, afterLineDiscount - headerDiscount);
+
+    return {
+      itemCount: items.length,
+      grossSubtotal,
+      lineDiscountTotal,
+      headerDiscount,
+      taxableSubtotal,
+      taxTotal,
+      grandTotal: taxableSubtotal + taxTotal,
+    };
+  }, [items, discount]);
 
   /* ==========================================================================
      LOAD EXISTING INVOICE
   ========================================================================== */
 
   useEffect(() => {
-    if (!isEdit) {
-      return;
-    }
-
-    if (!invoice) {
-      return;
-    }
-
-    /*
-     * Existing invoice header data.
-     *
-     * We support both the normal API field names and a few
-     * common fallback names so old invoice records don't break.
-     */
+    if (!isEdit) return;
+    if (!invoice) return;
 
     setPartyId(
-      invoice.partyId ||
-        invoice.customerId ||
-        invoice.party?.id ||
-        "",
+      invoice.partyId || invoice.customerId || invoice.party?.id || "",
     );
 
     setDate(
-      normalizeDate(
-        invoice.date ||
-          invoice.invoiceDate ||
-          invoice.createdAt,
-      ),
+      normalizeDate(invoice.date || invoice.invoiceDate || invoice.createdAt),
     );
 
-    setDueDate(
-      normalizeDate(
-        invoice.dueDate,
-      ),
-    );
-
-    setStatus(
-      invoice.status ||
-        "issued",
-    );
-
-    setDiscount(
-      invoice.discount ??
-        0,
-    );
-
-    setNotes(
-      invoice.notes ||
-        "",
-    );
+    setDueDate(normalizeDate(invoice.dueDate));
+    setStatus(invoice.status || "issued");
+    setDiscount(invoice.discount ?? 0);
+    setNotes(invoice.notes || "");
 
     setLoaded(true);
-  }, [
-    isEdit,
-    invoice,
-  ]);
+  }, [isEdit, invoice]);
 
   /* ==========================================================================
      LOAD EXISTING INVOICE ITEMS
+
+     Converts existing invoice-item records into the structure expected by
+     LineItemsEditor. The Add Item / Product Picker flow is not changed.
   ========================================================================== */
 
   useEffect(() => {
-    if (!isEdit) {
-      return;
-    }
+    if (!isEdit) return;
+    if (!Array.isArray(invoiceItems)) return;
 
-    if (!Array.isArray(invoiceItems)) {
-      return;
-    }
+    const mappedItems = invoiceItems.map((item, index) => {
+      const variant = item.variant || item.matchedVariant || null;
+      const product = item.product || variant?.product || null;
 
-    /*
-     * Convert existing invoice-item records into the exact structure
-     * expected by LineItemsEditor.
-     *
-     * Existing Add Item / Product Picker flow is NOT changed.
-     */
+      const productId = item.productId || product?.id || variant?.productId || null;
+      const variantId = item.variantId || variant?.id || null;
 
-    const mappedItems =
-      invoiceItems.map(
-        (item, index) => {
-          const variant =
-            item.variant ||
-            item.matchedVariant ||
-            null;
+      const productName =
+        item.productName ||
+        product?.name ||
+        item.name ||
+        variant?.productName ||
+        "";
 
-          const product =
-            item.product ||
-            variant?.product ||
-            null;
+      const brandName =
+        item.brandName ||
+        product?.brandName ||
+        product?.brand?.name ||
+        item.brand?.name ||
+        "";
 
-          const productId =
-            item.productId ||
-            product?.id ||
-            variant?.productId ||
-            null;
+      const productType =
+        item.productType ||
+        product?.productType ||
+        product?.category?.name ||
+        item.category?.name ||
+        "";
 
-          const variantId =
-            item.variantId ||
-            variant?.id ||
-            null;
+      const sku =
+        item.sku || item.productSku || variant?.sku || product?.sku || "";
 
-          const productName =
-            item.productName ||
-            product?.name ||
-            item.name ||
-            variant?.productName ||
-            "";
+      const attributeValues = item.attributeValues || variant?.attributeValues || {};
 
-          const brandName =
-            item.brandName ||
-            product?.brandName ||
-            product?.brand?.name ||
-            item.brand?.name ||
-            "";
+      const specifications = Array.isArray(item.specifications)
+        ? item.specifications
+        : Array.isArray(variant?.specifications)
+          ? variant.specifications
+          : [];
 
-          const productType =
-            item.productType ||
-            product?.productType ||
-            product?.category?.name ||
-            item.category?.name ||
-            "";
+      const selectedSpecification =
+        item.selectedSpecification || item.specification || "";
 
-          const sku =
-            item.sku ||
-            item.productSku ||
-            variant?.sku ||
-            product?.sku ||
-            "";
+      const unit = item.unit || variant?.unit || product?.unit || "";
 
-          const attributeValues =
-            item.attributeValues ||
-            variant?.attributeValues ||
-            {};
+      const quantity = item.quantity ?? item.qty ?? 1;
+      const unitPrice = item.unitPrice ?? item.rate ?? item.price ?? 0;
+      const taxRate = item.taxRate ?? item.tax?.rate ?? 0;
 
-          const specifications =
-            Array.isArray(
-              item.specifications,
-            )
-              ? item.specifications
-              : Array.isArray(
-                  variant?.specifications,
-                )
-                ? variant.specifications
-                : [];
+      return {
+        /* Temporary frontend ID used by LineItemsEditor for edit / delete */
+        tempId: item.tempId || item.id || `existing-invoice-item-${index}`,
 
-          const selectedSpecification =
-            item.selectedSpecification ||
-            item.specification ||
-            "";
+        productId,
+        productSku: item.productSku || sku,
+        productName,
+        productType,
 
-          const unit =
-            item.unit ||
-            variant?.unit ||
-            product?.unit ||
-            "";
+        brandId: item.brandId || product?.brandId || product?.brand?.id || null,
+        brandName,
 
-          const quantity =
-            item.quantity ??
-            item.qty ??
-            1;
+        variantId,
+        variant,
+        matchedVariant: item.matchedVariant || variant || null,
+        sku,
 
-          const unitPrice =
-            item.unitPrice ??
-            item.rate ??
-            item.price ??
-            0;
+        attributeValues,
+        specifications,
+        selectedSpecification,
+        unit,
 
-          const taxRate =
-            item.taxRate ??
-            item.tax?.rate ??
-            0;
+        /* Measurement (kept if the record has it) */
+        length: item.length ?? "",
+        width: item.width ?? "",
+        height: item.height ?? "",
+        pcs: item.pcs ?? 1,
 
-          return {
-            /*
-             * Temporary frontend ID.
-             *
-             * This is important because LineItemsEditor uses tempId
-             * for edit/delete operations.
-             */
-            tempId:
-              item.tempId ||
-              item.id ||
-              `existing-invoice-item-${index}`,
+        quantity: Number(quantity) || 1,
+        unitPrice: Number(unitPrice) || 0,
+        rate: Number(unitPrice) || 0,
+        defaultPrice: Number(unitPrice) || 0,
 
-            /*
-             * Product information
-             */
-            productId,
+        discount: Number(item.discount ?? 0) || 0,
 
-            productSku:
-              item.productSku ||
-              sku,
+        taxId: item.taxId || item.tax?.id || null,
+        taxRate: Number(taxRate) || 0,
 
-            productName,
-
-            productType,
-
-            brandId:
-              item.brandId ||
-              product?.brandId ||
-              product?.brand?.id ||
-              null,
-
-            brandName,
-
-            /*
-             * Variant information
-             */
-            variantId,
-
-            variant,
-
-            matchedVariant:
-              item.matchedVariant ||
-              variant ||
-              null,
-
-            sku,
-
-            /*
-             * Specifications
-             */
-            attributeValues,
-
-            specifications,
-
-            selectedSpecification,
-
-            unit,
-
-            /*
-             * Billing values
-             */
-            quantity:
-              Number(quantity) || 1,
-
-            unitPrice:
-              Number(unitPrice) || 0,
-
-            rate:
-              Number(unitPrice) || 0,
-
-            defaultPrice:
-              Number(unitPrice) || 0,
-
-            discount:
-              Number(
-                item.discount ?? 0,
-              ) || 0,
-
-            taxId:
-              item.taxId ||
-              item.tax?.id ||
-              null,
-
-            taxRate:
-              Number(taxRate) || 0,
-
-            /*
-             * Keep original item ID.
-             *
-             * Useful when the backend supports updating
-             * existing invoice lines.
-             */
-            invoiceItemId:
-              item.id ||
-              null,
-          };
-        },
-      );
+        /* Original item ID, for backends that update existing lines */
+        invoiceItemId: item.id || null,
+      };
+    });
 
     setItems(mappedItems);
-  }, [
-    isEdit,
-    invoiceItems,
-  ]);
+  }, [isEdit, invoiceItems]);
 
   /* ==========================================================================
      LOADING / ERROR
   ========================================================================== */
 
-  if (
-    isEdit &&
-    (invoiceLoading ||
-      itemsLoading ||
-      !loaded)
-  ) {
+  if (isEdit && (invoiceLoading || itemsLoading || !loaded)) {
     return (
       <div className="page-container min-h-full">
         <PageHeader
-          title="Edit Invoice"
+          title={<span className="text-base font-bold">Edit Invoice</span>}
           description="Loading invoice details..."
-          actions={
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                navigate(
-                  "/bills/invoices",
-                )
-              }
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span className="hidden sm:inline">
-                Back
-              </span>
-            </Button>
-          }
+          actions={<BackButton onClick={() => navigate("/bills/invoices")} />}
         />
 
-        <ModuleTabs
-          tabs={MODULE_TABS.bills}
-        />
+        <ModuleTabs tabs={MODULE_TABS.bills} />
 
         <div className="flex min-h-[300px] items-center justify-center p-6">
           <div className="text-sm font-semibold text-muted">
@@ -484,47 +414,21 @@ export function InvoiceFormPage() {
     );
   }
 
-  if (
-    isEdit &&
-    (invoiceError ||
-      itemsError ||
-      !invoice)
-  ) {
+  if (isEdit && (invoiceError || itemsError || !invoice)) {
     return (
       <div className="page-container min-h-full">
         <PageHeader
-          title="Edit Invoice"
+          title={<span className="text-base font-bold">Edit Invoice</span>}
           description="Unable to load this invoice"
-          actions={
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                navigate(
-                  "/bills/invoices",
-                )
-              }
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span className="hidden sm:inline">
-                Back
-              </span>
-            </Button>
-          }
+          actions={<BackButton onClick={() => navigate("/bills/invoices")} />}
         />
 
-        <ModuleTabs
-          tabs={MODULE_TABS.bills}
-        />
+        <ModuleTabs tabs={MODULE_TABS.bills} />
 
         <div className="p-6">
-          <Card>
-            <CardBody>
-              <div className="text-sm font-semibold text-red-500">
-                Could not load this invoice.
-              </div>
-            </CardBody>
-          </Card>
+          <div className="rounded-xl border border-line bg-surface p-4 text-sm font-semibold text-red-500">
+            Could not load this invoice.
+          </div>
         </div>
       </div>
     );
@@ -536,16 +440,12 @@ export function InvoiceFormPage() {
 
   const handleSave = async () => {
     if (!partyId) {
-      toast.error(
-        "Select a customer",
-      );
+      toast.error("Select a customer");
       return;
     }
 
     if (!items.length) {
-      toast.error(
-        "Add at least one item",
-      );
+      toast.error("Add at least one item");
       return;
     }
 
@@ -554,172 +454,65 @@ export function InvoiceFormPage() {
     try {
       /*
        * Resolve variants exactly like the existing New Invoice flow.
-       *
        * Existing variant IDs are preserved when possible.
        */
+      const enrichedItems = await Promise.all(
+        items.map(async (item) => {
+          const base = {
+            quantity: Number(item.quantity) || 0,
+            unitPrice: Number(item.unitPrice) || 0,
+            discount: Number(item.discount) || 0,
+            taxId: item.taxId || null,
+          };
 
-      const enrichedItems =
-        await Promise.all(
-          items.map(
-            async (item) => {
-              /*
-               * If the existing row already has a variant ID and
-               * does not have enough product information to resolve
-               * a new variant, preserve the existing variant.
-               */
-              if (
-                item.variantId &&
-                !item.productId
-              ) {
-                return {
-                  variantId:
-                    item.variantId,
+          /* Existing row without enough info to resolve: keep its variant */
+          if (item.variantId && !item.productId) {
+            return { variantId: item.variantId, ...base };
+          }
 
-                  quantity:
-                    Number(
-                      item.quantity,
-                    ) || 0,
+          const variant = await variantResolver.resolveOrCreate({
+            productId: item.productId,
+            defaultSku: item.productSku || item.sku,
+            attributeValues: item.attributeValues || {},
+          });
 
-                  unitPrice:
-                    Number(
-                      item.unitPrice,
-                    ) || 0,
-
-                  discount:
-                    Number(
-                      item.discount,
-                    ) || 0,
-
-                  taxId:
-                    item.taxId ||
-                    null,
-                };
-              }
-
-              /*
-               * Existing behavior for newly added / edited rows.
-               */
-              const variant =
-                await variantResolver.resolveOrCreate(
-                  {
-                    productId:
-                      item.productId,
-
-                    defaultSku:
-                      item.productSku ||
-                      item.sku,
-
-                    attributeValues:
-                      item.attributeValues ||
-                      {},
-                  },
-                );
-
-              return {
-                variantId:
-                  variant.id,
-
-                quantity:
-                  Number(
-                    item.quantity,
-                  ) || 0,
-
-                unitPrice:
-                  Number(
-                    item.unitPrice,
-                  ) || 0,
-
-                discount:
-                  Number(
-                    item.discount,
-                  ) || 0,
-
-                taxId:
-                  item.taxId ||
-                  null,
-              };
-            },
-          ),
-        );
+          return { variantId: variant.id, ...base };
+        }),
+      );
 
       const payload = {
         partyId,
-
         date,
-
-        dueDate:
-          dueDate || null,
-
+        dueDate: dueDate || null,
         status,
-
-        discount:
-          Number(discount) || 0,
-
+        discount: Number(discount) || 0,
         notes,
-
-        items:
-          enrichedItems,
+        items: enrichedItems,
       };
 
-      /* --------------------------------------------------------------------
-         CREATE
-      -------------------------------------------------------------------- */
-
+      /* CREATE */
       if (!isEdit) {
-        const created =
-          await createMut.mutateAsync(
-            payload,
-          );
+        const created = await createMut.mutateAsync(payload);
 
-        toast.success(
-          `Invoice ${created.number} created`,
-        );
-
-        navigate(
-          `/bills/invoices/${created.id}`,
-        );
+        toast.success(`Invoice ${created.number} created`);
+        navigate(`/bills/invoices/${created.id}`);
 
         return;
       }
 
-      /* --------------------------------------------------------------------
-         UPDATE
-      -------------------------------------------------------------------- */
+      /* UPDATE */
+      const updated = await updateMut.mutateAsync({
+        id: invoiceId,
+        patch: payload,
+      });
 
-      const updated =
-        await updateMut.mutateAsync(
-          {
-            id: invoiceId,
-            patch: payload,
-          },
-        );
+      toast.success(`Invoice ${updated?.number || invoice?.number || ""} updated`);
 
-      toast.success(
-        `Invoice ${
-          updated?.number ||
-          invoice?.number ||
-          ""
-        } updated`,
-      );
-
-      /*
-       * Go back to the invoice detail page after update.
-       *
-       * Existing invoice detail route is preserved.
-       */
-      navigate(
-        `/bills/invoices/${invoiceId}`,
-      );
+      navigate(`/bills/invoices/${invoiceId}`);
     } catch (error) {
-      console.error(
-        "Invoice save failed:",
-        error,
-      );
+      console.error("Invoice save failed:", error);
 
-      toast.error(
-        error?.message ||
-          "Save failed",
-      );
+      toast.error(error?.message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -733,224 +526,239 @@ export function InvoiceFormPage() {
     <div className="page-container min-h-full">
       <PageHeader
         title={
-          isEdit
-            ? "Edit Invoice"
-            : "New Invoice"
+          <span className="text-lg font-bold">
+            {isEdit ? "Edit Invoice" : "New Invoice"}
+          </span>
         }
-        description={
-          isEdit
-            ? "Update invoice details and items."
-            : "Issuing an invoice will reduce stock for its variants"
-        }
+      
         actions={
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
+            <BackButton
+              label="Cancel"
+              disabled={saving}
               onClick={() =>
                 navigate(
-                  isEdit
-                    ? `/bills/invoices/${invoiceId}`
-                    : "/bills/invoices",
+                  isEdit ? `/bills/invoices/${invoiceId}` : "/bills/invoices",
                 )
               }
-              disabled={saving}
-            >
-              <ArrowLeft className="h-4 w-4" />
-
-              <span className="hidden sm:inline">
-                Cancel
-              </span>
-            </Button>
+            />
 
             <Button
               size="sm"
               onClick={handleSave}
-              disabled={
-                saving ||
-                !partyId ||
-                !items.length
-              }
+              disabled={saving || !partyId || !items.length}
             >
               <Save className="h-4 w-4" />
 
-              {saving
-                ? "Saving…"
-                : isEdit
-                  ? "Update Invoice"
-                  : "Save Invoice"}
+              {saving ? "Saving…" : isEdit ? "Update Invoice" : "Save Invoice"}
             </Button>
           </div>
         }
       />
 
-      <ModuleTabs
-        tabs={MODULE_TABS.bills}
-      />
+      <ModuleTabs tabs={MODULE_TABS.bills} />
 
-      <div className="space-y-4 p-4 pb-28 md:p-6 max-w-5xl mx-auto">
-        {/* ================================================================
-            BASIC INVOICE DETAILS
-        ================================================================ */}
+      <div className="mx-auto max-w-[1500px] p-4 pb-28 md:p-6">
+        {/* ONE FORM CARD: form sections on the left, full-height summary on the right */}
+        <div className="flex flex-col rounded-2xl border border-line bg-surface shadow-sm lg:flex-row">
+          {/* ============================ LEFT — FORM ============================ */}
+          <div className="min-w-0 flex-1 divide-y divide-line">
+            {/* DETAILS */}
+            <section className="p-4 md:p-5">
+              <SectionHeading
+                title="Invoice Details"
+                />
 
-        <Card>
-          <CardBody>
-            <FormGrid cols={2}>
-              {/* Customer */}
-
-              <Field
-                label="Customer"
-                required
-              >
-                <Select
-                  value={partyId}
-                  onChange={(event) =>
-                    setPartyId(
-                      event.target.value,
-                    )
-                  }
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <Field
+                  label="Invoice No."
+                 
                 >
-                  <option value="">
-                    Select customer…
-                  </option>
+                  <Input
+                    value={
+                      isEdit
+                        ? invoice?.number || ""
+                        : nextInvoiceNumber
+                    }
+                    readOnly
+                    disabled
+                  />
+                </Field>
 
-                  {customers.map(
-                    (party) => (
-                      <option
-                        key={party.id}
-                        value={party.id}
-                      >
-                        {party.name}
-                      </option>
-                    ),
-                  )}
-                </Select>
-              </Field>
+                <Field label="Customer" required>
+                  <SearchableSelect
+                    value={partyId}
+                    onChange={setPartyId}
+                    options={customers.map((party) => ({
+                      value: String(party.id),
+                      label: party.name,
+                    }))}
+                    placeholder="Select customer…"
+                    searchPlaceholder="Search customer…"
+                    emptyText="No customers found"
+                  />
+                </Field>
 
-              {/* Status */}
+                <Field label="Status">
+                  <SearchableSelect
+                    value={status}
+                    onChange={setStatus}
+                    options={[
+                      { value: "draft", label: "Draft" },
+                      { value: "issued", label: "Issued" },
+                    ]}
+                    placeholder="Select status…"
+                  />
+                </Field>
 
-              <Field label="Status">
-                <Select
-                  value={status}
-                  onChange={(event) =>
-                    setStatus(
-                      event.target.value,
-                    )
-                  }
-                >
-                  <option value="draft">
-                    Draft
-                  </option>
+                <Field label="Date">
+                  <Input
+                    type="date"
+                    value={date}
+                    onChange={(event) => setDate(event.target.value)}
+                  />
+                </Field>
 
-                  <option value="issued">
-                    Issued
-                  </option>
-                </Select>
-              </Field>
+                <Field label="Due Date">
+                  <Input
+                    type="date"
+                    value={dueDate}
+                    onChange={(event) => setDueDate(event.target.value)}
+                  />
+                </Field>
+              </div>
+            </section>
 
-              {/* Date */}
+            {/* ITEMS */}
+            <section className="p-4 md:p-5">
+              <SectionHeading
+                title="Items"
+               />
 
-              <Field label="Date">
-                <Input
-                  type="date"
-                  value={date}
-                  onChange={(event) =>
-                    setDate(
-                      event.target.value,
-                    )
-                  }
-                />
-              </Field>
+              <LineItemsEditor items={items} onChange={setItems} />
+            </section>
 
-              {/* Due Date */}
+            {/* DISCOUNT + NOTES */}
+            <section className="p-4 md:p-5">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Field label="Header discount">
+                  <MoneyInput
+                    value={discount}
+                    onChange={(event) => setDiscount(event.target.value)}
+                  />
+                </Field>
 
-              <Field label="Due Date">
-                <Input
-                  type="date"
-                  value={dueDate}
-                  onChange={(event) =>
-                    setDueDate(
-                      event.target.value,
-                    )
-                  }
-                />
-              </Field>
-            </FormGrid>
-          </CardBody>
-        </Card>
+                <Field label="Notes">
+                  <Textarea
+                    rows={2}
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                    placeholder="Optional"
+                  />
+                </Field>
+              </div>
+            </section>
+          </div>
 
-        {/* ================================================================
-            ITEMS
+          {/* ============ RIGHT — SUMMARY (full height, ~20%, follows the scroll) ============ */}
+          <aside className="rounded-b-2xl border-t border-line bg-bg/40 lg:w-1/5 lg:min-w-[260px] lg:rounded-b-none lg:rounded-r-2xl lg:border-l lg:border-t-0">
+            <div className="lg:sticky lg:top-4">
+              {/* Header */}
+              <div className="flex items-center gap-2 border-b border-line px-4 py-4">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+                  <Receipt className="h-4 w-4 text-primary" />
+                </div>
 
-            IMPORTANT:
-            Existing LineItemsEditor is untouched.
-            Add / Edit / Delete behaviour remains the same.
-        ================================================================ */}
-
-        <Card>
-          <CardHeader
-            title="Items"
-            subtitle="Search a product, then pick the attribute values configured for it in Attribute Master."
-          />
-
-          <CardBody>
-            <LineItemsEditor
-              items={items}
-              onChange={setItems}
-            />
-          </CardBody>
-        </Card>
-
-        {/* ================================================================
-            DISCOUNT + NOTES
-        ================================================================ */}
-
-        <Card>
-          <CardBody>
-            <FormGrid cols={2}>
-              <Field label="Header discount">
-                <MoneyInput
-                  value={discount}
-                  onChange={(event) =>
-                    setDiscount(
-                      event.target.value,
-                    )
-                  }
-                />
-              </Field>
-
-              <Field label="Notes">
-                <Textarea
-                  rows={2}
-                  value={notes}
-                  onChange={(event) =>
-                    setNotes(
-                      event.target.value,
-                    )
-                  }
-                  placeholder="Optional"
-                />
-              </Field>
-            </FormGrid>
-          </CardBody>
-        </Card>
-
-        {/* ================================================================
-            EDIT MODE INFORMATION
-        ================================================================ */}
-
-        {isEdit &&
-          invoice?.number && (
-            <div className="rounded-xl border border-primary-500/15 bg-primary-500/5 px-4 py-3">
-              <div className="text-[10px] font-bold uppercase tracking-wide text-primary-600">
-                Editing Invoice
+                <div>
+                  <h3 className="text-sm font-semibold text-ink">
+                    Invoice Summary
+                  </h3>
+                 
+                </div>
               </div>
 
-              <div className="mt-1 text-sm font-bold text-ink">
-                {invoice.number}
+              {/* Item count */}
+              <div className="flex items-center justify-between border-b border-line px-4 py-3">
+                <div className="flex items-center gap-2 text-sm text-muted">
+                  <Package className="h-4 w-4" />
+                  Items
+                </div>
+                <span className="font-semibold text-ink">
+                  {summary.itemCount}
+                </span>
+              </div>
+
+              {/* Amounts */}
+              <div className="space-y-3 px-4 py-4">
+                <SummaryRow label="Subtotal">
+                  <span className="text-sm font-medium text-ink">
+                    {money(summary.grossSubtotal)}
+                  </span>
+                </SummaryRow>
+
+                {summary.lineDiscountTotal > 0 && (
+                  <SummaryRow label="Item Discount">
+                    <span className="text-sm font-medium text-red-600">
+                      - {money(summary.lineDiscountTotal)}
+                    </span>
+                  </SummaryRow>
+                )}
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm text-muted">Discount</span>
+                    {summary.headerDiscount > 0 && (
+                      <Percent className="h-3 w-3 text-muted" />
+                    )}
+                  </div>
+
+                  <span
+                    className={
+                      summary.headerDiscount > 0
+                        ? "text-sm font-medium text-red-600"
+                        : "text-sm text-muted"
+                    }
+                  >
+                    {summary.headerDiscount > 0
+                      ? `- ${money(summary.headerDiscount)}`
+                      : money(0)}
+                  </span>
+                </div>
+
+                <SummaryRow label="GST / Tax">
+                  <span className="text-sm font-medium text-ink">
+                    {money(summary.taxTotal)}
+                  </span>
+                </SummaryRow>
+
+                {/* Grand total */}
+                <div className="border-t border-dashed border-line pt-3">
+                  <div className="flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-muted">Grand Total</p>
+                      <p className="mt-0.5 text-xs text-muted">Including tax</p>
+                    </div>
+
+                    <div className="flex items-center gap-1 text-lg font-bold text-ink">
+                      <IndianRupee className="h-4 w-4" />
+                      <span>
+                        {Number(summary.grandTotal).toLocaleString("en-IN", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer note */}
+              <div className="border-t border-line px-4 py-3">
+               
               </div>
             </div>
-          )}
+          </aside>
+        </div>
       </div>
     </div>
   );

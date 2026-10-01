@@ -17,16 +17,17 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Select } from "@/components/ui/Select";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { Textarea } from "@/components/ui/Textarea";
 import { Field } from "@/components/ui/Field";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { LineItemsEditor } from "@/components/forms/LineItemsEditor";
 
 import { toast } from "@/lib/toast";
-import { useCreateQuotation } from "@/hooks/useDocuments";
+import { useCreateQuotation, useQuotations } from "@/hooks/useDocuments";
 import { useParties } from "@/hooks/useParties";
 import { variantResolver } from "@/lib/api/repos";
+import { getNextDocumentNumber } from "@/lib/utils/docNumber";
 import { MODULE_TABS } from "@/app/moduleNav";
 
 /* -------------------------------------------------------------------------- */
@@ -158,6 +159,7 @@ export function QuotationFormPage() {
   const navigate = useNavigate();
 
   const { data: parties = [] } = useParties();
+  const { data: quotations = [] } = useQuotations();
   const createMut = useCreateQuotation();
 
   const today = new Date().toISOString().slice(0, 10);
@@ -241,7 +243,10 @@ export function QuotationFormPage() {
     "";
 
   /* The repository / backend generates the real number on save */
-  const quotationNumber = "Will be generated automatically";
+  const quotationNumber = useMemo(
+    () => getNextDocumentNumber(quotations, "QT-"),
+    [quotations],
+  );
 
   /* SUMMARY */
   const summary = useMemo(() => {
@@ -353,8 +358,8 @@ export function QuotationFormPage() {
   return (
     <div className="page-container min-h-full">
       <PageHeader
-        title="New Quotation"
-       
+        title={<span className="text-lg font-bold">New Quotation</span>}
+        
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -401,11 +406,11 @@ export function QuotationFormPage() {
             <section className="p-4 md:p-5">
               <SectionHeading
                 title="Quotation Details"
-               
-              />
+               />
+            
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <Field label="Quotation No.">
+                <Field label="Quotation No." >
                   <div className="relative">
                     <FileText className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
                     <Input
@@ -432,18 +437,18 @@ export function QuotationFormPage() {
                 <Field label="Customer Name" required>
                   <div className="relative">
                     <User className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted" />
-                    <Select
+                    <SearchableSelect
                       value={partyId}
-                      onChange={(event) => setPartyId(event.target.value)}
+                      onChange={setPartyId}
+                      options={customers.map((customer) => ({
+                        value: String(customer.id),
+                        label: customer.name,
+                      }))}
+                      placeholder="Select customer…"
+                      searchPlaceholder="Search customer…"
+                      emptyText="No customers found"
                       className="pl-9"
-                    >
-                      <option value="">Select customer…</option>
-                      {customers.map((customer) => (
-                        <option key={customer.id} value={customer.id}>
-                          {customer.name}
-                        </option>
-                      ))}
-                    </Select>
+                    />
                   </div>
                 </Field>
 
@@ -465,7 +470,8 @@ export function QuotationFormPage() {
             <section className="p-4 md:p-5">
               <SectionHeading
                 title="Items"
-               />
+                />
+
 
               <LineItemsEditor items={items} onChange={setItems} />
             </section>
@@ -505,7 +511,7 @@ export function QuotationFormPage() {
                   <h3 className="text-sm font-semibold text-ink">
                     Quotation Summary
                   </h3>
-                  
+                 
                 </div>
               </div>
 

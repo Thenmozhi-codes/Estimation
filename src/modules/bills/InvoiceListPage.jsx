@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Pencil } from "lucide-react";
+import { Download, Pencil, Plus, X } from "lucide-react";
 
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
@@ -14,12 +14,16 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { formatMoney } from "@/lib/utils/money";
 import { fmtDate } from "@/lib/utils/date";
+import {
+  downloadPaymentReceipt,
+  getInvoicePayments,
+} from "@/lib/utils/receipt";
 
 import {
   useInvoices,
   useDeleteInvoice,
+  usePayments,
 } from "@/hooks/useDocuments";
-
 import { useParties } from "@/hooks/useParties";
 import { MODULE_TABS } from "@/app/moduleNav";
 
@@ -29,163 +33,142 @@ export function InvoiceListPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [confirm, setConfirm] = useState(null);
+  const [receiptInvoice, setReceiptInvoice] = useState(null);
 
-  const {
-    data: invoices = [],
-    isLoading,
-  } = useInvoices();
-
-  const {
-    data: parties = [],
-  } = useParties();
+  const { data: invoices = [], isLoading } = useInvoices();
+  const { data: parties = [] } = useParties();
+  const { data: allPayments = [] } = usePayments();
 
   const deleteMut = useDeleteInvoice();
 
-  /* ------------------------------------------------------------------------
-     PARTY LOOKUP
-  ------------------------------------------------------------------------ */
+  /* PAYMENTS GROUPED BY INVOICE
+     A payment is matched to an invoice if ANY of its fields holds that
+     invoice's id or number, so the link field name doesn't matter. */
+  const paymentsByInvoice = useMemo(() => {
+    const lookup = new Map();
 
+    for (const invoice of invoices) {
+      if (invoice.id) lookup.set(String(invoice.id), invoice.id);
+      if (invoice.number) lookup.set(String(invoice.number), invoice.id);
+    }
+
+    const map = {};
+
+    for (const payment of allPayments) {
+      const hit = Object.values(payment).find(
+        (value) =>
+          (typeof value === "string" || typeof value === "number") &&
+          lookup.has(String(value)),
+      );
+
+      if (hit === undefined) continue;
+
+      const invoiceId = lookup.get(String(hit));
+
+      (map[invoiceId] ||= []).push(payment);
+    }
+
+    /* TEMP DEBUG — remove once receipts work */
+    console.log("[receipts] payments loaded:", allPayments);
+    console.log("[receipts] grouped by invoice id:", map);
+
+    return map;
+  }, [allPayments, invoices]);
+
+  /* every payment of one invoice, with its own receipt number */
+  const paymentsOf = (invoice) =>
+    getInvoicePayments(invoice, paymentsByInvoice[invoice.id] || []);
+
+  /* PARTY LOOKUP */
   const partyById = useMemo(
-    () =>
-      Object.fromEntries(
-        parties.map((p) => [p.id, p]),
-      ),
+    () => Object.fromEntries(parties.map((party) => [party.id, party])),
     [parties],
   );
 
-  /* ------------------------------------------------------------------------
-     FILTER
-  ------------------------------------------------------------------------ */
-
+  /* FILTER */
   const filtered = useMemo(() => {
     let list = invoices;
 
     if (statusFilter) {
-      list = list.filter(
-        (invoice) =>
-          invoice.status === statusFilter,
-      );
+      list = list.filter((invoice) => invoice.status === statusFilter);
     }
 
-    const q = search
-      .trim()
-      .toLowerCase();
+    const q = search.trim().toLowerCase();
 
     if (q) {
       list = list.filter((invoice) => {
-        const invoiceNumber =
-          invoice.number
-            ?.toLowerCase() || "";
-
+        const invoiceNumber = invoice.number?.toLowerCase() || "";
         const customerName =
-          partyById[
-            invoice.partyId
-          ]?.name
-            ?.toLowerCase() || "";
+          partyById[invoice.partyId]?.name?.toLowerCase() || "";
 
-        return (
-          invoiceNumber.includes(q) ||
-          customerName.includes(q)
-        );
+        return invoiceNumber.includes(q) || customerName.includes(q);
       });
     }
 
     return list;
-  }, [
-    invoices,
-    search,
-    statusFilter,
-    partyById,
-  ]);
+  }, [invoices, search, statusFilter, partyById]);
 
-  /* ------------------------------------------------------------------------
-     DELETE
-  ------------------------------------------------------------------------ */
-
+  /* DELETE */
   const onDelete = async () => {
-    if (!confirm?.id) {
-      return;
-    }
+    if (!confirm?.id) return;
 
     try {
-      await deleteMut.mutateAsync(
-        confirm.id,
-      );
-
-      toast.success(
-        "Invoice deleted",
-      );
-
+      await deleteMut.mutateAsync(confirm.id);
+      toast.success("Invoice deleted");
       setConfirm(null);
     } catch (error) {
-      console.error(
-        "Delete invoice failed:",
-        error,
-      );
-
-      toast.error(
-        error?.message ||
-          "Delete failed",
-      );
+      console.error("Delete invoice failed:", error);
+      toast.error(error?.message || "Delete failed");
     }
   };
 
-  /* ------------------------------------------------------------------------
-     EDIT
-  ------------------------------------------------------------------------ */
-
+  /* EDIT */
   const onEdit = (invoice) => {
-    if (!invoice?.id) {
-      return;
-    }
-
-    navigate(
-      `/bills/invoices/${invoice.id}/edit`,
-    );
+    if (!invoice?.id) return;
+    navigate(`/bills/invoices/${invoice.id}/edit`);
   };
 
-  /* ------------------------------------------------------------------------
-     UI
-  ------------------------------------------------------------------------ */
+  /* RECEIPT — one receipt per payment */
+  const downloadOne = (invoice, payment) => {
+    try {
+      downloadPaymentReceipt({
+        invoice,
+        customerName: partyById[invoice.partyId]?.name || "",
+        payment,
+        allPayments: paymentsOf(invoice),
+      });
+
+      toast.success(`Receipt ${payment.receiptNo} downloaded`);
+    } catch (error) {
+      console.error("Receipt download failed:", error);
+      toast.error("Could not create the receipt");
+    }
+  };
+
+  /* always show the full payment list (even for a single payment) */
+  const onReceiptClick = (invoice) => {
+    if (paymentsOf(invoice).length === 0) return;
+
+    setReceiptInvoice(invoice);
+  };
+
+  const modalPayments = receiptInvoice ? paymentsOf(receiptInvoice) : [];
 
   return (
     <div className="page-container min-h-full">
-      {/* ====================================================================
-          HEADER
-      ==================================================================== */}
-
       <PageHeader
         title="Invoices"
-        description="Issued invoices and their payment status"
         actions={
-          <Button
-            size="sm"
-            onClick={() =>
-              navigate(
-                "/bills/invoices/new",
-              )
-            }
-          >
+          <Button size="sm" onClick={() => navigate("/bills/invoices/new")}>
             <Plus className="h-4 w-4" />
 
-            <span className="hidden sm:inline">
-              New Invoice
-            </span>
-
-            <span className="sm:hidden">
-              New
-            </span>
+            <span className="hidden sm:inline">New Invoice</span>
+            <span className="sm:hidden">New</span>
           </Button>
         }
       />
 
-      <ModuleTabs
-        tabs={MODULE_TABS.bills}
-      />
-
-      {/* ====================================================================
-          TOOLBAR
-      ==================================================================== */}
+      <ModuleTabs tabs={MODULE_TABS.bills} />
 
       <Toolbar
         search={search}
@@ -194,172 +177,117 @@ export function InvoiceListPage() {
       >
         <Select
           value={statusFilter}
-          onChange={(e) =>
-            setStatusFilter(
-              e.target.value,
-            )
-          }
+          onChange={(event) => setStatusFilter(event.target.value)}
           className="w-full sm:w-44"
         >
-          <option value="">
-            All status
-          </option>
-
-          <option value="draft">
-            Draft
-          </option>
-
-          <option value="issued">
-            Issued
-          </option>
-
-          <option value="partially_paid">
-            Partially Paid
-          </option>
-
-          <option value="paid">
-            Paid
-          </option>
-
-          <option value="overdue">
-            Overdue
-          </option>
-
-          <option value="cancelled">
-            Cancelled
-          </option>
+          <option value="">All status</option>
+          <option value="draft">Draft</option>
+          <option value="issued">Issued</option>
+          <option value="partially_paid">Partially Paid</option>
+          <option value="paid">Paid</option>
+          <option value="overdue">Overdue</option>
+          <option value="cancelled">Cancelled</option>
         </Select>
       </Toolbar>
 
-      {/* ====================================================================
-          TABLE
-      ==================================================================== */}
-
-      <div className="bg-surface border-t border-line pb-24 md:pb-0">
+      <div className="border-t border-line bg-surface pb-24 md:pb-0">
         <DataTable
           columns={[
-            /* --------------------------------------------------------------
-               NUMBER
-            -------------------------------------------------------------- */
-
             {
               key: "number",
               header: "Number",
               sortable: true,
-
               render: (row) => (
-                <div className="font-bold text-ink">
-                  {row.number}
-                </div>
+                <div className="font-bold text-ink">{row.number}</div>
               ),
             },
-
-            /* --------------------------------------------------------------
-               CUSTOMER
-            -------------------------------------------------------------- */
 
             {
               key: "partyId",
               header: "Customer",
-
-              render: (row) =>
-                partyById[
-                  row.partyId
-                ]?.name || "—",
+              render: (row) => partyById[row.partyId]?.name || "—",
             },
-
-            /* --------------------------------------------------------------
-               DATE
-            -------------------------------------------------------------- */
 
             {
               key: "date",
               header: "Date",
               hideOnMobile: true,
-
-              render: (row) =>
-                fmtDate(row.date),
+              render: (row) => fmtDate(row.date),
             },
-
-            /* --------------------------------------------------------------
-               TOTAL
-            -------------------------------------------------------------- */
 
             {
               key: "grandTotal",
               header: "Total",
               align: "right",
               sortable: true,
-
               render: (row) => (
                 <span className="font-bold text-ink">
-                  {formatMoney(
-                    row.grandTotal,
-                  )}
+                  {formatMoney(row.grandTotal)}
                 </span>
               ),
             },
-
-            /* --------------------------------------------------------------
-               BALANCE
-            -------------------------------------------------------------- */
 
             {
               key: "balance",
               header: "Balance",
               align: "right",
               hideOnMobile: true,
-
               render: (row) => {
                 const balance =
-                  (row.grandTotal || 0) -
-                  (row.amountPaid || 0);
+                  (row.grandTotal || 0) - (row.amountPaid || 0);
 
                 return (
                   <span
                     className={
-                      balance > 0
-                        ? "font-bold text-red-500"
-                        : "text-muted"
+                      balance > 0 ? "font-bold text-red-500" : "text-muted"
                     }
                   >
-                    {formatMoney(
-                      Math.max(
-                        0,
-                        balance,
-                      ),
-                    )}
+                    {formatMoney(Math.max(0, balance))}
                   </span>
                 );
               },
             },
 
-            /* --------------------------------------------------------------
-               STATUS
-            -------------------------------------------------------------- */
-
             {
               key: "status",
               header: "Status",
               align: "right",
-
-              render: (row) => (
-                <StatusBadge
-                  status={row.status}
-                />
-              ),
+              render: (row) => <StatusBadge status={row.status} />,
             },
 
-            /* --------------------------------------------------------------
-               EDIT
-            -------------------------------------------------------------- */
+            /* RECEIPT — one per payment; several payments open a list */
+            {
+              key: "__receipt",
+              header: "",
+              width: 150,
+              align: "right",
+              render: (row) => {
+                const count = paymentsOf(row).length;
+
+                if (count === 0) return null;
+
+                return (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onReceiptClick(row);
+                    }}
+                    className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold text-emerald-600 transition hover:bg-emerald-500/10"
+                    title="View all payments and download receipts"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Receipts ({count})</span>
+                  </button>
+                );
+              },
+            },
 
             {
               key: "__edit",
               header: "",
               width: 75,
               align: "right",
-
               render: (row) => (
                 <button
                   type="button"
@@ -371,24 +299,16 @@ export function InvoiceListPage() {
                   title="Edit invoice"
                 >
                   <Pencil className="h-3.5 w-3.5" />
-
-                  <span>
-                    Edit
-                  </span>
+                  <span>Edit</span>
                 </button>
               ),
             },
-
-            /* --------------------------------------------------------------
-               DELETE
-            -------------------------------------------------------------- */
 
             {
               key: "__actions",
               header: "",
               width: 70,
               align: "right",
-
               render: (row) => (
                 <button
                   type="button"
@@ -403,29 +323,13 @@ export function InvoiceListPage() {
               ),
             },
           ]}
-
           rows={filtered}
           loading={isLoading}
-
-          /* Clicking the row still opens invoice detail */
-          onRowClick={(row) =>
-            navigate(
-              `/bills/invoices/${row.id}`,
-            )
-          }
-
+          onRowClick={(row) => navigate(`/bills/invoices/${row.id}`)}
           emptyTitle="No invoices yet"
-
           emptyDescription="Issue your first invoice, or convert a quotation."
-
           emptyAction={
-            <Button
-              onClick={() =>
-                navigate(
-                  "/bills/invoices/new",
-                )
-              }
-            >
+            <Button onClick={() => navigate("/bills/invoices/new")}>
               <Plus className="h-4 w-4" />
               New Invoice
             </Button>
@@ -433,15 +337,98 @@ export function InvoiceListPage() {
         />
       </div>
 
-      {/* ====================================================================
-          DELETE CONFIRMATION
-      ==================================================================== */}
+      {/* PAYMENT LIST — one receipt per payment */}
+      {receiptInvoice && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setReceiptInvoice(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-xl bg-surface p-4 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-ink">
+                  Payments — {receiptInvoice.number} ({modalPayments.length})
+                </h3>
+                <p className="text-xs text-muted">
+                  {partyById[receiptInvoice.partyId]?.name || "—"} · Total{" "}
+                  {formatMoney(receiptInvoice.grandTotal)}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setReceiptInvoice(null)}
+                className="rounded-md p-1 text-muted hover:bg-black/5"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="max-h-80 divide-y divide-line overflow-y-auto rounded-lg border border-line">
+              {modalPayments.map((payment) => (
+                <div
+                  key={payment.receiptNo}
+                  className="flex items-center justify-between gap-3 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-ink">
+                      {payment.receiptNo}
+                    </div>
+                    <div className="text-xs text-muted">
+                      {fmtDate(payment.date)} · {payment.mode}
+                      {payment.reference ? ` · ${payment.reference}` : ""}
+                    </div>
+                    <div className="text-xs text-muted">
+                      Balance after this payment:{" "}
+                      {formatMoney(payment.balanceAfter)}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-ink">
+                      {formatMoney(payment.amount)}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => downloadOne(receiptInvoice, payment)}
+                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-bold text-emerald-600 transition hover:bg-emerald-500/10"
+                      title="Download this receipt"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span>Receipt</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3 flex justify-between text-xs text-muted">
+              <span>
+                Paid {formatMoney(receiptInvoice.amountPaid || 0)}
+              </span>
+              <span>
+                Balance{" "}
+                {formatMoney(
+                  Math.max(
+                    0,
+                    (receiptInvoice.grandTotal || 0) -
+                      (receiptInvoice.amountPaid || 0),
+                  ),
+                )}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmDialog
         open={!!confirm}
-        onClose={() =>
-          setConfirm(null)
-        }
+        onClose={() => setConfirm(null)}
         onConfirm={onDelete}
         title="Delete invoice?"
         description={`"${confirm?.number}" will be removed.`}

@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
 import { Button } from "@/components/ui/Button";
@@ -58,11 +58,16 @@ export function QuotationListPage() {
     }
   };
 
+  /* EDIT */
+  const onEdit = (quotation) => {
+    if (!quotation?.id) return;
+    navigate(`/bills/quotations/${quotation.id}/edit`);
+  };
+
   return (
     <div className="page-container min-h-full">
       <PageHeader
         title="Quotations"
-        description="Estimates sent to customers"
         actions={
           <Button size="sm" onClick={() => navigate("/bills/quotations/new")}>
             <Plus className="h-4 w-4" />
@@ -132,13 +137,37 @@ export function QuotationListPage() {
               align: "right",
               render: (r) => <StatusBadge status={r.status} />,
             },
+
+            /* EDIT — right after Status */
             {
-              key: "__actions",
+              key: "__edit",
               header: "",
-              width: 90,
+              width: 75,
               align: "right",
               render: (row) => (
                 <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit(row);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-bold text-primary-600 transition hover:bg-primary-500/10"
+                  title="Edit quotation"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  <span>Edit</span>
+                </button>
+              ),
+            },
+
+            {
+              key: "__actions",
+              header: "",
+              width: 70,
+              align: "right",
+              render: (row) => (
+                <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     setConfirm(row);

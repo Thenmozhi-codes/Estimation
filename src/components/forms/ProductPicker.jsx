@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Package, X } from "lucide-react";
 
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { mockStore } from "@/lib/store/mockStore";
 import { newId } from "@/lib/utils/id";
 import { toCode } from "@/lib/utils/code";
@@ -849,15 +850,15 @@ export function ProductPicker({
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           {/* SINGLE LINE: PRODUCT TYPE | BRAND | PCS */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_110px]">
-            <label className="min-w-0">
+            <div className="min-w-0">
               <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
                 Product Type
               </span>
-              <select
-                ref={inputRef}
+              <SearchableSelect
+                buttonRef={inputRef}
                 value={selectedType}
-                onChange={(event) => {
-                  setSelectedType(event.target.value);
+                onChange={(typeKey) => {
+                  setSelectedType(typeKey);
                   setSelectedBrand(null);
                   setSelectedProduct(null);
                   setSelectedSpecification(null);
@@ -865,28 +866,26 @@ export function ProductPicker({
                   setQuery("");
                   resetDimensions();
                 }}
-                className="h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm font-semibold text-ink outline-none transition focus:border-primary-500"
-              >
-                <option value="">Select Product Type</option>
-                {PRODUCT_TYPES.map((type) => (
-                  <option key={type.key} value={type.key}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                options={PRODUCT_TYPES.map((type) => ({
+                  value: type.key,
+                  label: type.label,
+                }))}
+                placeholder="Select Product Type"
+                searchPlaceholder="Search product type…"
+              />
+            </div>
 
-            <label className="min-w-0">
+            <div className="min-w-0">
               <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
                 Brand Name
               </span>
-              <select
-                value={selectedBrand?.id || ""}
+              <SearchableSelect
+                value={selectedBrand ? String(selectedBrand.id) : ""}
                 disabled={!selectedType}
-                onChange={(event) => {
+                onChange={(brandId) => {
                   const brand =
                     availableBrands.find((item) =>
-                      sameId(item.id, event.target.value),
+                      sameId(item.id, brandId),
                     ) || null;
 
                   const product = brand ? ensureProductForBrand(brand) : null;
@@ -898,16 +897,15 @@ export function ProductPicker({
                   resetDimensions();
                   setQuery("");
                 }}
-                className="h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm font-semibold text-ink outline-none transition focus:border-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="">Select Brand</option>
-                {availableBrands.map((brand) => (
-                  <option key={brand.id} value={brand.id}>
-                    {brand.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+                options={availableBrands.map((brand) => ({
+                  value: String(brand.id),
+                  label: brand.name,
+                }))}
+                placeholder="Select Brand"
+                searchPlaceholder="Search brand…"
+                emptyText="No brands found"
+              />
+            </div>
 
             <label className="min-w-0">
               <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
