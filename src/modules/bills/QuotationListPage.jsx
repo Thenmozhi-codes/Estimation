@@ -1,6 +1,7 @@
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Pencil, Plus } from "lucide-react";
+
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
 import { Button } from "@/components/ui/Button";
@@ -9,74 +10,190 @@ import { DataTable } from "@/components/ui/DataTable";
 import { Toolbar } from "@/components/ui/Toolbar";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+
 import { toast } from "@/lib/toast";
 import { formatMoney } from "@/lib/utils/money";
 import { fmtDate } from "@/lib/utils/date";
+
 import {
   useQuotations,
   useDeleteQuotation,
 } from "@/hooks/useDocuments";
+
 import { useParties } from "@/hooks/useParties";
 import { MODULE_TABS } from "@/app/moduleNav";
 
 export function QuotationListPage() {
   const navigate = useNavigate();
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [confirm, setConfirm] = useState(null);
 
-  const { data: quotations = [], isLoading } = useQuotations();
-  const { data: parties = [] } = useParties();
-  const deleteMut = useDeleteQuotation();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] =
+    useState("");
+  const [confirm, setConfirm] =
+    useState(null);
+
+  const {
+    data: quotations = [],
+    isLoading,
+  } = useQuotations();
+
+  const {
+    data: parties = [],
+  } = useParties();
+
+  const deleteMut =
+    useDeleteQuotation();
+
+  /* ------------------------------------------------------------------------
+     PARTY LOOKUP
+  ------------------------------------------------------------------------ */
 
   const partyById = useMemo(
-    () => Object.fromEntries(parties.map((p) => [p.id, p])),
+    () =>
+      Object.fromEntries(
+        parties.map((party) => [
+          party.id,
+          party,
+        ]),
+      ),
     [parties],
   );
 
+  /* ------------------------------------------------------------------------
+     FILTER
+  ------------------------------------------------------------------------ */
+
   const filtered = useMemo(() => {
     let list = quotations;
-    if (statusFilter) list = list.filter((q) => q.status === statusFilter);
-    const q = search.trim().toLowerCase();
-    if (q) {
+
+    if (statusFilter) {
       list = list.filter(
-        (r) =>
-          r.number.toLowerCase().includes(q) ||
-          (partyById[r.partyId]?.name || "").toLowerCase().includes(q),
+        (quotation) =>
+          quotation.status ===
+          statusFilter,
       );
     }
+
+    const query = search
+      .trim()
+      .toLowerCase();
+
+    if (query) {
+      list = list.filter(
+        (row) => {
+          const number =
+            row.number
+              ?.toLowerCase() || "";
+
+          const customer =
+            partyById[
+              row.partyId
+            ]?.name
+              ?.toLowerCase() || "";
+
+          return (
+            number.includes(query) ||
+            customer.includes(query)
+          );
+        },
+      );
+    }
+
     return list;
-  }, [quotations, search, statusFilter, partyById]);
+  }, [
+    quotations,
+    search,
+    statusFilter,
+    partyById,
+  ]);
+
+  /* ------------------------------------------------------------------------
+     DELETE
+  ------------------------------------------------------------------------ */
 
   const onDelete = async () => {
+    if (!confirm?.id) {
+      return;
+    }
+
     try {
-      await deleteMut.mutateAsync(confirm.id);
-      toast.success("Quotation deleted");
+      await deleteMut.mutateAsync(
+        confirm.id,
+      );
+
+      toast.success(
+        "Quotation deleted",
+      );
+
       setConfirm(null);
-    } catch (e) {
-      toast.error(e?.message || "Delete failed");
+    } catch (error) {
+      console.error(
+        "Delete quotation failed:",
+        error,
+      );
+
+      toast.error(
+        error?.message ||
+          "Delete failed",
+      );
     }
   };
 
-  /* EDIT */
+  /* ------------------------------------------------------------------------
+     EDIT
+  ------------------------------------------------------------------------ */
+
   const onEdit = (quotation) => {
-    if (!quotation?.id) return;
-    navigate(`/bills/quotations/${quotation.id}/edit`);
+    if (!quotation?.id) {
+      return;
+    }
+
+    navigate(
+      `/bills/quotations/${quotation.id}/edit`,
+    );
   };
+
+  /* ------------------------------------------------------------------------
+     UI
+  ------------------------------------------------------------------------ */
 
   return (
     <div className="page-container min-h-full">
+      {/* ====================================================================
+          HEADER
+      ==================================================================== */}
+
       <PageHeader
         title="Quotations"
         actions={
-          <Button size="sm" onClick={() => navigate("/bills/quotations/new")}>
+          <Button
+            size="sm"
+            onClick={() =>
+              navigate(
+                "/bills/quotations/new",
+              )
+            }
+          >
             <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">New Quotation</span>
-            <span className="sm:hidden">New</span>
+
+            <span className="hidden sm:inline">
+              New Quotation
+            </span>
+
+            <span className="sm:hidden">
+              New
+            </span>
           </Button>
         }
       />
-      <ModuleTabs tabs={MODULE_TABS.bills} />
+
+      <ModuleTabs
+        tabs={MODULE_TABS.bills}
+      />
+
+      {/* ====================================================================
+          FILTER / SEARCH
+      ==================================================================== */}
 
       <Toolbar
         search={search}
@@ -85,121 +202,229 @@ export function QuotationListPage() {
       >
         <Select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(event) =>
+            setStatusFilter(
+              event.target.value,
+            )
+          }
           className="w-full sm:w-40"
         >
-          <option value="">All status</option>
-          <option value="draft">Draft</option>
-          <option value="sent">Sent</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-          <option value="expired">Expired</option>
-          <option value="converted">Converted</option>
+          <option value="">
+            All status
+          </option>
+
+          <option value="draft">
+            Draft
+          </option>
+
+          <option value="sent">
+            Sent
+          </option>
+
+          <option value="approved">
+            Approved
+          </option>
+
+          <option value="rejected">
+            Rejected
+          </option>
+
+          <option value="expired">
+            Expired
+          </option>
+
+          <option value="converted">
+            Converted
+          </option>
         </Select>
       </Toolbar>
+
+      {/* ====================================================================
+          QUOTATION TABLE
+      ==================================================================== */}
 
       <div className="bg-surface border-t border-line pb-24 md:pb-0">
         <DataTable
           columns={[
+            /* --------------------------------------------------------------
+               NUMBER
+            -------------------------------------------------------------- */
+
             {
               key: "number",
               header: "Number",
               sortable: true,
-              render: (r) => (
-                <div className="font-bold text-ink">{r.number}</div>
+
+              render: (row) => (
+                <div className="font-bold text-ink">
+                  {row.number}
+                </div>
               ),
             },
+
+            /* --------------------------------------------------------------
+               CUSTOMER
+            -------------------------------------------------------------- */
+
             {
               key: "partyId",
               header: "Customer",
-              render: (r) => partyById[r.partyId]?.name || "—",
+
+              render: (row) =>
+                partyById[
+                  row.partyId
+                ]?.name || "—",
             },
+
+            /* --------------------------------------------------------------
+               DATE
+            -------------------------------------------------------------- */
+
             {
               key: "date",
               header: "Date",
               hideOnMobile: true,
-              render: (r) => fmtDate(r.date),
+
+              render: (row) =>
+                fmtDate(row.date),
             },
+
+            /* --------------------------------------------------------------
+               AMOUNT
+            -------------------------------------------------------------- */
+
             {
               key: "grandTotal",
               header: "Amount",
               align: "right",
               sortable: true,
-              render: (r) => (
+
+              render: (row) => (
                 <span className="font-bold text-ink">
-                  {formatMoney(r.grandTotal)}
+                  {formatMoney(
+                    row.grandTotal,
+                  )}
                 </span>
               ),
             },
+
+            /* --------------------------------------------------------------
+               STATUS
+            -------------------------------------------------------------- */
+
             {
               key: "status",
               header: "Status",
               align: "right",
-              render: (r) => <StatusBadge status={r.status} />,
+
+              render: (row) => (
+                <StatusBadge
+                  status={row.status}
+                />
+              ),
             },
 
-            /* EDIT — right after Status */
+            /* --------------------------------------------------------------
+               EDIT
+               IMPORTANT:
+               Edit is immediately after Status.
+            -------------------------------------------------------------- */
+
             {
               key: "__edit",
               header: "",
-              width: 75,
+              width: 80,
               align: "right",
+
               render: (row) => (
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  onClick={(event) => {
+                    event.stopPropagation();
                     onEdit(row);
                   }}
                   className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-bold text-primary-600 transition hover:bg-primary-500/10"
                   title="Edit quotation"
                 >
                   <Pencil className="h-3.5 w-3.5" />
-                  <span>Edit</span>
+
+                  <span>
+                    Edit
+                  </span>
                 </button>
               ),
             },
+
+            /* --------------------------------------------------------------
+               DELETE
+            -------------------------------------------------------------- */
 
             {
               key: "__actions",
               header: "",
               width: 70,
               align: "right",
+
               render: (row) => (
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  onClick={(event) => {
+                    event.stopPropagation();
                     setConfirm(row);
                   }}
-                  className="px-2 py-1 text-xs font-bold text-red-500 hover:bg-red-500/10 rounded-md"
+                  className="rounded-md px-2 py-1 text-xs font-bold text-red-500 transition hover:bg-red-500/10"
                 >
                   Del
                 </button>
               ),
             },
           ]}
+
           rows={filtered}
           loading={isLoading}
-          onRowClick={(r) => navigate(`/bills/quotations/${r.id}`)}
+
+          /* Row click still opens quotation detail */
+          onRowClick={(row) =>
+            navigate(
+              `/bills/quotations/${row.id}`,
+            )
+          }
+
           emptyTitle="No quotations yet"
+
           emptyDescription="Create your first quotation to send to a customer."
+
           emptyAction={
-            <Button onClick={() => navigate("/bills/quotations/new")}>
-              <Plus className="h-4 w-4" /> New Quotation
+            <Button
+              onClick={() =>
+                navigate(
+                  "/bills/quotations/new",
+                )
+              }
+            >
+              <Plus className="h-4 w-4" />
+              New Quotation
             </Button>
           }
         />
       </div>
 
+      {/* ====================================================================
+          DELETE CONFIRMATION
+      ==================================================================== */}
+
       <ConfirmDialog
         open={!!confirm}
-        onClose={() => setConfirm(null)}
+        onClose={() =>
+          setConfirm(null)
+        }
         onConfirm={onDelete}
         title="Delete quotation?"
         description={`"${confirm?.number}" will be removed.`}
         confirmLabel="Delete"
-        loading={deleteMut.isPending}
+        loading={
+          deleteMut.isPending
+        }
       />
     </div>
   );

@@ -148,7 +148,8 @@ export function AppRouter() {
           }
         />
 
-        {/* Quotations */}
+        {/* ───────────── Quotations ───────────── */}
+
         <Route
           path="/bills/quotations"
           element={<QuotationListPage />}
@@ -159,12 +160,20 @@ export function AppRouter() {
           element={<QuotationFormPage />}
         />
 
+        {/* ⭐ Quotation Edit */}
+        <Route
+          path="/bills/quotations/:id/edit"
+          element={<QuotationFormPage />}
+        />
+
+        {/* Quotation Detail */}
         <Route
           path="/bills/quotations/:id"
           element={<QuotationDetailPage />}
         />
 
-        {/* Invoices */}
+        {/* ───────────── Invoices ───────────── */}
+
         <Route
           path="/bills/invoices"
           element={<InvoiceListPage />}
@@ -175,10 +184,7 @@ export function AppRouter() {
           element={<InvoiceFormPage />}
         />
 
-        {/* ⭐ IMPORTANT:
-            This is the Edit Invoice route.
-            It MUST exist separately from the detail route.
-        */}
+        {/* ⭐ Invoice Edit */}
         <Route
           path="/bills/invoices/:id/edit"
           element={<InvoiceFormPage />}
