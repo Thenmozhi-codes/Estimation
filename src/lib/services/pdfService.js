@@ -2,8 +2,14 @@ import { jsPDF } from "jspdf";
 
 /* ───────── Formatters (self-contained, no deps) ───────── */
 
-const money = (n, cur = "₹") =>
-  `${cur}${(Number(n) || 0).toLocaleString("en-IN", {
+/*
+ * jsPDF's standard fonts have no Rupee glyph. A string containing one is
+ * re-encoded and every letter gets stretched ("4 , 7 6 0 . 0 0"), so all
+ * documents print "Rs." instead. The same applies to the unicode minus
+ * sign, so a plain "-" is used.
+ */
+const money = (n) =>
+  `Rs. ${(Number(n) || 0).toLocaleString("en-IN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -19,12 +25,7 @@ const shortDate = (d) =>
 
 /* ───────── Quotation-only layout (invoice / purchase untouched) ───────── */
 
-// jsPDF standard fonts have no ₹ glyph, so the quotation uses "Rs."
-const qMoney = (n) =>
-  `Rs. ${(Number(n) || 0).toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+const qMoney = money;
 
 /* Brand/Product + Specification for one line, from whatever the item holds */
 function describeItem(it) {
@@ -343,7 +344,7 @@ function generateQuotationPdf({ company, party, doc, items }) {
  *   kind      — 'quotation' | 'invoice' | 'purchase'
  */
 export function generateDocumentPdf({ company, party, doc, items, kind }) {
-  /* Quotation has its own layout; invoice / purchase below are unchanged */
+  /* Quotation has its own layout; invoice / purchase below */
   if (kind === "quotation") {
     return generateQuotationPdf({ company, party, doc, items });
   }
@@ -466,6 +467,10 @@ export function generateDocumentPdf({ company, party, doc, items, kind }) {
   pdf.setTextColor(50, 50, 50);
   const truncate = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
+  /* Tall enough for the product name AND the SKU line underneath it,
+     so the row divider no longer cuts through the second line. */
+  const ROW_H = 30;
+
   items.forEach((it, i) => {
     // Page break
     if (y > 740) {
@@ -476,7 +481,7 @@ export function generateDocumentPdf({ company, party, doc, items, kind }) {
     // Row background (zebra)
     if (i % 2 === 1) {
       pdf.setFillColor(253, 246, 238);
-      pdf.rect(mx, y, pageW - mx * 2, 22, "F");
+      pdf.rect(mx, y, pageW - mx * 2, ROW_H, "F");
     }
 
     const attrs =
@@ -495,7 +500,7 @@ export function generateDocumentPdf({ company, party, doc, items, kind }) {
       pdf.setFontSize(7.5);
       pdf.setTextColor(140, 140, 140);
       const sub = [it.skuSnapshot, attrs].filter(Boolean).join("  ·  ");
-      pdf.text(truncate(sub, 60), cols.desc, y + 21);
+      pdf.text(truncate(sub, 60), cols.desc, y + 24);
       pdf.setFontSize(9);
       pdf.setTextColor(50, 50, 50);
     }
@@ -512,16 +517,16 @@ export function generateDocumentPdf({ company, party, doc, items, kind }) {
     pdf.text(money(it.lineTotal), cols.amt, y + 14, { align: "right" });
     pdf.setFont("helvetica", "normal");
 
-    y += 24;
+    y += ROW_H;
     pdf.setDrawColor(230, 214, 195);
     pdf.setLineWidth(0.5);
-    pdf.line(mx, y - 4, pageW - mx, y - 4);
+    pdf.line(mx, y, pageW - mx, y);
   });
 
-  y += 12;
+  y += 16;
 
   /* ───── Totals ───── */
-  const totalsX = pageW - mx - 220;
+  const totalsX = pageW - mx - 240;
   const valueX = pageW - mx;
 
   const row = (label, value, opts = {}) => {
@@ -535,7 +540,7 @@ export function generateDocumentPdf({ company, party, doc, items, kind }) {
 
   row("Subtotal", money(doc.subtotal));
   if ((doc.discount || 0) > 0) {
-    row("Discount", "− " + money(doc.discount));
+    row("Discount", "- " + money(doc.discount));
   }
   if ((doc.taxTotal || 0) > 0) {
     row("Tax", money(doc.taxTotal));
@@ -552,7 +557,7 @@ export function generateDocumentPdf({ company, party, doc, items, kind }) {
     row("Paid", money(doc.amountPaid));
     row(
       "Balance",
-      money((doc.grandTotal || 0) - (doc.amountPaid || 0)),
+      money(Math.max(0, (doc.grandTotal || 0) - (doc.amountPaid || 0))),
       { bold: true },
     );
   }

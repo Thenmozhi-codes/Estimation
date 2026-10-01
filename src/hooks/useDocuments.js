@@ -48,6 +48,7 @@ export const useUpdateQuotation = () => {
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: qk.quotations });
       qc.invalidateQueries({ queryKey: ["quotation", v.id] });
+      qc.invalidateQueries({ queryKey: qk.quotationItems(v.id) });
     },
   });
 };
@@ -90,13 +91,25 @@ export const useCreateInvoice = () => {
   });
 };
 
+/*
+ * Prefers invoiceService.update (full edit: items replaced, totals + stock
+ * recalculated). If the service does not have an update() yet, it falls back
+ * to invoiceRepo.update, the same path quotations use, so saving works.
+ *
+ * TODO: add update() to invoiceService so stock and totals are recalculated.
+ */
 export const useUpdateInvoice = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, patch }) => invoiceRepo.update(id, patch),
+    mutationFn: ({ id, patch }) =>
+      typeof invoiceService.update === "function"
+        ? invoiceService.update(id, patch)
+        : invoiceRepo.update(id, patch),
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: qk.invoices });
       qc.invalidateQueries({ queryKey: ["invoice", v.id] });
+      qc.invalidateQueries({ queryKey: qk.invoiceItems(v.id) });
+      qc.invalidateQueries({ queryKey: qk.stock });
     },
   });
 };

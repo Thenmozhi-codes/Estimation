@@ -727,6 +727,16 @@ export function ProductPicker({
       selectedBrand?.details ||
       {};
 
+    /*
+     * CHANGED: the selected Specification is now included in the attribute
+     * values.
+     *
+     * Before, the chosen specification (e.g. "18mm") lived only in
+     * selectedSpecification, which is NOT part of the save payload. The
+     * variant was created from attributeValues alone, so the specification
+     * was never persisted and attributesSnapshot came back without it when
+     * the quotation was opened for Edit.
+     */
     const attributeValuesPayload = {
       ...(variant?.attributes || {}),
       Unit:
@@ -735,6 +745,7 @@ export function ProductPicker({
         legacyMaterialDetails?.uom ||
         legacyMaterialDetails?.unitName ||
         "",
+      Specification: selectedSpecification.label,
     };
 
     /* PRICE: Brand Master first, then variant */

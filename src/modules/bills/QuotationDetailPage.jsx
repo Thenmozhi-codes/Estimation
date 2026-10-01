@@ -32,6 +32,8 @@ export function QuotationDetailPage() {
   const { data: items = [] } = useQuotationItems(id);
   const { data: party } = useParty(q?.partyId);
 
+  console.log(q);
+
   const { data: companies = [] } = useQuery({
     queryKey: ["companies"],
     queryFn: () => companyRepo.list(),
