@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   CalendarDays,
@@ -24,14 +24,20 @@ import { MoneyInput } from "@/components/ui/MoneyInput";
 import { LineItemsEditor } from "@/components/forms/LineItemsEditor";
 
 import { toast } from "@/lib/toast";
-import { useCreateQuotation, useQuotations } from "@/hooks/useDocuments";
+import {
+  useCreateQuotation,
+  useQuotation,
+  useQuotationItems,
+  useQuotations,
+  useUpdateQuotation,
+} from "@/hooks/useDocuments";
 import { useParties } from "@/hooks/useParties";
 import { variantResolver } from "@/lib/api/repos";
 import { getNextDocumentNumber } from "@/lib/utils/docNumber";
 import { MODULE_TABS } from "@/app/moduleNav";
 
 /* -------------------------------------------------------------------------- */
-/* DRAFT STORAGE                                                              */
+/* DRAFT STORAGE (new quotations only)                                        */
 /* -------------------------------------------------------------------------- */
 
 const QUOTATION_DRAFT_KEY = "timber-erp-quotation-draft-v1";
@@ -82,6 +88,18 @@ function money(value) {
   }).format(amount);
 }
 
+function normalizeDate(value) {
+  if (!value) return "";
+
+  if (typeof value === "string") return value.slice(0, 10);
+
+  try {
+    return new Date(value).toISOString().slice(0, 10);
+  } catch {
+    return "";
+  }
+}
+
 /* Tolerant getters so the summary works with any item shape */
 
 function getQuantity(item) {
@@ -101,7 +119,6 @@ function getLineDiscount(item) {
 }
 
 function getLineTax(item) {
-  /* Prefer an already calculated tax amount */
   if (
     item?.taxAmount !== undefined &&
     item?.taxAmount !== null &&
@@ -129,6 +146,79 @@ function getLineTax(item) {
   return taxableValue * (taxRate / 100);
 }
 
+/* Existing quotation-item record -> row shape used by LineItemsEditor */
+function mapSavedItem(item, index) {
+  const variant = item.variant || item.matchedVariant || null;
+  const product = item.product || variant?.product || null;
+
+  const productId = item.productId || product?.id || variant?.productId || null;
+  const variantId = item.variantId || variant?.id || null;
+
+  const sku =
+    item.sku || item.productSku || variant?.sku || product?.sku || "";
+
+  const unitPrice = Number(item.unitPrice ?? item.rate ?? item.price ?? 0) || 0;
+
+  return {
+    tempId: item.tempId || item.id || `existing-quotation-item-${index}`,
+
+    productId,
+    productSku: item.productSku || sku,
+    productName:
+      item.productName ||
+      product?.name ||
+      item.name ||
+      variant?.productName ||
+      "",
+    productType:
+      item.productType ||
+      product?.productType ||
+      product?.category?.name ||
+      item.category?.name ||
+      "",
+
+    brandId: item.brandId || product?.brandId || product?.brand?.id || null,
+    brandName:
+      item.brandName ||
+      product?.brandName ||
+      product?.brand?.name ||
+      item.brand?.name ||
+      "",
+
+    variantId,
+    variant,
+    matchedVariant: item.matchedVariant || variant || null,
+    sku,
+
+    attributeValues: item.attributeValues || variant?.attributeValues || {},
+    specifications: Array.isArray(item.specifications)
+      ? item.specifications
+      : Array.isArray(variant?.specifications)
+        ? variant.specifications
+        : [],
+    selectedSpecification:
+      item.selectedSpecification || item.specification || "",
+    unit: item.unit || variant?.unit || product?.unit || "",
+
+    length: item.length ?? "",
+    width: item.width ?? "",
+    height: item.height ?? "",
+    pcs: item.pcs ?? 1,
+
+    quantity: Number(item.quantity ?? item.qty ?? 1) || 1,
+    unitPrice,
+    rate: unitPrice,
+    defaultPrice: unitPrice,
+
+    discount: Number(item.discount ?? 0) || 0,
+
+    taxId: item.taxId || item.tax?.id || null,
+    taxRate: Number(item.taxRate ?? item.tax?.rate ?? 0) || 0,
+
+    quotationItemId: item.id || null,
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /* SMALL UI PIECES                                                            */
 /* -------------------------------------------------------------------------- */
@@ -151,16 +241,46 @@ function SummaryRow({ label, children }) {
   );
 }
 
+function BackButton({ onClick, disabled, label = "Back" }) {
+  return (
+    <Button variant="ghost" size="sm" onClick={onClick} disabled={disabled}>
+      <ArrowLeft className="h-4 w-4" />
+      <span className="hidden sm:inline">{label}</span>
+    </Button>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* COMPONENT                                                                  */
 /* -------------------------------------------------------------------------- */
 
 export function QuotationFormPage() {
   const navigate = useNavigate();
+  const params = useParams();
+
+  const quotationId = params.id || null;
+  const isEdit = Boolean(quotationId);
 
   const { data: parties = [] } = useParties();
   const { data: quotations = [] } = useQuotations();
+
+  /* Existing quotation (edit mode only — the hooks are disabled without an id).
+     No `= []` default on items: a new array every render would re-trigger
+     the effect below on every render while the query is loading. */
+  const {
+    data: quotation,
+    isLoading: quotationLoading,
+    isError: quotationError,
+  } = useQuotation(quotationId);
+
+  const {
+    data: savedItems,
+    isLoading: itemsLoading,
+    isError: itemsError,
+  } = useQuotationItems(quotationId);
+
   const createMut = useCreateQuotation();
+  const updateMut = useUpdateQuotation();
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -171,6 +291,7 @@ export function QuotationFormPage() {
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(!isEdit);
 
   const [draftRestored, setDraftRestored] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
@@ -178,8 +299,10 @@ export function QuotationFormPage() {
   /* Stops the initial empty state from overwriting an existing draft */
   const [draftLoaded, setDraftLoaded] = useState(false);
 
-  /* RESTORE DRAFT */
+  /* RESTORE DRAFT — new quotations only */
   useEffect(() => {
+    if (isEdit) return;
+
     const draft = loadQuotationDraft();
 
     if (draft) {
@@ -198,11 +321,11 @@ export function QuotationFormPage() {
 
     setDraftLoaded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isEdit]);
 
-  /* AUTO SAVE DRAFT */
+  /* AUTO SAVE DRAFT — new quotations only */
   useEffect(() => {
-    if (!draftLoaded) return;
+    if (isEdit || !draftLoaded) return;
 
     const saved = saveQuotationDraft({
       partyId,
@@ -219,7 +342,30 @@ export function QuotationFormPage() {
 
     const timer = setTimeout(() => setDraftSaved(false), 1200);
     return () => clearTimeout(timer);
-  }, [draftLoaded, partyId, date, discount, notes, items]);
+  }, [isEdit, draftLoaded, partyId, date, discount, notes, items]);
+
+  /* LOAD EXISTING QUOTATION */
+  useEffect(() => {
+    if (!isEdit || !quotation) return;
+
+    setPartyId(
+      String(quotation.partyId || quotation.customerId || quotation.party?.id || ""),
+    );
+    setDate(
+      normalizeDate(quotation.date || quotation.quotationDate || quotation.createdAt),
+    );
+    setDiscount(quotation.discount ?? 0);
+    setNotes(quotation.notes || "");
+
+    setLoaded(true);
+  }, [isEdit, quotation]);
+
+  /* LOAD EXISTING ITEMS */
+  useEffect(() => {
+    if (!isEdit || !Array.isArray(savedItems)) return;
+
+    setItems(savedItems.map(mapSavedItem));
+  }, [isEdit, savedItems]);
 
   /* CUSTOMERS */
   const customers = useMemo(
@@ -231,7 +377,8 @@ export function QuotationFormPage() {
   );
 
   const selectedCustomer = useMemo(
-    () => customers.find((party) => party.id === partyId) || null,
+    () =>
+      customers.find((party) => String(party.id) === String(partyId)) || null,
     [customers, partyId],
   );
 
@@ -242,13 +389,13 @@ export function QuotationFormPage() {
     selectedCustomer?.phoneNumber ||
     "";
 
-  /* The repository / backend generates the real number on save */
-  const quotationNumber = useMemo(
+  /* Preview of the number a NEW quotation will get (real one set on save) */
+  const nextNumber = useMemo(
     () => getNextDocumentNumber(quotations, "QT-"),
     [quotations],
   );
 
-  /* SUMMARY */
+  /* SUMMARY — must stay above the early returns below */
   const summary = useMemo(() => {
     let grossSubtotal = 0;
     let lineDiscountTotal = 0;
@@ -262,7 +409,6 @@ export function QuotationFormPage() {
 
     const afterLineDiscount = Math.max(0, grossSubtotal - lineDiscountTotal);
 
-    /* Header discount comes after line discounts */
     const headerDiscount = Math.min(
       Math.max(Number(discount) || 0, 0),
       afterLineDiscount,
@@ -281,7 +427,46 @@ export function QuotationFormPage() {
     };
   }, [items, discount]);
 
-  /* SAVE */
+  /* LOADING / ERROR (edit mode) */
+  if (isEdit && (quotationError || itemsError)) {
+    return (
+      <div className="page-container min-h-full">
+        <PageHeader
+          title={<span className="text-base font-bold">Edit Quotation</span>}
+          actions={<BackButton onClick={() => navigate("/bills/quotations")} />}
+        />
+
+        <ModuleTabs tabs={MODULE_TABS.bills} />
+
+        <div className="p-6">
+          <div className="rounded-xl border border-line bg-surface p-4 text-sm font-semibold text-red-500">
+            Could not load this quotation.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isEdit && (quotationLoading || itemsLoading || !loaded)) {
+    return (
+      <div className="page-container min-h-full">
+        <PageHeader
+          title={<span className="text-base font-bold">Edit Quotation</span>}
+          actions={<BackButton onClick={() => navigate("/bills/quotations")} />}
+        />
+
+        <ModuleTabs tabs={MODULE_TABS.bills} />
+
+        <div className="flex min-h-[300px] items-center justify-center p-6">
+          <div className="text-sm font-semibold text-muted">
+            Loading quotation…
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* SAVE / UPDATE */
   const handleSave = async () => {
     if (!partyId) {
       toast.error("Select a customer");
@@ -298,8 +483,9 @@ export function QuotationFormPage() {
       productId: item?.productId || item?.product?.id || null,
     }));
 
+    /* An existing line may only carry its variantId — that is fine */
     const invalidItemIndex = normalizedItems.findIndex(
-      (item) => !item.productId,
+      (item) => !item.productId && !item.variantId,
     );
 
     if (invalidItemIndex !== -1) {
@@ -314,29 +500,52 @@ export function QuotationFormPage() {
     try {
       const enrichedItems = await Promise.all(
         normalizedItems.map(async (item) => {
+          const base = {
+            quantity: Number(item.quantity) || 0,
+            unitPrice: Number(item.unitPrice) || 0,
+            discount: Number(item.discount) || 0,
+            taxId: item.taxId || null,
+          };
+
+          /* Existing row with no product info: keep its variant */
+          if (item.variantId && !item.productId) {
+            return { variantId: item.variantId, ...base };
+          }
+
           const variant = await variantResolver.resolveOrCreate({
             productId: item.productId,
             defaultSku: item.productSku || item.sku,
             attributeValues: item.attributeValues || {},
           });
 
-          return {
-            variantId: variant.id,
-            quantity: Number(item.quantity) || 0,
-            unitPrice: Number(item.unitPrice) || 0,
-            discount: Number(item.discount) || 0,
-            taxId: item.taxId || null,
-          };
+          return { variantId: variant.id, ...base };
         }),
       );
 
-      const created = await createMut.mutateAsync({
+      const payload = {
         partyId,
         date,
         discount: Number(discount) || 0,
         notes,
         items: enrichedItems,
-      });
+      };
+
+      /* UPDATE */
+      if (isEdit) {
+        const updated = await updateMut.mutateAsync({
+          id: quotationId,
+          patch: payload,
+        });
+
+        toast.success(
+          `Quotation ${updated?.number || quotation?.number || ""} updated`,
+        );
+        navigate(`/bills/quotations/${quotationId}`);
+        return;
+      }
+
+      /* CREATE */
+      const created = await createMut.mutateAsync(payload);
 
       /* Only clear the draft AFTER the quotation was really created */
       clearQuotationDraft();
@@ -344,7 +553,7 @@ export function QuotationFormPage() {
       toast.success(`Quotation ${created.number} created`);
       navigate(`/bills/quotations/${created.id}`);
     } catch (error) {
-      console.error(error);
+      console.error("Quotation save failed:", error);
       toast.error(error?.message || "Save failed");
     } finally {
       setSaving(false);
@@ -358,22 +567,32 @@ export function QuotationFormPage() {
   return (
     <div className="page-container min-h-full">
       <PageHeader
-        title={<span className="text-lg font-bold">New Quotation</span>}
-        
+        title={
+          <span className="text-lg font-bold">
+            {isEdit ? "Edit Quotation" : "New Quotation"}
+          </span>
+        }
         actions={
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate("/bills/quotations")}
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span className="hidden sm:inline">Cancel</span>
-            </Button>
+            <BackButton
+              label="Cancel"
+              disabled={saving}
+              onClick={() =>
+                navigate(
+                  isEdit
+                    ? `/bills/quotations/${quotationId}`
+                    : "/bills/quotations",
+                )
+              }
+            />
 
             <Button size="sm" onClick={handleSave} disabled={saving}>
               <Save className="h-4 w-4" />
-              {saving ? "Saving…" : "Save Quotation"}
+              {saving
+                ? "Saving…"
+                : isEdit
+                  ? "Update Quotation"
+                  : "Save Quotation"}
             </Button>
           </div>
         }
@@ -382,8 +601,8 @@ export function QuotationFormPage() {
       <ModuleTabs tabs={MODULE_TABS.bills} />
 
       <div className="mx-auto max-w-[1500px] p-4 pb-28 md:p-6">
-        {/* Draft status */}
-        {(draftRestored || draftSaved) && (
+        {/* Draft status (new quotations only) */}
+        {!isEdit && (draftRestored || draftSaved) && (
           <div className="mb-4 flex justify-end">
             <div className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-muted shadow-sm">
               <span
@@ -398,23 +617,19 @@ export function QuotationFormPage() {
           </div>
         )}
 
-        {/* ONE FORM CARD: form sections on the left, full-height summary on the right */}
         <div className="flex flex-col rounded-2xl border border-line bg-surface shadow-sm lg:flex-row">
           {/* ============================ LEFT — FORM ============================ */}
           <div className="min-w-0 flex-1 divide-y divide-line">
             {/* DETAILS */}
             <section className="p-4 md:p-5">
-              <SectionHeading
-                title="Quotation Details"
-               />
-            
+              <SectionHeading title="Quotation Details" />
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <Field label="Quotation No." >
+                <Field label="Quotation No.">
                   <div className="relative">
                     <FileText className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
                     <Input
-                      value={quotationNumber}
+                      value={isEdit ? quotation?.number || "" : nextNumber}
                       readOnly
                       disabled
                       className="pl-9"
@@ -468,10 +683,7 @@ export function QuotationFormPage() {
 
             {/* ITEMS */}
             <section className="p-4 md:p-5">
-              <SectionHeading
-                title="Items"
-                />
-
+              <SectionHeading title="Items" />
 
               <LineItemsEditor items={items} onChange={setItems} />
             </section>
@@ -498,10 +710,9 @@ export function QuotationFormPage() {
             </section>
           </div>
 
-          {/* ================== RIGHT — SUMMARY (full height, ~20%) ================== */}
+          {/* ================== RIGHT — SUMMARY ================== */}
           <aside className="rounded-b-2xl border-t border-line bg-bg/40 lg:w-1/5 lg:min-w-[260px] lg:rounded-b-none lg:rounded-r-2xl lg:border-l lg:border-t-0">
             <div className="lg:sticky lg:top-4">
-              {/* Header */}
               <div className="flex items-center gap-2 border-b border-line px-4 py-4">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
                   <Receipt className="h-4 w-4 text-primary" />
@@ -511,11 +722,9 @@ export function QuotationFormPage() {
                   <h3 className="text-sm font-semibold text-ink">
                     Quotation Summary
                   </h3>
-                 
                 </div>
               </div>
 
-              {/* Item count */}
               <div className="flex items-center justify-between border-b border-line px-4 py-3">
                 <div className="flex items-center gap-2 text-sm text-muted">
                   <Package className="h-4 w-4" />
@@ -526,7 +735,6 @@ export function QuotationFormPage() {
                 </span>
               </div>
 
-              {/* Amounts */}
               <div className="space-y-3 px-4 py-4">
                 <SummaryRow label="Subtotal">
                   <span className="text-sm font-medium text-ink">
@@ -569,7 +777,6 @@ export function QuotationFormPage() {
                   </span>
                 </SummaryRow>
 
-                {/* Grand total */}
                 <div className="border-t border-dashed border-line pt-3">
                   <div className="flex items-end justify-between gap-3">
                     <div>
@@ -588,11 +795,6 @@ export function QuotationFormPage() {
                     </div>
                   </div>
                 </div>
-              </div>
-
-              {/* Footer note */}
-              <div className="border-t border-line px-4 py-3">
-                
               </div>
             </div>
           </aside>

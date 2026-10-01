@@ -123,6 +123,98 @@ function getLineTax(item) {
   return taxableValue * (taxRate / 100);
 }
 
+/* Existing invoice-item record -> row shape used by LineItemsEditor */
+function mapSavedItem(item, index) {
+  const variant = item.variant || item.matchedVariant || null;
+  const product = item.product || variant?.product || null;
+
+  const productId = item.productId || product?.id || variant?.productId || null;
+  const variantId = item.variantId || variant?.id || null;
+
+  const productName =
+    item.productName ||
+    product?.name ||
+    item.name ||
+    variant?.productName ||
+    "";
+
+  const brandName =
+    item.brandName ||
+    product?.brandName ||
+    product?.brand?.name ||
+    item.brand?.name ||
+    "";
+
+  const productType =
+    item.productType ||
+    product?.productType ||
+    product?.category?.name ||
+    item.category?.name ||
+    "";
+
+  const sku =
+    item.sku || item.productSku || variant?.sku || product?.sku || "";
+
+  const attributeValues = item.attributeValues || variant?.attributeValues || {};
+
+  const specifications = Array.isArray(item.specifications)
+    ? item.specifications
+    : Array.isArray(variant?.specifications)
+      ? variant.specifications
+      : [];
+
+  const selectedSpecification =
+    item.selectedSpecification || item.specification || "";
+
+  const unit = item.unit || variant?.unit || product?.unit || "";
+
+  const quantity = item.quantity ?? item.qty ?? 1;
+  const unitPrice = item.unitPrice ?? item.rate ?? item.price ?? 0;
+  const taxRate = item.taxRate ?? item.tax?.rate ?? 0;
+
+  return {
+    /* Temporary frontend ID used by LineItemsEditor for edit / delete */
+    tempId: item.tempId || item.id || `existing-invoice-item-${index}`,
+
+    productId,
+    productSku: item.productSku || sku,
+    productName,
+    productType,
+
+    brandId: item.brandId || product?.brandId || product?.brand?.id || null,
+    brandName,
+
+    variantId,
+    variant,
+    matchedVariant: item.matchedVariant || variant || null,
+    sku,
+
+    attributeValues,
+    specifications,
+    selectedSpecification,
+    unit,
+
+    /* Measurement (kept if the record has it) */
+    length: item.length ?? "",
+    width: item.width ?? "",
+    height: item.height ?? "",
+    pcs: item.pcs ?? 1,
+
+    quantity: Number(quantity) || 1,
+    unitPrice: Number(unitPrice) || 0,
+    rate: Number(unitPrice) || 0,
+    defaultPrice: Number(unitPrice) || 0,
+
+    discount: Number(item.discount ?? 0) || 0,
+
+    taxId: item.taxId || item.tax?.id || null,
+    taxRate: Number(taxRate) || 0,
+
+    /* Original item ID, for backends that update existing lines */
+    invoiceItemId: item.id || null,
+  };
+}
+
 /* ==========================================================================
    SMALL UI PIECES
 ========================================================================== */
@@ -188,8 +280,14 @@ export function InvoiceFormPage() {
     isError: invoiceError,
   } = useInvoice(invoiceId);
 
+  /*
+   * IMPORTANT: no `= []` default here.
+   * A default creates a NEW empty array on every render while the query is
+   * loading, which re-triggers the effect below on every render and causes
+   * an endless render loop in edit mode.
+   */
   const {
-    data: invoiceItems = [],
+    data: invoiceItemsData,
     isLoading: itemsLoading,
     isError: itemsError,
   } = useInvoiceItems(invoiceId);
@@ -270,7 +368,7 @@ export function InvoiceFormPage() {
     if (!invoice) return;
 
     setPartyId(
-      invoice.partyId || invoice.customerId || invoice.party?.id || "",
+      String(invoice.partyId || invoice.customerId || invoice.party?.id || ""),
     );
 
     setDate(
@@ -294,105 +392,34 @@ export function InvoiceFormPage() {
 
   useEffect(() => {
     if (!isEdit) return;
-    if (!Array.isArray(invoiceItems)) return;
+    if (!Array.isArray(invoiceItemsData)) return;
 
-    const mappedItems = invoiceItems.map((item, index) => {
-      const variant = item.variant || item.matchedVariant || null;
-      const product = item.product || variant?.product || null;
-
-      const productId = item.productId || product?.id || variant?.productId || null;
-      const variantId = item.variantId || variant?.id || null;
-
-      const productName =
-        item.productName ||
-        product?.name ||
-        item.name ||
-        variant?.productName ||
-        "";
-
-      const brandName =
-        item.brandName ||
-        product?.brandName ||
-        product?.brand?.name ||
-        item.brand?.name ||
-        "";
-
-      const productType =
-        item.productType ||
-        product?.productType ||
-        product?.category?.name ||
-        item.category?.name ||
-        "";
-
-      const sku =
-        item.sku || item.productSku || variant?.sku || product?.sku || "";
-
-      const attributeValues = item.attributeValues || variant?.attributeValues || {};
-
-      const specifications = Array.isArray(item.specifications)
-        ? item.specifications
-        : Array.isArray(variant?.specifications)
-          ? variant.specifications
-          : [];
-
-      const selectedSpecification =
-        item.selectedSpecification || item.specification || "";
-
-      const unit = item.unit || variant?.unit || product?.unit || "";
-
-      const quantity = item.quantity ?? item.qty ?? 1;
-      const unitPrice = item.unitPrice ?? item.rate ?? item.price ?? 0;
-      const taxRate = item.taxRate ?? item.tax?.rate ?? 0;
-
-      return {
-        /* Temporary frontend ID used by LineItemsEditor for edit / delete */
-        tempId: item.tempId || item.id || `existing-invoice-item-${index}`,
-
-        productId,
-        productSku: item.productSku || sku,
-        productName,
-        productType,
-
-        brandId: item.brandId || product?.brandId || product?.brand?.id || null,
-        brandName,
-
-        variantId,
-        variant,
-        matchedVariant: item.matchedVariant || variant || null,
-        sku,
-
-        attributeValues,
-        specifications,
-        selectedSpecification,
-        unit,
-
-        /* Measurement (kept if the record has it) */
-        length: item.length ?? "",
-        width: item.width ?? "",
-        height: item.height ?? "",
-        pcs: item.pcs ?? 1,
-
-        quantity: Number(quantity) || 1,
-        unitPrice: Number(unitPrice) || 0,
-        rate: Number(unitPrice) || 0,
-        defaultPrice: Number(unitPrice) || 0,
-
-        discount: Number(item.discount ?? 0) || 0,
-
-        taxId: item.taxId || item.tax?.id || null,
-        taxRate: Number(taxRate) || 0,
-
-        /* Original item ID, for backends that update existing lines */
-        invoiceItemId: item.id || null,
-      };
-    });
-
-    setItems(mappedItems);
-  }, [isEdit, invoiceItems]);
+    setItems(invoiceItemsData.map(mapSavedItem));
+  }, [isEdit, invoiceItemsData]);
 
   /* ==========================================================================
      LOADING / ERROR
   ========================================================================== */
+
+  if (isEdit && (invoiceError || itemsError)) {
+    return (
+      <div className="page-container min-h-full">
+        <PageHeader
+          title={<span className="text-base font-bold">Edit Invoice</span>}
+          description="Unable to load this invoice"
+          actions={<BackButton onClick={() => navigate("/bills/invoices")} />}
+        />
+
+        <ModuleTabs tabs={MODULE_TABS.bills} />
+
+        <div className="p-6">
+          <div className="rounded-xl border border-line bg-surface p-4 text-sm font-semibold text-red-500">
+            Could not load this invoice.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (isEdit && (invoiceLoading || itemsLoading || !loaded)) {
     return (
@@ -414,26 +441,6 @@ export function InvoiceFormPage() {
     );
   }
 
-  if (isEdit && (invoiceError || itemsError || !invoice)) {
-    return (
-      <div className="page-container min-h-full">
-        <PageHeader
-          title={<span className="text-base font-bold">Edit Invoice</span>}
-          description="Unable to load this invoice"
-          actions={<BackButton onClick={() => navigate("/bills/invoices")} />}
-        />
-
-        <ModuleTabs tabs={MODULE_TABS.bills} />
-
-        <div className="p-6">
-          <div className="rounded-xl border border-line bg-surface p-4 text-sm font-semibold text-red-500">
-            Could not load this invoice.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   /* ==========================================================================
      SAVE / UPDATE
   ========================================================================== */
@@ -449,6 +456,17 @@ export function InvoiceFormPage() {
       return;
     }
 
+    const invalidItemIndex = items.findIndex(
+      (item) => !(item.productId || item.product?.id) && !item.variantId,
+    );
+
+    if (invalidItemIndex !== -1) {
+      toast.error(
+        `Item ${invalidItemIndex + 1} is missing its Product Master reference. Please remove it and add the item again.`,
+      );
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -458,6 +476,8 @@ export function InvoiceFormPage() {
        */
       const enrichedItems = await Promise.all(
         items.map(async (item) => {
+          const productId = item.productId || item.product?.id || null;
+
           const base = {
             quantity: Number(item.quantity) || 0,
             unitPrice: Number(item.unitPrice) || 0,
@@ -466,12 +486,12 @@ export function InvoiceFormPage() {
           };
 
           /* Existing row without enough info to resolve: keep its variant */
-          if (item.variantId && !item.productId) {
+          if (item.variantId && !productId) {
             return { variantId: item.variantId, ...base };
           }
 
           const variant = await variantResolver.resolveOrCreate({
-            productId: item.productId,
+            productId,
             defaultSku: item.productSku || item.sku,
             attributeValues: item.attributeValues || {},
           });
@@ -506,7 +526,9 @@ export function InvoiceFormPage() {
         patch: payload,
       });
 
-      toast.success(`Invoice ${updated?.number || invoice?.number || ""} updated`);
+      toast.success(
+        `Invoice ${updated?.number || invoice?.number || ""} updated`,
+      );
 
       navigate(`/bills/invoices/${invoiceId}`);
     } catch (error) {
@@ -530,7 +552,6 @@ export function InvoiceFormPage() {
             {isEdit ? "Edit Invoice" : "New Invoice"}
           </span>
         }
-      
         actions={
           <div className="flex items-center gap-2">
             <BackButton
@@ -565,21 +586,12 @@ export function InvoiceFormPage() {
           <div className="min-w-0 flex-1 divide-y divide-line">
             {/* DETAILS */}
             <section className="p-4 md:p-5">
-              <SectionHeading
-                title="Invoice Details"
-                />
+              <SectionHeading title="Invoice Details" />
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <Field
-                  label="Invoice No."
-                 
-                >
+                <Field label="Invoice No.">
                   <Input
-                    value={
-                      isEdit
-                        ? invoice?.number || ""
-                        : nextInvoiceNumber
-                    }
+                    value={isEdit ? invoice?.number || "" : nextInvoiceNumber}
                     readOnly
                     disabled
                   />
@@ -631,9 +643,7 @@ export function InvoiceFormPage() {
 
             {/* ITEMS */}
             <section className="p-4 md:p-5">
-              <SectionHeading
-                title="Items"
-               />
+              <SectionHeading title="Items" />
 
               <LineItemsEditor items={items} onChange={setItems} />
             </section>
@@ -673,7 +683,6 @@ export function InvoiceFormPage() {
                   <h3 className="text-sm font-semibold text-ink">
                     Invoice Summary
                   </h3>
-                 
                 </div>
               </div>
 
@@ -750,11 +759,6 @@ export function InvoiceFormPage() {
                     </div>
                   </div>
                 </div>
-              </div>
-
-              {/* Footer note */}
-              <div className="border-t border-line px-4 py-3">
-               
               </div>
             </div>
           </aside>
