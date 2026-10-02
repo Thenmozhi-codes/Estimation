@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Download, Pencil, Plus, X } from "lucide-react";
 
 import { PageHeader } from "@/components/common/PageHeader";
@@ -18,6 +19,7 @@ import {
   downloadPaymentReceipt,
   getInvoicePayments,
 } from "@/lib/utils/receipt";
+import { downloadDocumentPdf } from "@/lib/services/pdfService";
 
 import {
   useInvoices,
@@ -25,6 +27,7 @@ import {
   usePayments,
 } from "@/hooks/useDocuments";
 import { useParties } from "@/hooks/useParties";
+import { companyRepo, invoiceItemRepo } from "@/lib/api/repos";
 import { MODULE_TABS } from "@/app/moduleNav";
 
 export function InvoiceListPage() {
@@ -38,6 +41,12 @@ export function InvoiceListPage() {
   const { data: invoices = [], isLoading } = useInvoices();
   const { data: parties = [] } = useParties();
   const { data: allPayments = [] } = usePayments();
+
+  const { data: companies = [] } = useQuery({
+    queryKey: ["companies"],
+    queryFn: () => companyRepo.list(),
+  });
+  const company = companies[0];
 
   const deleteMut = useDeleteInvoice();
 
@@ -130,6 +139,27 @@ export function InvoiceListPage() {
   const onEdit = (invoice) => {
     if (!invoice?.id) return;
     navigate(`/bills/invoices/${invoice.id}/edit`);
+  };
+
+  /* PDF DOWNLOAD */
+  const onDownloadPdf = async (invoice) => {
+    try {
+      /* list rows don't carry line items, so fetch this invoice's items */
+      const items = await invoiceItemRepo.list({ invoiceId: invoice.id });
+
+      downloadDocumentPdf({
+        company,
+        party: partyById[invoice.partyId],
+        doc: invoice,
+        items,
+        kind: "invoice",
+      });
+
+      toast.success(`Invoice ${invoice.number} downloaded`);
+    } catch (error) {
+      console.error("Invoice PDF failed:", error);
+      toast.error("Could not create the PDF");
+    }
   };
 
   /* RECEIPT — one receipt per payment */
@@ -285,6 +315,28 @@ export function InvoiceListPage() {
                   </button>
                 );
               },
+            },
+
+            /* PDF DOWNLOAD — immediately after Receipts */
+            {
+              key: "__pdf",
+              header: "",
+              width: 80,
+              align: "right",
+              render: (row) => (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDownloadPdf(row);
+                  }}
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold text-emerald-600 transition hover:bg-emerald-500/10"
+                  title="Download invoice PDF"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>PDF</span>
+                </button>
+              ),
             },
 
             {

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Pencil, Plus } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Download, Pencil, Plus } from "lucide-react";
 
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
@@ -14,6 +15,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { formatMoney } from "@/lib/utils/money";
 import { fmtDate } from "@/lib/utils/date";
+import { downloadDocumentPdf } from "@/lib/services/pdfService";
 
 import {
   useQuotations,
@@ -21,6 +23,7 @@ import {
 } from "@/hooks/useDocuments";
 
 import { useParties } from "@/hooks/useParties";
+import { companyRepo, quotationItemRepo } from "@/lib/api/repos";
 import { MODULE_TABS } from "@/app/moduleNav";
 
 export function QuotationListPage() {
@@ -40,6 +43,12 @@ export function QuotationListPage() {
   const {
     data: parties = [],
   } = useParties();
+
+  const { data: companies = [] } = useQuery({
+    queryKey: ["companies"],
+    queryFn: () => companyRepo.list(),
+  });
+  const company = companies[0];
 
   const deleteMut =
     useDeleteQuotation();
@@ -151,6 +160,40 @@ export function QuotationListPage() {
     navigate(
       `/bills/quotations/${quotation.id}/edit`,
     );
+  };
+
+  /* ------------------------------------------------------------------------
+     PDF DOWNLOAD
+  ------------------------------------------------------------------------ */
+
+  const onDownloadPdf = async (quotation) => {
+    try {
+      /* list rows don't carry line items, so fetch this quotation's items */
+      const items = await quotationItemRepo.list({
+        quotationId: quotation.id,
+      });
+
+      downloadDocumentPdf({
+        company,
+        party: partyById[quotation.partyId],
+        doc: quotation,
+        items,
+        kind: "quotation",
+      });
+
+      toast.success(
+        `Quotation ${quotation.number} downloaded`,
+      );
+    } catch (error) {
+      console.error(
+        "Quotation PDF failed:",
+        error,
+      );
+
+      toast.error(
+        "Could not create the PDF",
+      );
+    }
   };
 
   /* ------------------------------------------------------------------------
@@ -321,6 +364,36 @@ export function QuotationListPage() {
                 <StatusBadge
                   status={row.status}
                 />
+              ),
+            },
+
+            /* --------------------------------------------------------------
+               PDF DOWNLOAD
+               Immediately after Status.
+            -------------------------------------------------------------- */
+
+            {
+              key: "__pdf",
+              header: "",
+              width: 80,
+              align: "right",
+
+              render: (row) => (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDownloadPdf(row);
+                  }}
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold text-emerald-600 transition hover:bg-emerald-500/10"
+                  title="Download quotation PDF"
+                >
+                  <Download className="h-3.5 w-3.5" />
+
+                  <span>
+                    PDF
+                  </span>
+                </button>
               ),
             },
 
