@@ -401,7 +401,7 @@ export function ProductPicker({
   const [selectedVariant, setSelectedVariant] = useState(null);
   const [query, setQuery] = useState("");
 
-  /* MEASUREMENT STATE (these were missing before) */
+  /* MEASUREMENT STATE */
   const [length, setLength] = useState("");
   const [width, setWidth] = useState("");
   const [height, setHeight] = useState("");
@@ -705,6 +705,56 @@ export function ProductPicker({
     });
   }, [selectedProduct, brandSpecifications, productVariants]);
 
+  /*
+   * EDIT MODE — select the specification of the line being edited.
+   *
+   * The specification list above is built AFTER the brand is chosen, and for
+   * brands without Brand Master specifications it comes from the product's
+   * variants. The prefill effect further up only looks at Brand Master, so for
+   * those brands nothing was selected (no tick, Total "—"). This matches
+   * against the FINAL list: by label first, then by the saved variant.
+   *
+   * NOTE: this is a hook, so it must stay above the `if (!open) return null`.
+   */
+  useEffect(() => {
+    if (!open || !initialItem) return;
+    if (selectedSpecification || !specifications.length) return;
+    if (!selectedBrand) return;
+
+    /* only for the brand the line was saved with, never after the user
+       switches to another brand */
+    const sameBrand =
+      sameId(selectedBrand.id, initialItem.brandId) ||
+      normalize(selectedBrand.name) === normalize(initialItem.brandName);
+
+    if (!sameBrand) return;
+
+    const wanted = normalize(initialItem.selectedSpecification);
+
+    const byLabel = wanted
+      ? specifications.find((item) => normalize(item.label) === wanted) ||
+        specifications.find((item) => {
+          const label = normalize(item.label);
+          return label && (label.includes(wanted) || wanted.includes(label));
+        })
+      : null;
+
+    const byVariant = initialItem.variantId
+      ? specifications.find(
+          (item) =>
+            sameId(item.matchedVariant?.id, initialItem.variantId) ||
+            sameId(item.id, initialItem.variantId),
+        )
+      : null;
+
+    const match = byLabel || byVariant || null;
+
+    if (match) {
+      setSelectedSpecification(match);
+      setSelectedVariant(match.matchedVariant || null);
+    }
+  }, [open, initialItem, selectedBrand, specifications, selectedSpecification]);
+
   /* CLOSED */
   if (!open) return null;
 
@@ -728,14 +778,9 @@ export function ProductPicker({
       {};
 
     /*
-     * CHANGED: the selected Specification is now included in the attribute
-     * values.
-     *
-     * Before, the chosen specification (e.g. "18mm") lived only in
-     * selectedSpecification, which is NOT part of the save payload. The
-     * variant was created from attributeValues alone, so the specification
-     * was never persisted and attributesSnapshot came back without it when
-     * the quotation was opened for Edit.
+     * The selected Specification is included in the attribute values, so it is
+     * persisted with the variant and comes back in attributesSnapshot when the
+     * document is opened for Edit.
      */
     const attributeValuesPayload = {
       ...(variant?.attributes || {}),

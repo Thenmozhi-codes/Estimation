@@ -162,6 +162,30 @@ function lineMeta(item) {
   };
 }
 
+/* Last resort when the category is missing: guess the type from the SKU prefix */
+function typeFromSku(sku) {
+  const text = String(sku || "");
+
+  if (/^ply/i.test(text)) return "Plywood";
+  if (/^lam/i.test(text)) return "Laminate";
+  if (/^(eb|edg)/i.test(text)) return "Edge Band";
+  if (/^wpc/i.test(text)) return "WPC";
+  if (/^(fev|adh)/i.test(text)) return "Fevicol";
+
+  return "";
+}
+
+/* Billing unit the Product Picker uses for each product type */
+function unitForType(type) {
+  const key = String(type || "").toLowerCase().replace(/[^a-z]/g, "");
+
+  if (key === "plywood" || key === "laminate") return "sq.ft";
+  if (key === "edgeband") return "rft";
+  if (key === "wpc") return "cu.ft";
+
+  return "pcs";
+}
+
 /* Product type shown in the row, taken from the brand's category */
 function typeLabelFromCategory(name) {
   const text = String(name || "").trim();
@@ -208,8 +232,32 @@ function mapSavedItem(item, index) {
   });
 
   const unitPrice = Number(item.unitPrice ?? item.rate ?? item.price ?? 0) || 0;
-  const specification = item.selectedSpecification || attrMap.Specification || "";
+  /* Specification: saved value, else the "Specification" attribute, else the
+     remaining attribute values joined the same way the picker labels them */
+  const otherValues = (item.attributesSnapshot || [])
+    .filter(
+      (attr) =>
+        attr?.value &&
+        !["brand", "unit", "specification"].includes(
+          String(attr.attributeName || "").toLowerCase(),
+        ),
+    )
+    .map((attr) => attr.value)
+    .join(" • ");
+
+  const specification =
+    item.selectedSpecification ||
+    item.specificationSnapshot ||
+    attrMap.Specification ||
+    otherValues ||
+    "";
   const sku = item.sku || item.skuSnapshot || variant?.sku || product?.sku || "";
+
+  const productType =
+    item.productType ||
+    item.productTypeSnapshot ||
+    typeLabelFromCategory(category?.name) ||
+    typeFromSku(sku);
 
   return {
     tempId: item.tempId || item.id || `existing-quotation-item-${index}`,
@@ -221,8 +269,7 @@ function mapSavedItem(item, index) {
     brandId: item.brandId || brand?.id || product?.brandId || null,
     brandName: item.brandName || brand?.name || item.productNameSnapshot || "",
     productName: item.productName || item.productNameSnapshot || product?.name || "",
-    productType:
-      item.productType || typeLabelFromCategory(category?.name) || "",
+    productType,
 
     variantId: item.variantId || variant?.id || null,
     variant,
@@ -235,7 +282,7 @@ function mapSavedItem(item, index) {
       : [],
     selectedSpecification: specification,
 
-    unit: item.unit || attrMap.Unit || "",
+    unit: item.unit || item.unitSnapshot || attrMap.Unit || unitForType(productType),
 
     length: item.length ?? "",
     width: item.width ?? "",
