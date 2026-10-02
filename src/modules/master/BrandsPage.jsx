@@ -196,8 +196,7 @@ export function BrandsPage() {
 
       <PageHeader
         title="Brands"
-        description="Manage brand names and the Product Type they belong to."
-        actions={
+       actions={
           <Button
             size="sm"
             onClick={openNewBrand}
@@ -260,9 +259,7 @@ export function BrandsPage() {
               Brand Master
             </div>
 
-            <div className="mt-0.5 text-2xs text-muted">
-              Manage brands and the Product Type they belong to.
-            </div>
+            
           </div>
 
           {/* Right — Search */}

@@ -195,8 +195,7 @@ export function CustomersPage() {
 
       <PageHeader
         title="Customers"
-        description="Manage your customers used across quotations and invoices."
-        actions={
+       actions={
           <Button
             size="sm"
             onClick={openCreate}
@@ -262,9 +261,7 @@ export function CustomersPage() {
               Customer Master
             </div>
 
-            <div className="mt-0.5 text-2xs text-muted">
-              Manage customer details used across your business.
-            </div>
+           
           </div>
 
           {/* Right — Search */}

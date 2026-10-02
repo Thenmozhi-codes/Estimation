@@ -530,7 +530,6 @@ export function AttributesPage() {
     <div className="page-container min-h-full">
       <PageHeader
         title="Specifications"
-        description="Manage specifications and the allowed values used for each Product Type."
         actions={
           <Button
             size="sm"
@@ -553,10 +552,7 @@ export function AttributesPage() {
                   Product Specifications
                 </h2>
 
-                <p className="mt-0.5 text-[10px] text-muted">
-                  Define the specification and allowed values that users
-                  can select while creating products.
-                </p>
+               
               </div>
 
               <div className="sm:w-[280px]">
@@ -885,7 +881,6 @@ function NewAttributeSheet({
       open={open}
       onClose={handleClose}
       title="New Specification"
-      subtitle="Create a specification for a Product Type and define its allowed values."
       footer={
         <>
           <Button
@@ -948,10 +943,7 @@ function NewAttributeSheet({
               Specification
             </div>
 
-            <p className="mt-0.5 text-[10px] leading-4 text-muted">
-              The specification for this Product
-              Type is configured automatically.
-            </p>
+           
           </div>
 
           <div className="rounded-xl border border-line bg-bg/30 p-3">

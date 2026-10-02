@@ -23,6 +23,40 @@ const shortDate = (d) =>
       })
     : "—";
 
+/*
+ * Draws the company logo (a data URL saved in Settings > Company) inside a
+ * maxW x maxH box, keeping its proportions. Returns the space it used, so the
+ * company text can be moved to the right of it. A missing or broken logo is
+ * skipped and never stops the PDF from being created.
+ */
+function drawLogo(pdf, dataUrl, x, y, maxH = 52, maxW = 140) {
+  const none = { width: 0, bottom: 0 };
+
+  if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/")) {
+    return none;
+  }
+
+  try {
+    const props = pdf.getImageProperties(dataUrl);
+    const ratio = props.width / props.height;
+
+    let h = maxH;
+    let w = h * ratio;
+
+    if (w > maxW) {
+      w = maxW;
+      h = w / ratio;
+    }
+
+    pdf.addImage(dataUrl, props.fileType, x, y, w, h);
+
+    return { width: w, bottom: y + h };
+  } catch (error) {
+    console.warn("Logo could not be added to the PDF:", error);
+    return none;
+  }
+}
+
 /* ───────── Quotation-only layout (invoice / purchase untouched) ───────── */
 
 const qMoney = money;
@@ -78,25 +112,29 @@ function generateQuotationPdf({ company, party, doc, items }) {
   const setText = (rgb) => pdf.setTextColor(rgb[0], rgb[1], rgb[2]);
 
   /* ───── Header ───── */
+  const logo = drawLogo(pdf, company?.logo, mx, 34);
+  const cx = mx + (logo.width ? logo.width + 12 : 0);
+  const textW = 300 - (logo.width ? logo.width + 12 : 0);
+
   let y = 46;
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(17);
   setText(DARK);
-  const compLines = pdf.splitTextToSize(company?.name || "Company", 300);
-  pdf.text(compLines, mx, y);
+  const compLines = pdf.splitTextToSize(company?.name || "Company", textW);
+  pdf.text(compLines, cx, y);
   y += compLines.length * 17 - 3;
 
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(9);
   setText(MUTED);
   const compInfo = [];
-  if (company?.address) compInfo.push(...pdf.splitTextToSize(company.address, 300));
+  if (company?.address) compInfo.push(...pdf.splitTextToSize(company.address, textW));
   if (company?.gstin) compInfo.push(`GSTIN: ${company.gstin}`);
   const cc = [company?.phone, company?.email].filter(Boolean).join("  ·  ");
   if (cc) compInfo.push(cc);
   compInfo.forEach((l) => {
     y += 12;
-    pdf.text(l, mx, y);
+    pdf.text(l, cx, y);
   });
 
   /* Right block */
@@ -118,7 +156,7 @@ function generateQuotationPdf({ company, party, doc, items }) {
     pdf.text(`Valid Until: ${shortDate(doc.validUntil)}`, pageW - mx, ry, { align: "right" });
   }
 
-  y = Math.max(y, ry) + 14;
+  y = Math.max(y, ry, logo.bottom) + 14;
   pdf.setDrawColor(...AMBER);
   pdf.setLineWidth(1.2);
   pdf.line(mx, y, pageW - mx, y);
@@ -352,24 +390,34 @@ export function generateDocumentPdf({ company, party, doc, items, kind }) {
   const pdf = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = pdf.internal.pageSize.getWidth();
   const mx = 40;           // margin
+
+  const logo = drawLogo(pdf, company?.logo, mx, 34);
+  const cx = mx + (logo.width ? logo.width + 12 : 0);
+  const textW = 300 - (logo.width ? logo.width + 12 : 0);
+
   let y = 44;
 
   /* ───── Header: company info (left) ───── */
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(16);
   pdf.setTextColor(120, 53, 15);
-  pdf.text(company?.name || "Company", mx, y);
+  pdf.text(company?.name || "Company", cx, y);
 
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(9);
   pdf.setTextColor(100, 100, 100);
   y += 14;
-  if (company?.address) pdf.text(company.address, mx, y), (y += 11);
-  if (company?.gstin)   pdf.text(`GSTIN: ${company.gstin}`, mx, y), (y += 11);
+  if (company?.address) {
+    pdf.splitTextToSize(company.address, textW).forEach((line) => {
+      pdf.text(line, cx, y);
+      y += 11;
+    });
+  }
+  if (company?.gstin)   pdf.text(`GSTIN: ${company.gstin}`, cx, y), (y += 11);
   if (company?.phone || company?.email) {
     pdf.text(
       [company?.phone, company?.email].filter(Boolean).join("  ·  "),
-      mx,
+      cx,
       y,
     );
     y += 11;
@@ -398,7 +446,7 @@ export function generateDocumentPdf({ company, party, doc, items, kind }) {
   if (doc.validUntil) pdf.text(`Valid Until: ${shortDate(doc.validUntil)}`, pageW - mx, 88, { align: "right" });
   if (doc.dueDate)    pdf.text(`Due: ${shortDate(doc.dueDate)}`, pageW - mx, 88, { align: "right" });
 
-  y = Math.max(y, 100) + 6;
+  y = Math.max(y, 100, logo.bottom) + 6;
 
   /* ───── Divider ───── */
   pdf.setDrawColor(180, 83, 9);
