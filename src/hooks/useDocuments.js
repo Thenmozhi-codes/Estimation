@@ -92,19 +92,14 @@ export const useCreateInvoice = () => {
 };
 
 /*
- * Prefers invoiceService.update (full edit: items replaced, totals + stock
- * recalculated). If the service does not have an update() yet, it falls back
- * to invoiceRepo.update, the same path quotations use, so saving works.
- *
- * TODO: add update() to invoiceService so stock and totals are recalculated.
+ * Goes through invoiceService.update:
+ *   - { items, ... }  -> full edit (items replaced, totals + stock recalculated)
+ *   - { amountPaid, status } -> header-only (recording a payment)
  */
 export const useUpdateInvoice = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, patch }) =>
-      typeof invoiceService.update === "function"
-        ? invoiceService.update(id, patch)
-        : invoiceRepo.update(id, patch),
+    mutationFn: ({ id, patch }) => invoiceService.update(id, patch),
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: qk.invoices });
       qc.invalidateQueries({ queryKey: ["invoice", v.id] });
@@ -146,6 +141,19 @@ export const useCreatePayment = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.payments });
       qc.invalidateQueries({ queryKey: qk.invoices });
+    },
+  });
+};
+
+/* Saves one payment (with its own receipt no) and updates the invoice */
+export const useRecordPayment = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payment }) => invoiceService.recordPayment(id, payment),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: qk.payments });
+      qc.invalidateQueries({ queryKey: qk.invoices });
+      qc.invalidateQueries({ queryKey: ["invoice", v.id] });
     },
   });
 };

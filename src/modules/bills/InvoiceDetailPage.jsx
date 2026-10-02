@@ -21,12 +21,16 @@ import { toast } from "@/lib/toast";
 import {
   useInvoice,
   useInvoiceItems,
-  useCreatePayment,
-  useUpdateInvoice,
+  usePayments,
+  useRecordPayment,
 } from "@/hooks/useDocuments";
 import { useParty } from "@/hooks/useParties";
 import { companyRepo } from "@/lib/api/repos";
 import { downloadDocumentPdf } from "@/lib/services/pdfService";
+import {
+  downloadPaymentReceipt,
+  getInvoicePayments,
+} from "@/lib/utils/receipt";
 import { MODULE_TABS } from "@/app/moduleNav";
 
 export function InvoiceDetailPage() {
@@ -44,8 +48,8 @@ export function InvoiceDetailPage() {
   });
   const company = companies[0];
 
-  const createPayment = useCreatePayment();
-  const updateInvoice = useUpdateInvoice();
+  const recordPayment = useRecordPayment();
+  const { data: allPayments = [] } = usePayments();
 
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("cash");
@@ -87,31 +91,46 @@ export function InvoiceDetailPage() {
     if (!amount || amount <= 0) return toast.error("Enter amount");
 
     try {
-      await createPayment.mutateAsync({
-        partyId: inv.partyId,
-        direction: "in",
-        amount,
-        method: payMethod,
-        reference: payRef,
-        date: payDate,
-        notes: payNotes,
-      });
-
-      const newPaid = (inv.amountPaid || 0) + amount;
-      let newStatus = inv.status;
-      if (newPaid >= inv.grandTotal - 0.01) newStatus = "paid";
-      else if (newPaid > 0) newStatus = "partially_paid";
-
-      await updateInvoice.mutateAsync({
+      /*
+       * invoiceService.recordPayment saves the payment with the invoice id and
+       * its own receipt number, then updates amountPaid and the status.
+       */
+      const { payment } = await recordPayment.mutateAsync({
         id,
-        patch: { amountPaid: newPaid, status: newStatus },
+        payment: {
+          amount,
+          method: payMethod,
+          reference: payRef,
+          date: payDate,
+          notes: payNotes,
+        },
       });
 
-      toast.success("Payment recorded");
+      toast.success(`Payment recorded · ${payment?.receiptNo || ""}`);
       setPayOpen(false);
     } catch (e) {
       console.error(e);
       toast.error(e?.message || "Failed");
+    }
+  };
+
+  /* every payment of THIS invoice, each with its own receipt number */
+  const invoicePayments = getInvoicePayments(
+    inv,
+    allPayments.filter((payment) => payment.invoiceId === id),
+  );
+
+  const handleReceipt = (payment) => {
+    try {
+      downloadPaymentReceipt({
+        invoice: inv,
+        customerName: party?.name || "",
+        payment,
+        allPayments: invoicePayments,
+      });
+    } catch (e) {
+      console.error(e);
+      toast.error("Could not create the receipt");
     }
   };
 
@@ -194,6 +213,53 @@ export function InvoiceDetailPage() {
           </CardBody>
         </Card>
 
+        <Card>
+          <CardHeader title={`Payments (${invoicePayments.length})`} />
+          <CardBody>
+            {invoicePayments.length === 0 ? (
+              <div className="text-sm text-muted">No payments recorded yet.</div>
+            ) : (
+              <div className="divide-y divide-line">
+                {invoicePayments.map((payment) => (
+                  <div
+                    key={payment.receiptNo}
+                    className="flex flex-wrap items-center justify-between gap-3 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold text-ink">
+                        {payment.receiptNo}
+                      </div>
+                      <div className="text-xs text-muted">
+                        {fmtDate(payment.date)} · {payment.mode}
+                        {payment.reference ? ` · ${payment.reference}` : ""}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                          {formatMoney(payment.amount)}
+                        </div>
+                        <div className="text-[11px] text-muted">
+                          Balance {formatMoney(payment.balanceAfter)}
+                        </div>
+                      </div>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleReceipt(payment)}
+                      >
+                        <Download className="h-4 w-4" /> Receipt
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardBody>
+        </Card>
+
         <Card className="overflow-hidden">
           <CardHeader title={`Items (${items.length})`} />
           <DataTable
@@ -248,7 +314,7 @@ export function InvoiceDetailPage() {
             <Button variant="ghost" onClick={() => setPayOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handlePayment} disabled={createPayment.isPending}>
+            <Button onClick={handlePayment} disabled={recordPayment.isPending}>
               Record Payment
             </Button>
           </>

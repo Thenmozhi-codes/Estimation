@@ -32,6 +32,7 @@ import {
 import { useParties } from "@/hooks/useParties";
 
 import { variantResolver } from "@/lib/api/repos";
+import { mockStore } from "@/lib/store/mockStore";
 import { getNextDocumentNumber } from "@/lib/utils/docNumber";
 import { MODULE_TABS } from "@/app/moduleNav";
 
@@ -52,9 +53,7 @@ function todayLocal() {
 function normalizeDate(value) {
   if (!value) return "";
 
-  if (typeof value === "string") {
-    return value.slice(0, 10);
-  }
+  if (typeof value === "string") return value.slice(0, 10);
 
   try {
     return new Date(value).toISOString().slice(0, 10);
@@ -87,21 +86,13 @@ function getQuantity(item) {
 function getUnitPrice(item) {
   return (
     Number(
-      item?.unitPrice ??
-        item?.price ??
-        item?.sellingPrice ??
-        item?.rate ??
-        0,
+      item?.unitPrice ?? item?.price ?? item?.sellingPrice ?? item?.rate ?? 0,
     ) || 0
   );
 }
 
 function getLineDiscount(item) {
-  return Number(
-    item?.discount ??
-      item?.discountAmount ??
-      0,
-  ) || 0;
+  return Number(item?.discount ?? item?.discountAmount ?? 0) || 0;
 }
 
 function getLineTax(item) {
@@ -127,399 +118,121 @@ function getLineTax(item) {
 
   const taxableValue = Math.max(
     0,
-    getQuantity(item) * getUnitPrice(item) -
-      getLineDiscount(item),
+    getQuantity(item) * getUnitPrice(item) - getLineDiscount(item),
   );
 
   return taxableValue * (taxRate / 100);
 }
 
-/* ==========================================================================
-   ATTRIBUTE / SPECIFICATION HELPERS
-========================================================================== */
+/* Picker fields that must survive a save, so Edit can rebuild the same row */
+function lineMeta(item) {
+  return {
+    productType: item.productType || "",
+    brandId: item.brandId || null,
+    brandName: item.brandName || "",
+    selectedSpecification: item.selectedSpecification || "",
+    unit: item.unit || "",
+    length: item.length ?? "",
+    width: item.width ?? "",
+    height: item.height ?? "",
+    pcs: item.pcs ?? 1,
+  };
+}
 
-function attributesToValues(list) {
-  if (!Array.isArray(list)) return {};
-
-  return list.reduce((acc, attr, index) => {
-    if (
-      !attr ||
-      attr.value === undefined ||
-      attr.value === null
-    ) {
-      return acc;
-    }
-
-    const key =
-      attr.key ||
-      attr.code ||
-      attr.attributeId ||
-      attr.id ||
-      attr.name ||
-      attr.label ||
-      `attr${index}`;
-
-    acc[key] = attr.value;
-
-    return acc;
-  }, {});
+/* Product type shown in the row, taken from the brand's category */
+function typeLabelFromCategory(name) {
+  const text = String(name || "").trim();
+  return /adhesive|fevicol/i.test(text) ? "Fevicol" : text;
 }
 
 /*
- * Recover Specification from attributesSnapshot.
+ * Saved line -> the SAME row shape the Product Picker creates on "Add Item".
  *
- * Saved invoice items can contain:
- *
- * attributesSnapshot: [
- *   {
- *     key: "Thickness",
- *     value: "18mm"
- *   }
- * ]
- *
- * or:
- *
- * attributesSnapshot: [
- *   {
- *     name: "Specification",
- *     value: "18mm"
- *   }
- * ]
- *
- * We support both without changing the backend structure.
- */
-function getSpecificationFromSnapshot(attributesSnapshot) {
-  if (!Array.isArray(attributesSnapshot)) {
-    return "";
-  }
-
-  /* First look for an explicitly named Specification */
-  const specificationAttribute =
-    attributesSnapshot.find((attr) => {
-      if (!attr) return false;
-
-      const key = String(
-        attr.key ??
-          attr.name ??
-          attr.label ??
-          attr.code ??
-          "",
-      )
-        .trim()
-        .toLowerCase();
-
-      return (
-        key === "specification" ||
-        key === "specifications"
-      );
-    });
-
-  if (
-    specificationAttribute?.value !== undefined &&
-    specificationAttribute?.value !== null
-  ) {
-    return String(
-      specificationAttribute.value,
-    );
-  }
-
-  /*
-   * Product specifications in the current master can be stored under
-   * names such as Thickness, Size, Pack Size, etc.
-   *
-   * If there isn't an explicit "Specification" key,
-   * use the first meaningful snapshot value.
-   */
-  const firstValue =
-    attributesSnapshot.find(
-      (attr) =>
-        attr &&
-        attr.value !== undefined &&
-        attr.value !== null &&
-        String(attr.value).trim() !== "",
-    );
-
-  return firstValue?.value != null
-    ? String(firstValue.value)
-    : "";
-}
-
-/* ==========================================================================
-   EXISTING INVOICE ITEM → LINE ITEMS EDITOR ROW
-========================================================================== */
-
-/*
- * Saved invoice items can keep their original display information inside
- * snapshot fields:
- *
- * productNameSnapshot
- * skuSnapshot
- * attributesSnapshot
- *
- * LineItemsEditor expects:
- *
- * productName
- * sku
- * attributeValues
- * selectedSpecification
- *
- * This mapper converts the persisted record into the editor structure.
+ * Newer lines carry the picker fields directly (productType, brandName,
+ * selectedSpecification, unit, L/W/H, pcs). Older lines only have the
+ * snapshot fields, so those are rebuilt from attributesSnapshot and the
+ * product / brand master data.
  */
 function mapSavedItem(item, index) {
+  const db = mockStore.get() || {};
+
   const variant =
-    item?.variant ||
-    item?.matchedVariant ||
+    item.variant ||
+    item.matchedVariant ||
+    (db.variants || []).find((v) => v.id === item.variantId) ||
     null;
 
   const product =
-    item?.product ||
-    variant?.product ||
+    item.product ||
+    (db.products || []).find((p) => p.id === (item.productId || variant?.productId)) ||
     null;
 
-  /* ---------------------------------------------------------------------- */
-  /* IDS                                                                     */
-  /* ---------------------------------------------------------------------- */
-
-  const productId =
-    item?.productId ||
-    product?.id ||
-    variant?.productId ||
+  const brand =
+    (db.brands || []).find((b) => b.id === (item.brandId || product?.brandId)) ||
+    (db.brands || []).find((b) => b.name === item.productNameSnapshot) ||
     null;
 
-  const variantId =
-    item?.variantId ||
-    variant?.id ||
-    null;
+  const category =
+    (db.categories || []).find(
+      (c) => c.id === (brand?.categoryId || product?.categoryId),
+    ) || null;
 
-  /* ---------------------------------------------------------------------- */
-  /* PRODUCT NAME                                                            */
-  /* ---------------------------------------------------------------------- */
+  /* attributesSnapshot -> { Specification: "18mm", Unit: "sheet", ... } */
+  const attrMap = {};
 
-  const productName =
-    item?.productName ||
-    item?.productNameSnapshot ||
-    product?.name ||
-    item?.name ||
-    variant?.productName ||
-    "";
+  (item.attributesSnapshot || []).forEach((attr) => {
+    if (attr?.attributeName) attrMap[attr.attributeName] = attr.value;
+  });
 
-  /* ---------------------------------------------------------------------- */
-  /* BRAND                                                                   */
-  /* ---------------------------------------------------------------------- */
-
-  const brandName =
-    item?.brandName ||
-    item?.brandNameSnapshot ||
-    product?.brandName ||
-    product?.brand?.name ||
-    item?.brand?.name ||
-    "";
-
-  /* ---------------------------------------------------------------------- */
-  /* PRODUCT TYPE                                                            */
-  /* ---------------------------------------------------------------------- */
-
-  const productType =
-    item?.productType ||
-    item?.productTypeSnapshot ||
-    product?.productType ||
-    product?.category?.name ||
-    item?.category?.name ||
-    "";
-
-  /* ---------------------------------------------------------------------- */
-  /* SKU                                                                     */
-  /* ---------------------------------------------------------------------- */
-
-  const sku =
-    item?.sku ||
-    item?.skuSnapshot ||
-    item?.productSku ||
-    variant?.sku ||
-    product?.sku ||
-    "";
-
-  /* ---------------------------------------------------------------------- */
-  /* SNAPSHOT ATTRIBUTES                                                     */
-  /* ---------------------------------------------------------------------- */
-
-  const attributesSnapshot = Array.isArray(
-    item?.attributesSnapshot,
-  )
-    ? item.attributesSnapshot
-    : [];
-
-  /*
-   * Convert snapshot attributes into the editor's attributeValues object.
-   */
-  const snapshotAttributeValues =
-    attributesToValues(attributesSnapshot);
-
-  const attributeValues =
-    item?.attributeValues &&
-    typeof item.attributeValues === "object"
-      ? item.attributeValues
-      : variant?.attributeValues &&
-          typeof variant.attributeValues === "object"
-        ? variant.attributeValues
-        : snapshotAttributeValues;
-
-  /* ---------------------------------------------------------------------- */
-  /* SPECIFICATIONS                                                          */
-  /* ---------------------------------------------------------------------- */
-
-  const specifications = Array.isArray(
-    item?.specifications,
-  )
-    ? item.specifications
-    : Array.isArray(
-          variant?.specifications,
-        )
-      ? variant.specifications
-      : [];
-
-  /*
-   * IMPORTANT FIX:
-   *
-   * Existing invoice records may not have selectedSpecification directly.
-   * The specification can be inside attributesSnapshot.
-   */
-  const snapshotSpecification =
-    getSpecificationFromSnapshot(
-      attributesSnapshot,
-    );
-
-  const selectedSpecification =
-    item?.selectedSpecification ||
-    item?.specificationSnapshot ||
-    item?.specification ||
-    snapshotSpecification ||
-    Object.values(
-      attributeValues || {},
-    )[0] ||
-    "";
-
-  /* ---------------------------------------------------------------------- */
-  /* PRICE                                                                   */
-  /* ---------------------------------------------------------------------- */
-
-  const unitPrice =
-    Number(
-      item?.unitPrice ??
-        item?.rate ??
-        item?.price ??
-        0,
-    ) || 0;
-
-  /* ---------------------------------------------------------------------- */
-  /* FINAL LINE ITEM                                                         */
-  /* ---------------------------------------------------------------------- */
+  const unitPrice = Number(item.unitPrice ?? item.rate ?? item.price ?? 0) || 0;
+  const specification = item.selectedSpecification || attrMap.Specification || "";
+  const sku = item.sku || item.skuSnapshot || variant?.sku || product?.sku || "";
 
   return {
-    tempId:
-      item?.tempId ||
-      item?.id ||
-      `existing-invoice-item-${index}`,
+    tempId: item.tempId || item.id || `existing-invoice-item-${index}`,
 
-    productId,
+    productId: item.productId || product?.id || variant?.productId || null,
+    productSku: item.productSku || sku,
+    categoryId: item.categoryId || brand?.categoryId || product?.categoryId || null,
 
-    productSku:
-      item?.productSku ||
-      sku,
+    brandId: item.brandId || brand?.id || product?.brandId || null,
+    brandName: item.brandName || brand?.name || item.productNameSnapshot || "",
+    productName: item.productName || item.productNameSnapshot || product?.name || "",
+    productType:
+      item.productType || typeLabelFromCategory(category?.name) || "",
 
-    productName,
-
-    productType,
-
-    /* Snapshot fields */
-    productNameSnapshot:
-      item?.productNameSnapshot ||
-      productName,
-
-    skuSnapshot:
-      item?.skuSnapshot ||
-      sku,
-
-    attributesSnapshot,
-
-    /* Brand */
-    brandId:
-      item?.brandId ||
-      product?.brandId ||
-      product?.brand?.id ||
-      null,
-
-    brandName,
-
-    /* Variant */
-    variantId,
-
+    variantId: item.variantId || variant?.id || null,
     variant,
-
-    matchedVariant:
-      item?.matchedVariant ||
-      variant ||
-      null,
-
+    matchedVariant: variant,
     sku,
 
-    /* Attributes / Specification */
-    attributeValues,
+    attributeValues: { ...attrMap },
+    specifications: specification
+      ? [{ specification, price: unitPrice }]
+      : [],
+    selectedSpecification: specification,
 
-    specifications,
+    unit: item.unit || attrMap.Unit || "",
 
-    selectedSpecification,
+    length: item.length ?? "",
+    width: item.width ?? "",
+    height: item.height ?? "",
+    pcs: item.pcs ?? 1,
 
-    /* Unit */
-    unit:
-      item?.unit ||
-      item?.unitSnapshot ||
-      variant?.unit ||
-      product?.unit ||
-      "",
-
-    /* Dimensions */
-    length: item?.length ?? "",
-    width: item?.width ?? "",
-    height: item?.height ?? "",
-    pcs: item?.pcs ?? 1,
-
-    /* Quantity */
-    quantity:
-      Number(
-        item?.quantity ??
-          item?.qty ??
-          1,
-      ) || 1,
-
-    /* Price */
+    quantity: Number(item.quantity ?? item.qty ?? 1) || 1,
     unitPrice,
-
     rate: unitPrice,
-
     defaultPrice: unitPrice,
 
-    /* Discount */
-    discount:
-      Number(item?.discount ?? 0) || 0,
+    discount: Number(item.discount ?? 0) || 0,
 
-    /* Tax */
-    taxId:
-      item?.taxId ||
-      item?.tax?.id ||
-      null,
+    taxId: item.taxId || item.tax?.id || null,
+    taxRate: Number(item.taxRate ?? item.tax?.rate ?? 0) || 0,
 
-    taxRate:
-      Number(
-        item?.taxRate ??
-          item?.tax?.rate ??
-          0,
-      ) || 0,
+    invoiceItemId: item.id || null,
 
-    /* Existing invoice item ID */
-    invoiceItemId:
-      item?.id ||
-      null,
+    /* an UNCHANGED saved line keeps its variant when saved again */
+    savedKey: `${item.productId || product?.id || variant?.productId || ""}|${specification}`,
   };
 }
 
@@ -527,57 +240,29 @@ function mapSavedItem(item, index) {
    SMALL UI PIECES
 ========================================================================== */
 
-function SectionHeading({
-  title,
-  subtitle,
-}) {
+function SectionHeading({ title, subtitle }) {
   return (
     <div className="mb-3">
-      <h2 className="text-sm font-bold text-ink">
-        {title}
-      </h2>
-
-      {subtitle && (
-        <p className="mt-0.5 text-xs text-muted">
-          {subtitle}
-        </p>
-      )}
+      <h2 className="text-sm font-bold text-ink">{title}</h2>
+      {subtitle && <p className="mt-0.5 text-xs text-muted">{subtitle}</p>}
     </div>
   );
 }
 
-function SummaryRow({
-  label,
-  children,
-}) {
+function SummaryRow({ label, children }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-sm text-muted">
-        {label}
-      </span>
-
+      <span className="text-sm text-muted">{label}</span>
       {children}
     </div>
   );
 }
 
-function BackButton({
-  onClick,
-  disabled,
-  label = "Back",
-}) {
+function BackButton({ onClick, disabled, label = "Back" }) {
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      onClick={onClick}
-      disabled={disabled}
-    >
+    <Button variant="ghost" size="sm" onClick={onClick} disabled={disabled}>
       <ArrowLeft className="h-4 w-4" />
-
-      <span className="hidden sm:inline">
-        {label}
-      </span>
+      <span className="hidden sm:inline">{label}</span>
     </Button>
   );
 }
@@ -590,33 +275,25 @@ export function InvoiceFormPage() {
   const navigate = useNavigate();
   const params = useParams();
 
-  const invoiceId =
-    getInvoiceIdFromParams(params);
-
+  const invoiceId = getInvoiceIdFromParams(params);
   const isEdit = Boolean(invoiceId);
 
-  /* ------------------------------------------------------------------------ */
-  /* MASTER DATA                                                              */
-  /* ------------------------------------------------------------------------ */
+  /* ------------------------------------------------------------------------
+     MASTER DATA
+  ------------------------------------------------------------------------ */
 
-  const { data: parties = [] } =
-    useParties();
+  const { data: parties = [] } = useParties();
+  const { data: allInvoices = [] } = useInvoices();
 
-  const { data: allInvoices = [] } =
-    useInvoices();
-
+  /* Preview of the number this invoice will get (confirmed on save) */
   const nextInvoiceNumber = useMemo(
-    () =>
-      getNextDocumentNumber(
-        allInvoices,
-        "INV-",
-      ),
+    () => getNextDocumentNumber(allInvoices, "INV-"),
     [allInvoices],
   );
 
-  /* ------------------------------------------------------------------------ */
-  /* INVOICE DATA                                                             */
-  /* ------------------------------------------------------------------------ */
+  /* ------------------------------------------------------------------------
+     INVOICE DATA
+  ------------------------------------------------------------------------ */
 
   const {
     data: invoice,
@@ -625,10 +302,10 @@ export function InvoiceFormPage() {
   } = useInvoice(invoiceId);
 
   /*
-   * Do not use = [] here.
-   *
-   * A new empty array on every render can cause the edit-mode effect to
-   * trigger repeatedly while the query is loading.
+   * IMPORTANT: no `= []` default here.
+   * A default creates a NEW empty array on every render while the query is
+   * loading, which re-triggers the effect below on every render and causes
+   * an endless render loop in edit mode.
    */
   const {
     data: invoiceItemsData,
@@ -636,60 +313,40 @@ export function InvoiceFormPage() {
     isError: itemsError,
   } = useInvoiceItems(invoiceId);
 
-  /* ------------------------------------------------------------------------ */
-  /* MUTATIONS                                                                */
-  /* ------------------------------------------------------------------------ */
+  /* ------------------------------------------------------------------------
+     MUTATIONS
+  ------------------------------------------------------------------------ */
 
-  const createMut =
-    useCreateInvoice();
+  const createMut = useCreateInvoice();
+  const updateMut = useUpdateInvoice();
 
-  const updateMut =
-    useUpdateInvoice();
+  /* ------------------------------------------------------------------------
+     FORM STATE
+  ------------------------------------------------------------------------ */
 
-  /* ------------------------------------------------------------------------ */
-  /* FORM STATE                                                               */
-  /* ------------------------------------------------------------------------ */
+  const [partyId, setPartyId] = useState("");
+  const [date, setDate] = useState(todayLocal());
+  const [dueDate, setDueDate] = useState("");
+  const [status, setStatus] = useState("issued");
+  const [discount, setDiscount] = useState(0);
+  const [notes, setNotes] = useState("");
+  const [items, setItems] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(!isEdit);
 
-  const [partyId, setPartyId] =
-    useState("");
-
-  const [date, setDate] =
-    useState(todayLocal());
-
-  const [dueDate, setDueDate] =
-    useState("");
-
-  const [status, setStatus] =
-    useState("issued");
-
-  const [discount, setDiscount] =
-    useState(0);
-
-  const [notes, setNotes] =
-    useState("");
-
-  const [items, setItems] =
-    useState([]);
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const [loaded, setLoaded] =
-    useState(!isEdit);
-
-  /* ------------------------------------------------------------------------ */
-  /* CUSTOMERS                                                                */
-  /* ------------------------------------------------------------------------ */
+  /* ------------------------------------------------------------------------
+     CUSTOMERS
+  ------------------------------------------------------------------------ */
 
   const customers = parties.filter(
-    (party) =>
-      party.type === "customer" ||
-      party.type === "both",
+    (party) => party.type === "customer" || party.type === "both",
   );
 
-  /* ------------------------------------------------------------------------ */
-  /* SUMMARY                                                                  */
-  /* ------------------------------------------------------------------------ */
+  /* ------------------------------------------------------------------------
+     SUMMARY
+
+     NOTE: this hook must stay ABOVE the early returns below.
+  ------------------------------------------------------------------------ */
 
   const summary = useMemo(() => {
     let grossSubtotal = 0;
@@ -697,38 +354,20 @@ export function InvoiceFormPage() {
     let taxTotal = 0;
 
     items.forEach((item) => {
-      grossSubtotal +=
-        getQuantity(item) *
-        getUnitPrice(item);
-
-      lineDiscountTotal +=
-        getLineDiscount(item);
-
+      grossSubtotal += getQuantity(item) * getUnitPrice(item);
+      lineDiscountTotal += getLineDiscount(item);
       taxTotal += getLineTax(item);
     });
 
-    const afterLineDiscount =
-      Math.max(
-        0,
-        grossSubtotal -
-          lineDiscountTotal,
-      );
+    const afterLineDiscount = Math.max(0, grossSubtotal - lineDiscountTotal);
 
-    const headerDiscount =
-      Math.min(
-        Math.max(
-          Number(discount) || 0,
-          0,
-        ),
-        afterLineDiscount,
-      );
+    /* Header discount comes after line discounts */
+    const headerDiscount = Math.min(
+      Math.max(Number(discount) || 0, 0),
+      afterLineDiscount,
+    );
 
-    const taxableSubtotal =
-      Math.max(
-        0,
-        afterLineDiscount -
-          headerDiscount,
-      );
+    const taxableSubtotal = Math.max(0, afterLineDiscount - headerDiscount);
 
     return {
       itemCount: items.length,
@@ -737,8 +376,7 @@ export function InvoiceFormPage() {
       headerDiscount,
       taxableSubtotal,
       taxTotal,
-      grandTotal:
-        taxableSubtotal + taxTotal,
+      grandTotal: taxableSubtotal + taxTotal,
     };
   }, [items, discount]);
 
@@ -751,111 +389,49 @@ export function InvoiceFormPage() {
     if (!invoice) return;
 
     setPartyId(
-      String(
-        invoice.partyId ||
-          invoice.customerId ||
-          invoice.party?.id ||
-          "",
-      ),
+      String(invoice.partyId || invoice.customerId || invoice.party?.id || ""),
     );
 
     setDate(
-      normalizeDate(
-        invoice.date ||
-          invoice.invoiceDate ||
-          invoice.createdAt,
-      ),
+      normalizeDate(invoice.date || invoice.invoiceDate || invoice.createdAt),
     );
 
-    setDueDate(
-      normalizeDate(
-        invoice.dueDate,
-      ),
-    );
-
-    setStatus(
-      invoice.status ||
-        "issued",
-    );
-
-    setDiscount(
-      invoice.discount ?? 0,
-    );
-
-    setNotes(
-      invoice.notes || "",
-    );
+    setDueDate(normalizeDate(invoice.dueDate));
+    setStatus(invoice.status || "issued");
+    setDiscount(invoice.discount ?? 0);
+    setNotes(invoice.notes || "");
 
     setLoaded(true);
   }, [isEdit, invoice]);
 
   /* ==========================================================================
      LOAD EXISTING INVOICE ITEMS
+
+     Converts existing invoice-item records into the structure expected by
+     LineItemsEditor. The Add Item / Product Picker flow is not changed.
   ========================================================================== */
 
   useEffect(() => {
     if (!isEdit) return;
+    if (!Array.isArray(invoiceItemsData)) return;
 
-    if (
-      !Array.isArray(
-        invoiceItemsData,
-      )
-    ) {
-      return;
-    }
-
-    /*
-     * IMPORTANT:
-     *
-     * mapSavedItem() now restores:
-     *
-     * productNameSnapshot → productName
-     * skuSnapshot         → sku
-     * attributesSnapshot  → attributeValues
-     * attributesSnapshot  → selectedSpecification
-     */
-    setItems(
-      invoiceItemsData.map(
-        mapSavedItem,
-      ),
-    );
-  }, [
-    isEdit,
-    invoiceItemsData,
-  ]);
+    setItems(invoiceItemsData.map(mapSavedItem));
+  }, [isEdit, invoiceItemsData]);
 
   /* ==========================================================================
      LOADING / ERROR
   ========================================================================== */
 
-  if (
-    isEdit &&
-    (invoiceError ||
-      itemsError)
-  ) {
+  if (isEdit && (invoiceError || itemsError)) {
     return (
       <div className="page-container min-h-full">
         <PageHeader
-          title={
-            <span className="text-base font-bold">
-              Edit Invoice
-            </span>
-          }
+          title={<span className="text-base font-bold">Edit Invoice</span>}
           description="Unable to load this invoice"
-          actions={
-            <BackButton
-              onClick={() =>
-                navigate(
-                  "/bills/invoices",
-                )
-              }
-            />
-          }
+          actions={<BackButton onClick={() => navigate("/bills/invoices")} />}
         />
 
-        <ModuleTabs
-          tabs={MODULE_TABS.bills}
-        />
+        <ModuleTabs tabs={MODULE_TABS.bills} />
 
         <div className="p-6">
           <div className="rounded-xl border border-line bg-surface p-4 text-sm font-semibold text-red-500">
@@ -866,37 +442,16 @@ export function InvoiceFormPage() {
     );
   }
 
-  if (
-    isEdit &&
-    (
-      invoiceLoading ||
-      itemsLoading ||
-      !loaded
-    )
-  ) {
+  if (isEdit && (invoiceLoading || itemsLoading || !loaded)) {
     return (
       <div className="page-container min-h-full">
         <PageHeader
-          title={
-            <span className="text-base font-bold">
-              Edit Invoice
-            </span>
-          }
+          title={<span className="text-base font-bold">Edit Invoice</span>}
           description="Loading invoice details..."
-          actions={
-            <BackButton
-              onClick={() =>
-                navigate(
-                  "/bills/invoices",
-                )
-              }
-            />
-          }
+          actions={<BackButton onClick={() => navigate("/bills/invoices")} />}
         />
 
-        <ModuleTabs
-          tabs={MODULE_TABS.bills}
-        />
+        <ModuleTabs tabs={MODULE_TABS.bills} />
 
         <div className="flex min-h-[300px] items-center justify-center p-6">
           <div className="text-sm font-semibold text-muted">
@@ -913,38 +468,23 @@ export function InvoiceFormPage() {
 
   const handleSave = async () => {
     if (!partyId) {
-      toast.error(
-        "Select a customer",
-      );
+      toast.error("Select a customer");
       return;
     }
 
     if (!items.length) {
-      toast.error(
-        "Add at least one item",
-      );
+      toast.error("Add at least one item");
       return;
     }
 
-    const invalidItemIndex =
-      items.findIndex(
-        (item) =>
-          !(
-            item.productId ||
-            item.product?.id
-          ) &&
-          !item.variantId,
-      );
+    const invalidItemIndex = items.findIndex(
+      (item) => !(item.productId || item.product?.id) && !item.variantId,
+    );
 
-    if (
-      invalidItemIndex !== -1
-    ) {
+    if (invalidItemIndex !== -1) {
       toast.error(
-        `Item ${
-          invalidItemIndex + 1
-        } is missing its Product Master reference. Please remove it and add the item again.`,
+        `Item ${invalidItemIndex + 1} is missing its Product Master reference. Please remove it and add the item again.`,
       );
-
       return;
     }
 
@@ -955,143 +495,73 @@ export function InvoiceFormPage() {
        * Resolve variants exactly like the existing New Invoice flow.
        * Existing variant IDs are preserved when possible.
        */
-      const enrichedItems =
-        await Promise.all(
-          items.map(
-            async (item) => {
-              const productId =
-                item.productId ||
-                item.product?.id ||
-                null;
+      const enrichedItems = await Promise.all(
+        items.map(async (item) => {
+          const productId = item.productId || item.product?.id || null;
 
-              const base = {
-                quantity:
-                  Number(
-                    item.quantity,
-                  ) || 0,
+          const base = {
+            quantity: Number(item.quantity) || 0,
+            unitPrice: Number(item.unitPrice) || 0,
+            discount: Number(item.discount) || 0,
+            taxId: item.taxId || null,
+            ...lineMeta(item),
+          };
 
-                unitPrice:
-                  Number(
-                    item.unitPrice,
-                  ) || 0,
+          /* Existing row without enough info to resolve: keep its variant */
+          const unchanged =
+            item.savedKey &&
+            item.savedKey ===
+              `${productId || ""}|${item.selectedSpecification || ""}`;
 
-                discount:
-                  Number(
-                    item.discount,
-                  ) || 0,
+          if (item.variantId && (!productId || unchanged)) {
+            return { variantId: item.variantId, ...base };
+          }
 
-                taxId:
-                  item.taxId ||
-                  null,
-              };
+          const variant = await variantResolver.resolveOrCreate({
+            productId,
+            defaultSku: item.productSku || item.sku,
+            attributeValues: item.attributeValues || {},
+          });
 
-              /*
-               * Existing row without enough info:
-               * keep its variant.
-               */
-              if (
-                item.variantId &&
-                (
-                  !productId ||
-                  item.invoiceItemId
-                )
-              ) {
-                return {
-                  variantId:
-                    item.variantId,
-                  ...base,
-                };
-              }
-
-              const variant =
-                await variantResolver.resolveOrCreate(
-                  {
-                    productId,
-
-                    defaultSku:
-                      item.productSku ||
-                      item.sku,
-
-                    attributeValues:
-                      item.attributeValues ||
-                      {},
-                  },
-                );
-
-              return {
-                variantId:
-                  variant.id,
-                ...base,
-              };
-            },
-          ),
-        );
+          return { variantId: variant.id, ...base };
+        }),
+      );
 
       const payload = {
         partyId,
         date,
-        dueDate:
-          dueDate || null,
+        dueDate: dueDate || null,
         status,
-        discount:
-          Number(discount) || 0,
+        discount: Number(discount) || 0,
         notes,
-        items:
-          enrichedItems,
+        items: enrichedItems,
       };
 
-      /* -------------------------------------------------------------------- */
-      /* CREATE                                                                */
-      /* -------------------------------------------------------------------- */
-
+      /* CREATE */
       if (!isEdit) {
-        const created =
-          await createMut.mutateAsync(
-            payload,
-          );
+        const created = await createMut.mutateAsync(payload);
 
-        toast.success(
-          `Invoice ${created.number} created`,
-        );
-
-        navigate(
-          `/bills/invoices/${created.id}`,
-        );
+        toast.success(`Invoice ${created.number} created`);
+        navigate(`/bills/invoices/${created.id}`);
 
         return;
       }
 
-      /* -------------------------------------------------------------------- */
-      /* UPDATE                                                                */
-      /* -------------------------------------------------------------------- */
-
-      const updated =
-        await updateMut.mutateAsync({
-          id: invoiceId,
-          patch: payload,
-        });
+      /* UPDATE */
+      const updated = await updateMut.mutateAsync({
+        id: invoiceId,
+        patch: payload,
+      });
 
       toast.success(
-        `Invoice ${
-          updated?.number ||
-          invoice?.number ||
-          ""
-        } updated`,
+        `Invoice ${updated?.number || invoice?.number || ""} updated`,
       );
 
-      navigate(
-        `/bills/invoices/${invoiceId}`,
-      );
+      navigate(`/bills/invoices/${invoiceId}`);
     } catch (error) {
-      console.error(
-        "Invoice save failed:",
-        error,
-      );
+      console.error("Invoice save failed:", error);
 
-      toast.error(
-        error?.message ||
-          "Save failed",
-      );
+      toast.error(error?.message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -1106,22 +576,17 @@ export function InvoiceFormPage() {
       <PageHeader
         title={
           <span className="text-lg font-bold">
-            {isEdit
-              ? "Edit Invoice"
-              : "New Invoice"}
+            {isEdit ? "Edit Invoice" : "New Invoice"}
           </span>
         }
         actions={
           <div className="flex items-center gap-2">
-
             <BackButton
               label="Cancel"
               disabled={saving}
               onClick={() =>
                 navigate(
-                  isEdit
-                    ? `/bills/invoices/${invoiceId}`
-                    : "/bills/invoices",
+                  isEdit ? `/bills/invoices/${invoiceId}` : "/bills/invoices",
                 )
               }
             />
@@ -1129,76 +594,44 @@ export function InvoiceFormPage() {
             <Button
               size="sm"
               onClick={handleSave}
-              disabled={
-                saving ||
-                !partyId ||
-                !items.length
-              }
+              disabled={saving || !partyId || !items.length}
             >
               <Save className="h-4 w-4" />
 
-              {saving
-                ? "Saving…"
-                : isEdit
-                  ? "Update Invoice"
-                  : "Save Invoice"}
+              {saving ? "Saving…" : isEdit ? "Update Invoice" : "Save Invoice"}
             </Button>
-
           </div>
         }
       />
 
-      <ModuleTabs
-        tabs={MODULE_TABS.bills}
-      />
+      <ModuleTabs tabs={MODULE_TABS.bills} />
 
       <div className="mx-auto max-w-[1500px] p-4 pb-28 md:p-6">
-
+        {/* ONE FORM CARD: form sections on the left, full-height summary on the right */}
         <div className="flex flex-col rounded-2xl border border-line bg-surface shadow-sm lg:flex-row">
-
-          {/* ==================================================================
-              LEFT — FORM
-          ================================================================== */}
-
+          {/* ============================ LEFT — FORM ============================ */}
           <div className="min-w-0 flex-1 divide-y divide-line">
-
             {/* DETAILS */}
             <section className="p-4 md:p-5">
-              <SectionHeading
-                title="Invoice Details"
-              />
+              <SectionHeading title="Invoice Details" />
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-
                 <Field label="Invoice No.">
                   <Input
-                    value={
-                      isEdit
-                        ? invoice?.number ||
-                          ""
-                        : nextInvoiceNumber
-                    }
+                    value={isEdit ? invoice?.number || "" : nextInvoiceNumber}
                     readOnly
                     disabled
                   />
                 </Field>
 
-                <Field
-                  label="Customer"
-                  required
-                >
+                <Field label="Customer" required>
                   <SearchableSelect
                     value={partyId}
                     onChange={setPartyId}
-                    options={customers.map(
-                      (party) => ({
-                        value: String(
-                          party.id,
-                        ),
-                        label:
-                          party.name,
-                      }),
-                    )}
+                    options={customers.map((party) => ({
+                      value: String(party.id),
+                      label: party.name,
+                    }))}
                     placeholder="Select customer…"
                     searchPlaceholder="Search customer…"
                     emptyText="No customers found"
@@ -1210,40 +643,19 @@ export function InvoiceFormPage() {
                     value={status}
                     onChange={setStatus}
                     options={[
-                      {
-                        value: "draft",
-                        label: "Draft",
-                      },
-                      {
-                        value: "issued",
-                        label: "Issued",
-                      },
-
-                      ...(
-                        [
-                          "partially_paid",
-                          "paid",
-                          "overdue",
-                          "cancelled",
-                        ].includes(status)
-                          ? [
-                              {
-                                value: status,
-                                label:
-                                  status
-                                    .replace(
-                                      /_/g,
-                                      " ",
-                                    )
-                                    .replace(
-                                      /\b\w/g,
-                                      (c) =>
-                                        c.toUpperCase(),
-                                    ),
-                              },
-                            ]
-                          : []
-                      ),
+                      { value: "draft", label: "Draft" },
+                      { value: "issued", label: "Issued" },
+                      /* show the current status (e.g. Paid) instead of a blank box */
+                      ...(["partially_paid", "paid", "overdue", "cancelled"].includes(status)
+                        ? [
+                            {
+                              value: status,
+                              label: status
+                                .replace(/_/g, " ")
+                                .replace(/\b\w/g, (c) => c.toUpperCase()),
+                            },
+                          ]
+                        : []),
                     ]}
                     placeholder="Select status…"
                   />
@@ -1253,11 +665,7 @@ export function InvoiceFormPage() {
                   <Input
                     type="date"
                     value={date}
-                    onChange={(event) =>
-                      setDate(
-                        event.target.value,
-                      )
-                    }
+                    onChange={(event) => setDate(event.target.value)}
                   />
                 </Field>
 
@@ -1265,41 +673,26 @@ export function InvoiceFormPage() {
                   <Input
                     type="date"
                     value={dueDate}
-                    onChange={(event) =>
-                      setDueDate(
-                        event.target.value,
-                      )
-                    }
+                    onChange={(event) => setDueDate(event.target.value)}
                   />
                 </Field>
-
               </div>
             </section>
 
             {/* ITEMS */}
             <section className="p-4 md:p-5">
-              <SectionHeading
-                title="Items"
-              />
+              <SectionHeading title="Items" />
 
-              <LineItemsEditor
-                items={items}
-                onChange={setItems}
-              />
+              <LineItemsEditor items={items} onChange={setItems} />
             </section>
 
             {/* DISCOUNT + NOTES */}
             <section className="p-4 md:p-5">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-
                 <Field label="Header discount">
                   <MoneyInput
                     value={discount}
-                    onChange={(event) =>
-                      setDiscount(
-                        event.target.value,
-                      )
-                    }
+                    onChange={(event) => setDiscount(event.target.value)}
                   />
                 </Field>
 
@@ -1307,28 +700,18 @@ export function InvoiceFormPage() {
                   <Textarea
                     rows={2}
                     value={notes}
-                    onChange={(event) =>
-                      setNotes(
-                        event.target.value,
-                      )
-                    }
+                    onChange={(event) => setNotes(event.target.value)}
                     placeholder="Optional"
                   />
                 </Field>
-
               </div>
             </section>
-
           </div>
 
-          {/* ==================================================================
-              RIGHT — SUMMARY
-          ================================================================== */}
-
+          {/* ============ RIGHT — SUMMARY (full height, ~20%, follows the scroll) ============ */}
           <aside className="rounded-b-2xl border-t border-line bg-bg/40 lg:w-1/5 lg:min-w-[260px] lg:rounded-b-none lg:rounded-r-2xl lg:border-l lg:border-t-0">
-
             <div className="lg:sticky lg:top-4">
-
+              {/* Header */}
               <div className="flex items-center gap-2 border-b border-line px-4 py-4">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
                   <Receipt className="h-4 w-4 text-primary" />
@@ -1341,118 +724,82 @@ export function InvoiceFormPage() {
                 </div>
               </div>
 
+              {/* Item count */}
               <div className="flex items-center justify-between border-b border-line px-4 py-3">
                 <div className="flex items-center gap-2 text-sm text-muted">
                   <Package className="h-4 w-4" />
                   Items
                 </div>
-
                 <span className="font-semibold text-ink">
                   {summary.itemCount}
                 </span>
               </div>
 
+              {/* Amounts */}
               <div className="space-y-3 px-4 py-4">
-
                 <SummaryRow label="Subtotal">
                   <span className="text-sm font-medium text-ink">
-                    {money(
-                      summary.grossSubtotal,
-                    )}
+                    {money(summary.grossSubtotal)}
                   </span>
                 </SummaryRow>
 
-                {summary.lineDiscountTotal >
-                  0 && (
+                {summary.lineDiscountTotal > 0 && (
                   <SummaryRow label="Item Discount">
                     <span className="text-sm font-medium text-red-600">
-                      -{" "}
-                      {money(
-                        summary.lineDiscountTotal,
-                      )}
+                      - {money(summary.lineDiscountTotal)}
                     </span>
                   </SummaryRow>
                 )}
 
                 <div className="flex items-center justify-between gap-3">
-
                   <div className="flex items-center gap-1.5">
-                    <span className="text-sm text-muted">
-                      Discount
-                    </span>
-
-                    {summary.headerDiscount >
-                      0 && (
+                    <span className="text-sm text-muted">Discount</span>
+                    {summary.headerDiscount > 0 && (
                       <Percent className="h-3 w-3 text-muted" />
                     )}
                   </div>
 
                   <span
                     className={
-                      summary.headerDiscount >
-                      0
+                      summary.headerDiscount > 0
                         ? "text-sm font-medium text-red-600"
                         : "text-sm text-muted"
                     }
                   >
-                    {summary.headerDiscount >
-                    0
-                      ? `- ${money(
-                          summary.headerDiscount,
-                        )}`
+                    {summary.headerDiscount > 0
+                      ? `- ${money(summary.headerDiscount)}`
                       : money(0)}
                   </span>
-
                 </div>
 
                 <SummaryRow label="GST / Tax">
                   <span className="text-sm font-medium text-ink">
-                    {money(
-                      summary.taxTotal,
-                    )}
+                    {money(summary.taxTotal)}
                   </span>
                 </SummaryRow>
 
+                {/* Grand total */}
                 <div className="border-t border-dashed border-line pt-3">
-
                   <div className="flex items-end justify-between gap-3">
-
                     <div>
-                      <p className="text-xs text-muted">
-                        Grand Total
-                      </p>
-
-                      <p className="mt-0.5 text-xs text-muted">
-                        Including tax
-                      </p>
+                      <p className="text-xs text-muted">Grand Total</p>
+                      <p className="mt-0.5 text-xs text-muted">Including tax</p>
                     </div>
 
                     <div className="flex items-center gap-1 text-lg font-bold text-ink">
-
                       <IndianRupee className="h-4 w-4" />
-
                       <span>
-                        {Number(
-                          summary.grandTotal,
-                        ).toLocaleString(
-                          "en-IN",
-                          {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          },
-                        )}
+                        {Number(summary.grandTotal).toLocaleString("en-IN", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
                       </span>
-
                     </div>
-
                   </div>
-
                 </div>
-
               </div>
             </div>
           </aside>
-
         </div>
       </div>
     </div>

@@ -55,11 +55,19 @@ export function InvoiceListPage() {
     const map = {};
 
     for (const payment of allPayments) {
-      const hit = Object.values(payment).find(
-        (value) =>
-          (typeof value === "string" || typeof value === "number") &&
-          lookup.has(String(value)),
-      );
+      /* the saved invoiceId wins; otherwise look for the id / number anywhere */
+      const direct =
+        payment.invoiceId && lookup.has(String(payment.invoiceId))
+          ? payment.invoiceId
+          : undefined;
+
+      const hit =
+        direct ??
+        Object.values(payment).find(
+          (value) =>
+            (typeof value === "string" || typeof value === "number") &&
+            lookup.has(String(value)),
+        );
 
       if (hit === undefined) continue;
 
@@ -67,10 +75,6 @@ export function InvoiceListPage() {
 
       (map[invoiceId] ||= []).push(payment);
     }
-
-    /* TEMP DEBUG — remove once receipts work */
-    console.log("[receipts] payments loaded:", allPayments);
-    console.log("[receipts] grouped by invoice id:", map);
 
     return map;
   }, [allPayments, invoices]);

@@ -147,15 +147,33 @@ export function getInvoicePayments(invoice, payments) {
   const total = Number(invoice?.grandTotal) || 0;
   let running = 0;
 
-  return list.map((item, position) => {
+  /* receipt numbers already saved on payments are kept; any payment without
+     one gets the next free RCPT-<invoice>-NN number, never a duplicate */
+  const usedNumbers = new Set(
+    list.map((item) => item.raw?.receiptNo).filter(Boolean),
+  );
+  let counter = 0;
+
+  const generateNumber = () => {
+    let number;
+
+    do {
+      counter += 1;
+      number = `RCPT-${invoice?.number || "INV"}-${String(counter).padStart(2, "0")}`;
+    } while (usedNumbers.has(number));
+
+    usedNumbers.add(number);
+
+    return number;
+  };
+
+  return list.map((item) => {
     const paidBefore = running;
 
     running += item.amount;
 
     return {
-      receiptNo:
-        item.raw?.receiptNo ||
-        `RCPT-${invoice?.number || "INV"}-${String(position + 1).padStart(2, "0")}`,
+      receiptNo: item.raw?.receiptNo || generateNumber(),
       amount: item.amount,
       date: item.date,
       mode: item.mode,
