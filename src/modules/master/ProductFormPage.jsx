@@ -34,8 +34,8 @@ const FIXED_PRODUCT_TYPES = [
   { name: "Laminate", code: "LAMINATE" },
   { name: "Edge Band", code: "EDGE-BAND" },
   { name: "WPC", code: "WPC" },
-  { name: "Adhesive", code: "ADHESIVE" },
-  { name: "Hardware", code: "HARDWARE" },
+  { name: "Fevicol", code: "FEVICOL" },
+  
 ];
 
 function buildSku(name, categoryName) {

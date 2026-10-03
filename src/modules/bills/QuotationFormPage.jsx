@@ -20,8 +20,10 @@ import { Input } from "@/components/ui/Input";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { Textarea } from "@/components/ui/Textarea";
 import { Field } from "@/components/ui/Field";
+import { Select } from "@/components/ui/Select";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { LineItemsEditor } from "@/components/forms/LineItemsEditor";
+
 
 import { toast } from "@/lib/toast";
 import {
@@ -32,10 +34,13 @@ import {
   useUpdateQuotation,
 } from "@/hooks/useDocuments";
 import { useParties } from "@/hooks/useParties";
+import { useTaxes } from "@/hooks/useMasters";
 import { variantResolver } from "@/lib/api/repos";
 import { mockStore } from "@/lib/store/mockStore";
 import { getNextDocumentNumber } from "@/lib/utils/docNumber";
 import { MODULE_TABS } from "@/app/moduleNav";
+
+const NO_TAXES = [];
 
 /* -------------------------------------------------------------------------- */
 /* DRAFT STORAGE (new quotations only)                                        */
@@ -380,6 +385,12 @@ export function QuotationFormPage() {
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(!isEdit);
 
+  /* GST is OFF unless the user switches it on */
+  const { data: taxesData } = useTaxes();
+  const taxes = taxesData || NO_TAXES;
+  const [gstEnabled, setGstEnabled] = useState(false);
+  const [gstTaxId, setGstTaxId] = useState("");
+
   const [draftRestored, setDraftRestored] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
 
@@ -398,6 +409,8 @@ export function QuotationFormPage() {
       setDiscount(draft.discount ?? 0);
       setNotes(draft.notes || "");
       setItems(Array.isArray(draft.items) ? draft.items : []);
+      setGstEnabled(Boolean(draft.gstEnabled));
+      setGstTaxId(draft.gstTaxId || "");
 
       setDraftRestored(true);
       setDraftLoaded(true);
@@ -420,6 +433,8 @@ export function QuotationFormPage() {
       discount,
       notes,
       items,
+      gstEnabled,
+      gstTaxId,
       updatedAt: new Date().toISOString(),
     });
 
@@ -429,7 +444,7 @@ export function QuotationFormPage() {
 
     const timer = setTimeout(() => setDraftSaved(false), 1200);
     return () => clearTimeout(timer);
-  }, [isEdit, draftLoaded, partyId, date, discount, notes, items]);
+  }, [isEdit, draftLoaded, partyId, date, discount, notes, items, gstEnabled, gstTaxId]);
 
   /* LOAD EXISTING QUOTATION */
   useEffect(() => {
@@ -443,6 +458,16 @@ export function QuotationFormPage() {
     );
     setDiscount(quotation.discount ?? 0);
     setNotes(quotation.notes || "");
+    setGstEnabled(
+      quotation.gstEnabled !== undefined
+        ? Boolean(quotation.gstEnabled)
+        : Number(quotation.taxTotal) > 0,
+    );
+    setGstTaxId(
+      quotation.gstTaxId
+        ? String(quotation.gstTaxId)
+        : "",
+    );
 
     setLoaded(true);
   }, [isEdit, quotation]);
@@ -451,8 +476,19 @@ export function QuotationFormPage() {
   useEffect(() => {
     if (!isEdit || !Array.isArray(savedItems)) return;
 
-    setItems(savedItems.map(mapSavedItem));
-  }, [isEdit, savedItems]);
+    const mapped = savedItems.map(mapSavedItem);
+    setItems(mapped);
+
+    /* Legacy documents, or older explicit documents without a saved tax id,
+       fall back to the persisted line tax for the edit form. */
+    const taxed = mapped.find((row) => Number(row.taxRate) > 0);
+    if (quotation?.gstEnabled === undefined) {
+      setGstEnabled(Boolean(taxed));
+      setGstTaxId(taxed?.taxId ? String(taxed.taxId) : "");
+    } else if (quotation.gstEnabled && !quotation.gstTaxId && taxed?.taxId) {
+      setGstTaxId(String(taxed.taxId));
+    }
+  }, [isEdit, savedItems, quotation?.gstEnabled]);
 
   /* CUSTOMERS */
   const customers = useMemo(
@@ -482,13 +518,35 @@ export function QuotationFormPage() {
     [quotations],
   );
 
+  /* Tax used on every line: only when GST is switched on */
+  const activeTax = useMemo(
+    () =>
+      gstEnabled
+        ? taxes.find((tax) => String(tax.id) === String(gstTaxId)) ||
+          taxes[0] ||
+          null
+        : null,
+    [gstEnabled, gstTaxId, taxes],
+  );
+
+  const billedItems = useMemo(
+    () =>
+      items.map((item) => ({
+        ...item,
+        taxId: activeTax?.id || null,
+        taxRate: Number(activeTax?.rate) || 0,
+        taxAmount: undefined,
+      })),
+    [items, activeTax],
+  );
+
   /* SUMMARY — must stay above the early returns below */
   const summary = useMemo(() => {
     let grossSubtotal = 0;
     let lineDiscountTotal = 0;
     let taxTotal = 0;
 
-    items.forEach((item) => {
+    billedItems.forEach((item) => {
       grossSubtotal += getQuantity(item) * getUnitPrice(item);
       lineDiscountTotal += getLineDiscount(item);
       taxTotal += getLineTax(item);
@@ -512,7 +570,7 @@ export function QuotationFormPage() {
       taxTotal,
       grandTotal: taxableSubtotal + taxTotal,
     };
-  }, [items, discount]);
+  }, [billedItems, items.length, discount]);
 
   /* LOADING / ERROR (edit mode) */
   if (isEdit && (quotationError || itemsError)) {
@@ -555,11 +613,6 @@ export function QuotationFormPage() {
 
   /* SAVE / UPDATE */
   const handleSave = async () => {
-    if (!partyId) {
-      toast.error("Select a customer");
-      return;
-    }
-
     if (!items.length) {
       toast.error("Add at least one item");
       return;
@@ -591,17 +644,14 @@ export function QuotationFormPage() {
             quantity: Number(item.quantity) || 0,
             unitPrice: Number(item.unitPrice) || 0,
             discount: Number(item.discount) || 0,
-            taxId: item.taxId || null,
+            taxId: activeTax?.id || null,
             ...lineMeta(item),
           };
 
-          /* Existing row with no product info: keep its variant */
-          const unchanged =
-            item.savedKey &&
-            item.savedKey ===
-              `${item.productId || ""}|${item.selectedSpecification || ""}`;
-
-          if (item.variantId && (!item.productId || unchanged)) {
+          /* ProductPicker already gives us the selected/matched variant.
+             Preserve it so custom Brand specifications do not materialize fake
+             attribute variants. Legacy rows without a variant still resolve. */
+          if (item.variantId) {
             return { variantId: item.variantId, ...base };
           }
 
@@ -616,7 +666,13 @@ export function QuotationFormPage() {
       );
 
       const payload = {
-        partyId,
+        partyId: partyId || null,
+        customerName: partyId
+          ? customers.find((party) => String(party.id) === String(partyId))?.name || ""
+          : "",
+        gstEnabled: Boolean(gstEnabled),
+        gstPercentage: gstEnabled ? Number(activeTax?.rate) || 0 : 0,
+        gstTaxId: gstEnabled ? activeTax?.id || null : null,
         date,
         discount: Number(discount) || 0,
         notes,
@@ -742,17 +798,19 @@ export function QuotationFormPage() {
                   </div>
                 </Field>
 
-                <Field label="Customer Name" required>
+                <Field label="Customer Name">
                   <div className="relative">
                     <User className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted" />
                     <SearchableSelect
                       value={partyId}
                       onChange={setPartyId}
-                      options={customers.map((customer) => ({
+                      options={[...customers]
+                        .sort((a, b) => Number(Boolean(b.isGlobal)) - Number(Boolean(a.isGlobal)))
+                        .map((customer) => ({
                         value: String(customer.id),
                         label: customer.name,
                       }))}
-                      placeholder="Select customer…"
+                      placeholder="Select customer (optional)"
                       searchPlaceholder="Search customer…"
                       emptyText="No customers found"
                       className="pl-9"
@@ -779,6 +837,54 @@ export function QuotationFormPage() {
               <SectionHeading title="Items" />
 
               <LineItemsEditor items={items} onChange={setItems} />
+            </section>
+
+            {/* GST — off unless switched on */}
+            <section className="p-4 md:p-5">
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={gstEnabled}
+                  onChange={(event) => {
+                    setGstEnabled(event.target.checked);
+                    if (event.target.checked && !gstTaxId && taxes[0]) {
+                      setGstTaxId(String(taxes[0].id));
+                    }
+                  }}
+                  className="mt-0.5 h-4 w-4 accent-primary-500"
+                />
+                <span>
+                  <span className="block text-sm font-bold text-ink">
+                    Apply GST
+                  </span>
+                  <span className="block text-xs text-muted">
+                    Off = no tax on this document and no GST in the PDF.
+                  </span>
+                </span>
+              </label>
+
+              {gstEnabled && (
+                <div className="mt-3 max-w-xs">
+                  {taxes.length ? (
+                    <Field label="GST rate">
+                      <Select
+                        value={String(activeTax?.id ?? "")}
+                        onChange={(event) => setGstTaxId(event.target.value)}
+                      >
+                        {taxes.map((tax) => (
+                          <option key={tax.id} value={String(tax.id)}>
+                            {tax.name || "GST"} {Number(tax.rate) || 0}%
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  ) : (
+                    <div className="text-xs text-red-500">
+                      No tax rates found. Add them in Settings → Tax.
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
 
             {/* DISCOUNT + NOTES */}
@@ -864,17 +970,23 @@ export function QuotationFormPage() {
                   </span>
                 </div>
 
-                <SummaryRow label="GST / Tax">
-                  <span className="text-sm font-medium text-ink">
-                    {money(summary.taxTotal)}
-                  </span>
-                </SummaryRow>
+                {gstEnabled && (
+                  <SummaryRow
+                    label={`GST${activeTax ? ` (${Number(activeTax.rate) || 0}%)` : ""}`}
+                  >
+                    <span className="text-sm font-medium text-ink">
+                      {money(summary.taxTotal)}
+                    </span>
+                  </SummaryRow>
+                )}
 
                 <div className="border-t border-dashed border-line pt-3">
                   <div className="flex items-end justify-between gap-3">
                     <div>
                       <p className="text-xs text-muted">Grand Total</p>
-                      <p className="mt-0.5 text-xs text-muted">Including tax</p>
+                      <p className="mt-0.5 text-xs text-muted">
+                        {gstEnabled ? "Including GST" : "No GST"}
+                      </p>
                     </div>
 
                     <div className="flex items-center gap-1 text-lg font-bold text-ink">

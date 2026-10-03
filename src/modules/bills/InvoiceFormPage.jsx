@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/Input";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { Textarea } from "@/components/ui/Textarea";
 import { Field } from "@/components/ui/Field";
+import { Select } from "@/components/ui/Select";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { LineItemsEditor } from "@/components/forms/LineItemsEditor";
 
@@ -30,11 +31,14 @@ import {
 } from "@/hooks/useDocuments";
 
 import { useParties } from "@/hooks/useParties";
+import { useTaxes } from "@/hooks/useMasters";
 
 import { variantResolver } from "@/lib/api/repos";
 import { mockStore } from "@/lib/store/mockStore";
 import { getNextDocumentNumber } from "@/lib/utils/docNumber";
 import { MODULE_TABS } from "@/app/moduleNav";
+
+const NO_TAXES = [];
 
 /* ==========================================================================
    HELPERS
@@ -381,12 +385,40 @@ export function InvoiceFormPage() {
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(!isEdit);
 
+  /* GST is OFF unless the user switches it on */
+  const { data: taxesData } = useTaxes();
+  const taxes = taxesData || NO_TAXES;
+  const [gstEnabled, setGstEnabled] = useState(false);
+  const [gstTaxId, setGstTaxId] = useState("");
+
   /* ------------------------------------------------------------------------
      CUSTOMERS
   ------------------------------------------------------------------------ */
 
   const customers = parties.filter(
     (party) => party.type === "customer" || party.type === "both",
+  );
+
+  /* Tax used on every line: only when GST is switched on */
+  const activeTax = useMemo(
+    () =>
+      gstEnabled
+        ? taxes.find((tax) => String(tax.id) === String(gstTaxId)) ||
+          taxes[0] ||
+          null
+        : null,
+    [gstEnabled, gstTaxId, taxes],
+  );
+
+  const billedItems = useMemo(
+    () =>
+      items.map((item) => ({
+        ...item,
+        taxId: activeTax?.id || null,
+        taxRate: Number(activeTax?.rate) || 0,
+        taxAmount: undefined,
+      })),
+    [items, activeTax],
   );
 
   /* ------------------------------------------------------------------------
@@ -400,7 +432,7 @@ export function InvoiceFormPage() {
     let lineDiscountTotal = 0;
     let taxTotal = 0;
 
-    items.forEach((item) => {
+    billedItems.forEach((item) => {
       grossSubtotal += getQuantity(item) * getUnitPrice(item);
       lineDiscountTotal += getLineDiscount(item);
       taxTotal += getLineTax(item);
@@ -425,7 +457,7 @@ export function InvoiceFormPage() {
       taxTotal,
       grandTotal: taxableSubtotal + taxTotal,
     };
-  }, [items, discount]);
+  }, [billedItems, items.length, discount]);
 
   /* ==========================================================================
      LOAD EXISTING INVOICE
@@ -447,6 +479,16 @@ export function InvoiceFormPage() {
     setStatus(invoice.status || "issued");
     setDiscount(invoice.discount ?? 0);
     setNotes(invoice.notes || "");
+    setGstEnabled(
+      invoice.gstEnabled !== undefined
+        ? Boolean(invoice.gstEnabled)
+        : Number(invoice.taxTotal) > 0,
+    );
+    setGstTaxId(
+      invoice.gstTaxId
+        ? String(invoice.gstTaxId)
+        : "",
+    );
 
     setLoaded(true);
   }, [isEdit, invoice]);
@@ -462,8 +504,19 @@ export function InvoiceFormPage() {
     if (!isEdit) return;
     if (!Array.isArray(invoiceItemsData)) return;
 
-    setItems(invoiceItemsData.map(mapSavedItem));
-  }, [isEdit, invoiceItemsData]);
+    const mapped = invoiceItemsData.map(mapSavedItem);
+    setItems(mapped);
+
+    /* Legacy documents, or older explicit documents without a saved tax id,
+       fall back to the persisted line tax for the edit form. */
+    const taxed = mapped.find((row) => Number(row.taxRate) > 0);
+    if (invoice?.gstEnabled === undefined) {
+      setGstEnabled(Boolean(taxed));
+      setGstTaxId(taxed?.taxId ? String(taxed.taxId) : "");
+    } else if (invoice.gstEnabled && !invoice.gstTaxId && taxed?.taxId) {
+      setGstTaxId(String(taxed.taxId));
+    }
+  }, [isEdit, invoiceItemsData, invoice?.gstEnabled]);
 
   /* ==========================================================================
      LOADING / ERROR
@@ -514,11 +567,6 @@ export function InvoiceFormPage() {
   ========================================================================== */
 
   const handleSave = async () => {
-    if (!partyId) {
-      toast.error("Select a customer");
-      return;
-    }
-
     if (!items.length) {
       toast.error("Add at least one item");
       return;
@@ -542,6 +590,8 @@ export function InvoiceFormPage() {
        * Resolve variants exactly like the existing New Invoice flow.
        * Existing variant IDs are preserved when possible.
        */
+      /* no customer chosen -> the global Walk-in Customer */
+
       const enrichedItems = await Promise.all(
         items.map(async (item) => {
           const productId = item.productId || item.product?.id || null;
@@ -550,17 +600,14 @@ export function InvoiceFormPage() {
             quantity: Number(item.quantity) || 0,
             unitPrice: Number(item.unitPrice) || 0,
             discount: Number(item.discount) || 0,
-            taxId: item.taxId || null,
+            taxId: activeTax?.id || null,
             ...lineMeta(item),
           };
 
-          /* Existing row without enough info to resolve: keep its variant */
-          const unchanged =
-            item.savedKey &&
-            item.savedKey ===
-              `${productId || ""}|${item.selectedSpecification || ""}`;
-
-          if (item.variantId && (!productId || unchanged)) {
+          /* ProductPicker already gives us the selected/matched variant.
+             Preserve it so custom Brand specifications do not materialize fake
+             attribute variants. Legacy rows without a variant still resolve. */
+          if (item.variantId) {
             return { variantId: item.variantId, ...base };
           }
 
@@ -575,7 +622,13 @@ export function InvoiceFormPage() {
       );
 
       const payload = {
-        partyId,
+        partyId: partyId || null,
+        customerName: partyId
+          ? customers.find((party) => String(party.id) === String(partyId))?.name || ""
+          : "",
+        gstEnabled: Boolean(gstEnabled),
+        gstPercentage: gstEnabled ? Number(activeTax?.rate) || 0 : 0,
+        gstTaxId: gstEnabled ? activeTax?.id || null : null,
         date,
         dueDate: dueDate || null,
         status,
@@ -641,7 +694,7 @@ export function InvoiceFormPage() {
             <Button
               size="sm"
               onClick={handleSave}
-              disabled={saving || !partyId || !items.length}
+              disabled={saving || !items.length}
             >
               <Save className="h-4 w-4" />
 
@@ -671,15 +724,17 @@ export function InvoiceFormPage() {
                   />
                 </Field>
 
-                <Field label="Customer" required>
+                <Field label="Customer">
                   <SearchableSelect
                     value={partyId}
                     onChange={setPartyId}
-                    options={customers.map((party) => ({
+                    options={[...customers]
+                        .sort((a, b) => Number(Boolean(b.isGlobal)) - Number(Boolean(a.isGlobal)))
+                        .map((party) => ({
                       value: String(party.id),
                       label: party.name,
                     }))}
-                    placeholder="Select customer…"
+                    placeholder="Select customer (optional)"
                     searchPlaceholder="Search customer…"
                     emptyText="No customers found"
                   />
@@ -731,6 +786,54 @@ export function InvoiceFormPage() {
               <SectionHeading title="Items" />
 
               <LineItemsEditor items={items} onChange={setItems} />
+            </section>
+
+            {/* GST — off unless switched on */}
+            <section className="p-4 md:p-5">
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={gstEnabled}
+                  onChange={(event) => {
+                    setGstEnabled(event.target.checked);
+                    if (event.target.checked && !gstTaxId && taxes[0]) {
+                      setGstTaxId(String(taxes[0].id));
+                    }
+                  }}
+                  className="mt-0.5 h-4 w-4 accent-primary-500"
+                />
+                <span>
+                  <span className="block text-sm font-bold text-ink">
+                    Apply GST
+                  </span>
+                  <span className="block text-xs text-muted">
+                    Off = no tax on this document and no GST in the PDF.
+                  </span>
+                </span>
+              </label>
+
+              {gstEnabled && (
+                <div className="mt-3 max-w-xs">
+                  {taxes.length ? (
+                    <Field label="GST rate">
+                      <Select
+                        value={String(activeTax?.id ?? "")}
+                        onChange={(event) => setGstTaxId(event.target.value)}
+                      >
+                        {taxes.map((tax) => (
+                          <option key={tax.id} value={String(tax.id)}>
+                            {tax.name || "GST"} {Number(tax.rate) || 0}%
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  ) : (
+                    <div className="text-xs text-red-500">
+                      No tax rates found. Add them in Settings → Tax.
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
 
             {/* DISCOUNT + NOTES */}
@@ -819,18 +922,24 @@ export function InvoiceFormPage() {
                   </span>
                 </div>
 
-                <SummaryRow label="GST / Tax">
-                  <span className="text-sm font-medium text-ink">
-                    {money(summary.taxTotal)}
-                  </span>
-                </SummaryRow>
+                {gstEnabled && (
+                  <SummaryRow
+                    label={`GST${activeTax ? ` (${Number(activeTax.rate) || 0}%)` : ""}`}
+                  >
+                    <span className="text-sm font-medium text-ink">
+                      {money(summary.taxTotal)}
+                    </span>
+                  </SummaryRow>
+                )}
 
                 {/* Grand total */}
                 <div className="border-t border-dashed border-line pt-3">
                   <div className="flex items-end justify-between gap-3">
                     <div>
                       <p className="text-xs text-muted">Grand Total</p>
-                      <p className="mt-0.5 text-xs text-muted">Including tax</p>
+                      <p className="mt-0.5 text-xs text-muted">
+                        {gstEnabled ? "Including GST" : "No GST"}
+                      </p>
                     </div>
 
                     <div className="flex items-center gap-1 text-lg font-bold text-ink">

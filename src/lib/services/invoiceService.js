@@ -69,21 +69,42 @@ function nextReceiptNo(invoiceNumber, payments) {
 const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 export const invoiceService = {
-  async create({ partyId, date, dueDate, status, discount, notes, items }) {
+  async create({
+    partyId = null,
+    customerName = "",
+    date,
+    dueDate,
+    status,
+    discount,
+    notes,
+    items,
+    gstEnabled = false,
+    gstPercentage = 0,
+    gstTaxId = null,
+  }) {
     const number = nextDocumentNumber("INV");
-    const builtItems = items.map((it) => buildLineItem(it));
+    const effectiveGst = Boolean(gstEnabled);
+    const sourceItems = (items || []).map((it) => ({
+      ...it,
+      taxId: effectiveGst ? (it.taxId || gstTaxId || null) : null,
+    }));
+    const builtItems = sourceItems.map((it) => buildLineItem(it));
     const totals = computeTotals(builtItems, discount || 0);
 
     const invoice = await invoiceRepo.create({
       number,
-      partyId,
+      partyId: partyId || null,
+      customerName: customerName || "",
       date,
       dueDate: dueDate || null,
       status: status || "draft",
+      gstEnabled: effectiveGst,
+      gstPercentage: effectiveGst ? Number(gstPercentage) || 0 : 0,
+      gstTaxId: effectiveGst ? (gstTaxId || builtItems.find((i) => i.taxId)?.taxId || null) : null,
       subtotal: totals.subtotal,
       discount: totals.discount,
-      taxTotal: totals.taxTotal,
-      grandTotal: totals.grandTotal,
+      taxTotal: effectiveGst ? totals.taxTotal : 0,
+      grandTotal: effectiveGst ? totals.grandTotal : round2(totals.subtotal - totals.discount),
       amountPaid: 0,
       notes,
     });
@@ -143,7 +164,17 @@ export const invoiceService = {
     }
 
     const oldItems = await invoiceItemRepo.list({ invoiceId: id });
-    const builtItems = items.map((it) => buildLineItem(it));
+    const effectiveGst =
+      fields.gstEnabled !== undefined
+        ? Boolean(fields.gstEnabled)
+        : Boolean(existing.gstEnabled);
+    const sourceItems = items.map((it) => ({
+      ...it,
+      taxId: effectiveGst
+        ? (it.taxId || fields.gstTaxId || existing.gstTaxId || null)
+        : null,
+    }));
+    const builtItems = sourceItems.map((it) => buildLineItem(it));
 
     const discountInput = fields.discount ?? existing.discount ?? 0;
     const totals = computeTotals(builtItems, Number(discountInput) || 0);
@@ -171,17 +202,28 @@ export const invoiceService = {
 
     /* 3. header + recalculated totals */
     const updated = await invoiceRepo.update(id, {
-      partyId: fields.partyId ?? existing.partyId,
+      partyId: fields.partyId !== undefined ? (fields.partyId || null) : (existing.partyId || null),
+      customerName:
+        fields.customerName !== undefined
+          ? fields.customerName || ""
+          : (existing.customerName || ""),
       date: fields.date ?? existing.date,
       dueDate:
         fields.dueDate !== undefined
           ? fields.dueDate || null
           : (existing.dueDate ?? null),
       status,
+      gstEnabled: effectiveGst,
+      gstPercentage: effectiveGst
+        ? Number(fields.gstPercentage ?? existing.gstPercentage ?? builtItems.find((i) => i.taxRate)?.taxRate ?? 0) || 0
+        : 0,
+      gstTaxId: effectiveGst
+        ? (fields.gstTaxId || existing.gstTaxId || builtItems.find((i) => i.taxId)?.taxId || null)
+        : null,
       subtotal: totals.subtotal,
       discount: totals.discount,
-      taxTotal: totals.taxTotal,
-      grandTotal: totals.grandTotal,
+      taxTotal: effectiveGst ? totals.taxTotal : 0,
+      grandTotal: effectiveGst ? totals.grandTotal : round2(totals.subtotal - totals.discount),
       notes: fields.notes ?? existing.notes ?? "",
     });
 
@@ -287,7 +329,11 @@ export const invoiceService = {
     const items = await quotationItemRepo.list({ quotationId });
 
     const created = await this.create({
-      partyId: q.partyId,
+      partyId: q.partyId || null,
+      customerName: q.customerName || "",
+      gstEnabled: Boolean(q.gstEnabled),
+      gstPercentage: Number(q.gstPercentage) || 0,
+      gstTaxId: q.gstTaxId || null,
       date: new Date().toISOString(),
       dueDate: null,
       status: "issued",

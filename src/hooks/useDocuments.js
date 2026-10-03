@@ -44,7 +44,7 @@ export const useCreateQuotation = () => {
 export const useUpdateQuotation = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, patch }) => quotationRepo.update(id, patch),
+    mutationFn: ({ id, patch }) => quotationService.update(id, patch),
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: qk.quotations });
       qc.invalidateQueries({ queryKey: ["quotation", v.id] });

@@ -60,6 +60,7 @@ export function buildLineItem({
   return {
     variantId,
     productId: product?.id || null,
+    productName: product?.name || "",
     productNameSnapshot: product?.name || "",
     skuSnapshot: variant.sku || "",
     attributesSnapshot: attrs,
@@ -71,6 +72,7 @@ export function buildLineItem({
     taxRate,
     taxAmount,
     lineTotal,
+    amount: lineTotal,
     gross,
     taxable,
 
@@ -83,6 +85,7 @@ export function buildLineItem({
     productType: productType || "",
     productTypeSnapshot: productType || "",
     selectedSpecification: selectedSpecification || "",
+    specification: selectedSpecification || "",
     specificationSnapshot: selectedSpecification || "",
     unit: unit || "",
     unitSnapshot: unit || "",

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Package, X } from "lucide-react";
+import { Check, Package, Plus, X } from "lucide-react";
 
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { mockStore } from "@/lib/store/mockStore";
+import { useQueryClient } from "@tanstack/react-query";
 import { newId } from "@/lib/utils/id";
 import { toCode } from "@/lib/utils/code";
 
@@ -400,6 +401,10 @@ export function ProductPicker({
   const [selectedSpecification, setSelectedSpecification] = useState(null);
   const [selectedVariant, setSelectedVariant] = useState(null);
   const [query, setQuery] = useState("");
+  const [customSpecification, setCustomSpecification] = useState("");
+  const [customPrice, setCustomPrice] = useState("");
+
+  const queryClient = useQueryClient();
 
   /* MEASUREMENT STATE */
   const [length, setLength] = useState("");
@@ -450,6 +455,8 @@ export function ProductPicker({
     setSelectedSpecification(null);
     setSelectedVariant(null);
     setQuery("");
+    setCustomSpecification("");
+    setCustomPrice("");
     setLength("");
     setWidth("");
     setHeight("");
@@ -760,6 +767,55 @@ export function ProductPicker({
 
   const typeConfig = getTypeConfig(selectedType);
 
+  /* Add a document-specific specification and persist it on the selected Brand Master. */
+  async function handleAddCustomSpecification() {
+    const label = String(customSpecification || "").trim();
+    if (!selectedBrand?.id || !label) return;
+
+    const existingRows = normalizeBrandSpecifications(selectedBrand);
+    const duplicate = existingRows.find(
+      (row) => normalize(row.label) === normalize(label),
+    );
+
+    if (duplicate) {
+      setSelectedSpecification(duplicate);
+      setCustomSpecification("");
+      setCustomPrice("");
+      return;
+    }
+
+    const price = safeNumber(customPrice);
+    const nextSpecifications = [
+      ...existingRows.map((row) => ({
+        specification: row.label,
+        price: safeNumber(row.price),
+      })),
+      { specification: label, price },
+    ];
+
+    mockStore.update("brands", selectedBrand.id, {
+      specifications: nextSpecifications,
+    });
+    setSelectedBrand((current) =>
+      current
+        ? { ...current, specifications: nextSpecifications }
+        : current,
+    );
+
+    const created = {
+      id: `brand-spec-${selectedBrand.id}-${normalize(label).replace(/[^a-z0-9]+/g, "-")}`,
+      label,
+      price,
+      matchedVariant: null,
+      variantPrice: 0,
+    };
+
+    setSelectedSpecification(created);
+    setCustomSpecification("");
+    setCustomPrice("");
+    queryClient.invalidateQueries({ queryKey: ["brands"] });
+  }
+
   /* FINAL ADD */
   function handleAddToLine() {
     if (!selectedProduct?.id || !selectedSpecification) return;
@@ -1007,6 +1063,11 @@ export function ProductPicker({
                 setSelectedSpecification(specification);
                 setSelectedVariant(specification?.matchedVariant || null);
               }}
+              customSpecification={customSpecification}
+              customPrice={customPrice}
+              onCustomSpecificationChange={setCustomSpecification}
+              onCustomPriceChange={setCustomPrice}
+              onAddCustomSpecification={handleAddCustomSpecification}
               onAdd={handleAddToLine}
             />
           )}
@@ -1036,6 +1097,11 @@ function SpecificationStep({
   onHeightChange,
 
   onSelectSpecification,
+  customSpecification,
+  customPrice,
+  onCustomSpecificationChange,
+  onCustomPriceChange,
+  onAddCustomSpecification,
   onAdd,
 }) {
   const numericPcs = Math.max(1, safeNumber(pcs) || 1);
@@ -1140,6 +1206,42 @@ function SpecificationStep({
                 );
               })}
             </div>
+          </div>
+
+          {/* CUSTOM SPECIFICATION + PRICE */}
+          <div className="rounded-lg border border-dashed border-line bg-bg/40 p-3">
+            <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-muted">
+              Add specification for this Brand
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_130px_auto]">
+              <input
+                value={customSpecification}
+                onChange={(event) => onCustomSpecificationChange(event.target.value)}
+                placeholder="add specification"
+                className="h-9 min-w-0 rounded-lg border border-line bg-surface px-3 text-xs text-ink outline-none focus:border-primary-500"
+              />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={customPrice}
+                onChange={(event) => onCustomPriceChange(event.target.value)}
+                placeholder="Price"
+                className="h-9 min-w-0 rounded-lg border border-line bg-surface px-3 text-xs text-ink outline-none focus:border-primary-500"
+              />
+              <button
+                type="button"
+                disabled={!String(customSpecification ?? "").trim()}
+                onClick={onAddCustomSpecification}
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-primary-500/30 bg-primary-500/10 px-3 text-xs font-bold text-primary-600 transition hover:bg-primary-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add
+              </button>
+            </div>
+            <p className="mt-1.5 text-[10px] text-muted">
+              Saved to this Brand Master and available next time. It does not overwrite existing prices.
+            </p>
           </div>
 
           {/* MEASUREMENT (fields change with the product type) */}

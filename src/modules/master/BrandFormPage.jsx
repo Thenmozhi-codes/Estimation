@@ -791,7 +791,12 @@ export function BrandFormPage({
 
   useEffect(() => {
     if (!productTypeId) {
-      setSpecifications([]);
+      // Avoid creating a new [] on every effect run. This effect can rerun
+      // when query-derived values change identity; returning the existing
+      // state prevents an unnecessary render/update loop.
+      setSpecifications((previous) =>
+        previous.length ? [] : previous,
+      );
       return;
     }
 

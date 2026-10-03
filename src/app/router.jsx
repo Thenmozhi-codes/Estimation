@@ -32,7 +32,7 @@ import { OutstandingReportPage } from "@/modules/reports/OutstandingReportPage";
 import { CompanyPage } from "@/modules/settings/CompanyPage";
 import { TaxPage } from "@/modules/settings/TaxPage";
 import { UsersPage } from "@/modules/settings/UsersPage";
-import { AppearancePage } from "@/modules/settings/AppearancePage";
+
 
 export function AppRouter() {
   return (
@@ -259,10 +259,7 @@ export function AppRouter() {
           element={<UsersPage />}
         />
 
-        <Route
-          path="/settings/appearance"
-          element={<AppearancePage />}
-        />
+       
 
         {/* ─────────────────────────────────────────
             FALLBACK

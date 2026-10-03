@@ -9,7 +9,6 @@ import { useTaxes } from "@/hooks/useMasters";
 import { ProductPicker } from "./ProductPicker";
 
 import { newId } from "@/lib/utils/id";
-import { usePermission } from "@/lib/store/authStore";
 
 /* ==========================================================================
    HELPERS
@@ -92,8 +91,6 @@ export function LineItemsEditor({ items = [], onChange }) {
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editingTempId, setEditingTempId] = useState(null);
-
-  const canOverridePrice = usePermission("canOverridePrice");
 
   const editingItem = editingTempId
     ? items.find((item) => item.tempId === editingTempId) || null
@@ -203,7 +200,6 @@ export function LineItemsEditor({ items = [], onChange }) {
                   key={item.tempId}
                   item={item}
                   index={index}
-                  canOverridePrice={canOverridePrice}
                   lineAmount={lineAmount(item)}
                   onUpdate={(patch) => updateRow(item.tempId, patch)}
                   onEdit={() => startEditRow(item.tempId)}
@@ -258,7 +254,7 @@ function QuantityInput({ item, onUpdate, className }) {
   );
 }
 
-function RateInput({ item, onUpdate, canOverridePrice, className }) {
+function RateInput({ item, onUpdate, className }) {
   return (
     <MoneyInput
       value={item.unitPrice}
@@ -268,8 +264,7 @@ function RateInput({ item, onUpdate, canOverridePrice, className }) {
             event.target.value === "" ? "" : Number(event.target.value),
         })
       }
-      disabled={!canOverridePrice}
-      title={canOverridePrice ? "Editable" : "Your role cannot override prices"}
+       title="Editable for this document"
       className={className}
     />
   );
@@ -320,7 +315,6 @@ function MeasurementSummary({ item }) {
 function LineItemRow({
   item,
   index,
-  canOverridePrice,
   lineAmount,
   onUpdate,
   onEdit,
@@ -357,7 +351,6 @@ function LineItemRow({
         <RateInput
           item={item}
           onUpdate={onUpdate}
-          canOverridePrice={canOverridePrice}
           className="h-9"
         />
 
@@ -417,8 +410,7 @@ function LineItemRow({
             <RateInput
               item={item}
               onUpdate={onUpdate}
-              canOverridePrice={canOverridePrice}
-              className="mt-1"
+                 className="mt-1"
             />
           </div>
         </div>

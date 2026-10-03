@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { Download, Pencil, Plus, X } from "lucide-react";
+import { Download, FileText, Pencil, Plus, X } from "lucide-react";
 
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
@@ -13,13 +12,15 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 import { toast } from "@/lib/toast";
+import { companyRepo, invoiceItemRepo } from "@/lib/api/repos";
+import { downloadDocumentExcel } from "@/lib/services/excelService";
+import { downloadDocumentPdf } from "@/lib/services/pdfService";
 import { formatMoney } from "@/lib/utils/money";
 import { fmtDate } from "@/lib/utils/date";
 import {
   downloadPaymentReceipt,
   getInvoicePayments,
 } from "@/lib/utils/receipt";
-import { downloadDocumentPdf } from "@/lib/services/pdfService";
 
 import {
   useInvoices,
@@ -27,7 +28,6 @@ import {
   usePayments,
 } from "@/hooks/useDocuments";
 import { useParties } from "@/hooks/useParties";
-import { companyRepo, invoiceItemRepo } from "@/lib/api/repos";
 import { MODULE_TABS } from "@/app/moduleNav";
 
 export function InvoiceListPage() {
@@ -41,12 +41,6 @@ export function InvoiceListPage() {
   const { data: invoices = [], isLoading } = useInvoices();
   const { data: parties = [] } = useParties();
   const { data: allPayments = [] } = usePayments();
-
-  const { data: companies = [] } = useQuery({
-    queryKey: ["companies"],
-    queryFn: () => companyRepo.list(),
-  });
-  const company = companies[0];
 
   const deleteMut = useDeleteInvoice();
 
@@ -135,31 +129,52 @@ export function InvoiceListPage() {
     }
   };
 
+  /* Excel — download straight from the list */
+  const onDownloadExcel = async (row) => {
+    try {
+      const [items, companies] = await Promise.all([
+        invoiceItemRepo.list({ invoiceId: row.id }),
+        companyRepo.list(),
+      ]);
+
+      downloadDocumentExcel({
+        company: companies?.[0],
+        party: partyById[row.partyId],
+        doc: row,
+        items: items || [],
+        kind: "invoice",
+      });
+    } catch (error) {
+      console.error("Excel download failed:", error);
+      toast.error("Could not create the Excel file");
+    }
+  };
+
+  /* PDF — download straight from the list */
+  const onDownloadPdf = async (row) => {
+    try {
+      const [items, companies] = await Promise.all([
+        invoiceItemRepo.list({ invoiceId: row.id }),
+        companyRepo.list(),
+      ]);
+
+      downloadDocumentPdf({
+        company: companies?.[0],
+        party: partyById[row.partyId],
+        doc: row,
+        items: items || [],
+        kind: "invoice",
+      });
+    } catch (error) {
+      console.error("PDF download failed:", error);
+      toast.error("Could not create the PDF file");
+    }
+  };
+
   /* EDIT */
   const onEdit = (invoice) => {
     if (!invoice?.id) return;
     navigate(`/bills/invoices/${invoice.id}/edit`);
-  };
-
-  /* PDF DOWNLOAD */
-  const onDownloadPdf = async (invoice) => {
-    try {
-      /* list rows don't carry line items, so fetch this invoice's items */
-      const items = await invoiceItemRepo.list({ invoiceId: invoice.id });
-
-      downloadDocumentPdf({
-        company,
-        party: partyById[invoice.partyId],
-        doc: invoice,
-        items,
-        kind: "invoice",
-      });
-
-      toast.success(`Invoice ${invoice.number} downloaded`);
-    } catch (error) {
-      console.error("Invoice PDF failed:", error);
-      toast.error("Could not create the PDF");
-    }
   };
 
   /* RECEIPT — one receipt per payment */
@@ -289,6 +304,42 @@ export function InvoiceListPage() {
               render: (row) => <StatusBadge status={row.status} />,
             },
 
+            /* Excel + PDF — right after Status */
+            {
+              key: "__downloads",
+              header: "",
+              width: 160,
+              align: "right",
+              render: (row) => (
+                <div className="flex items-center justify-end gap-1">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDownloadExcel(row);
+                    }}
+                    className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold text-sky-600 transition hover:bg-sky-500/10"
+                    title="Download Excel"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Excel</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDownloadPdf(row);
+                    }}
+                    className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold text-red-600 transition hover:bg-red-500/10"
+                    title="Download PDF"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    <span>PDF</span>
+                  </button>
+                </div>
+              ),
+            },
+
             /* RECEIPT — one per payment; several payments open a list */
             {
               key: "__receipt",
@@ -315,28 +366,6 @@ export function InvoiceListPage() {
                   </button>
                 );
               },
-            },
-
-            /* PDF DOWNLOAD — immediately after Receipts */
-            {
-              key: "__pdf",
-              header: "",
-              width: 80,
-              align: "right",
-              render: (row) => (
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onDownloadPdf(row);
-                  }}
-                  className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold text-emerald-600 transition hover:bg-emerald-500/10"
-                  title="Download invoice PDF"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>PDF</span>
-                </button>
-              ),
             },
 
             {

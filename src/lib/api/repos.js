@@ -51,9 +51,43 @@ export const variantResolver = {
       throw new Error("variantResolver: productId is required");
     }
 
-    const pairs = Object.entries(attributeValues || {}).filter(
-      ([, valueId]) => Boolean(valueId),
+    const rawEntries = Object.entries(attributeValues || {}).filter(
+      ([, value]) => Boolean(value),
     );
+
+    /*
+     * ProductPicker historically supplied attribute names/labels (for example
+     * Specification: "18mm") instead of master ids. Resolve those safely before
+     * materializing a variant. Unknown custom values are kept in the document
+     * snapshot but must never become fake attribute ids in variantAttributes.
+     */
+    const allAttributes = await attributeRepo.list({ isActive: true });
+    const allValues = await attributeValueRepo.list();
+    const attrById = new Map((allAttributes || []).map((a) => [String(a.id), a]));
+    const attrByName = new Map(
+      (allAttributes || []).map((a) => [String(a.name || "").trim().toLowerCase(), a]),
+    );
+    const valueById = new Map((allValues || []).map((v) => [String(v.id), v]));
+    const valueByLabel = new Map(
+      (allValues || []).map((v) => [String(v.label || "").trim().toLowerCase(), v]),
+    );
+
+    const pairs = [];
+    for (const [rawAttribute, rawValue] of rawEntries) {
+      const attribute =
+        attrById.get(String(rawAttribute)) ||
+        attrByName.get(String(rawAttribute).trim().toLowerCase());
+
+      if (!attribute) continue;
+
+      const value =
+        valueById.get(String(rawValue)) ||
+        valueByLabel.get(String(rawValue).trim().toLowerCase());
+
+      if (value) {
+        pairs.push([attribute.id, value.id]);
+      }
+    }
 
     const variantsRaw = await variantRepo.list({ productId });
     const variants = Array.isArray(variantsRaw)

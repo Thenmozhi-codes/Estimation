@@ -61,7 +61,7 @@ const FIXED_PRODUCT_TYPES = [
   { name: "Edge Band", code: "EDGE-BAND" },
   { name: "WPC", code: "WPC" },
   { name: "Fevicol", code: "FEVICOL" },
-  { name: "Hardware", code: "HARDWARE" },
+  
 ];
 
 const PRODUCT_TYPE_ATTRIBUTE_CONFIG = {
@@ -85,10 +85,8 @@ const PRODUCT_TYPE_ATTRIBUTE_CONFIG = {
     attribute: "Pack Size",
     values: ["1/2kg", "1kg", "2kg", "5kg", "10kg", "20kg", "50kg"],
   },
-  Hardware: {
-    attribute: "Size",
-    values: ["Small", "Medium", "Large"],
-  },
+  
+  
 };
 
 const normalize = (value) =>
