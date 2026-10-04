@@ -52,7 +52,8 @@ import {
  *   Allowed Values
  *
  * Product Types are fixed:
- *   Plywood, Laminate, Edge Band, WPC, Fevicol, Hardware
+ *   Plywood, Laminate, Edge Band, WPC, Fevicol,
+ *   Timber, Beading, Laminated Board, HMR Board, Door
  */
 
 const FIXED_PRODUCT_TYPES = [
@@ -61,7 +62,11 @@ const FIXED_PRODUCT_TYPES = [
   { name: "Edge Band", code: "EDGE-BAND" },
   { name: "WPC", code: "WPC" },
   { name: "Fevicol", code: "FEVICOL" },
-  
+  { name: "Timber", code: "TIMBER" },
+  { name: "Beading", code: "BEADING" },
+  { name: "Laminated Board", code: "LAMINATED-BOARD" },
+  { name: "HMR Board", code: "HMR-BOARD" },
+  { name: "Door", code: "DOOR" },
 ];
 
 const PRODUCT_TYPE_ATTRIBUTE_CONFIG = {
@@ -84,6 +89,31 @@ const PRODUCT_TYPE_ATTRIBUTE_CONFIG = {
   Fevicol: {
     attribute: "Pack Size",
     values: ["1/2kg", "1kg", "2kg", "5kg", "10kg", "20kg", "50kg"],
+  },
+
+  /*
+   * Timber & Beading thickness is in INCHES (used in the CFT formula).
+   * Keep a number in every value, e.g. "1.5 inch" or "3/4 inch".
+   */
+  Timber: {
+    attribute: "Thickness",
+    values: ["1 inch", "1.5 inch", "2 inch", "3 inch", "4 inch"],
+  },
+  Beading: {
+    attribute: "Thickness",
+    values: ["1/2 inch", "3/4 inch", "1 inch"],
+  },
+  "Laminated Board": {
+    attribute: "Thickness",
+    values: ["19mm", "18mm", "16mm", "12mm", "9mm", "6mm"],
+  },
+  "HMR Board": {
+    attribute: "Thickness",
+    values: ["19mm", "18mm", "16mm", "12mm"],
+  },
+  Door: {
+    attribute: "Thickness",
+    values: ["40mm", "35mm", "32mm", "30mm", "25mm", "18mm"],
   },
   
   

@@ -4,8 +4,51 @@ import { toCode } from "@/lib/utils/code";
 import { nowIso } from "@/lib/utils/date";
 
 export function seedIfEmpty() {
-  if (mockStore.get().companies.length) return;
-  mockStore.set(build());
+  if (!mockStore.get().companies.length) mockStore.set(build());
+  ensureDefaultProductTypes();
+}
+
+/*
+ * Default Product Types added after the first release.
+ * Safe to run on every start: it only inserts what is missing, so existing
+ * browser data (localStorage) gets the new types without a reset.
+ */
+const DEFAULT_PRODUCT_TYPES = [
+  { name: "Timber",          attrs: ["Brand", "Thickness", "Width", "Length", "Unit"] },
+  { name: "Beading",         attrs: ["Brand", "Thickness", "Width", "Length", "Unit"] },
+  { name: "Laminated Board", attrs: ["Brand", "Thickness", "Length", "Width", "Unit"] },
+  { name: "HMR Board",       attrs: ["Brand", "Thickness", "Length", "Width", "Unit"] },
+  { name: "Door",            attrs: ["Thickness", "Length", "Width", "Unit"] },
+];
+
+export function ensureDefaultProductTypes() {
+  const db = mockStore.get();
+  const companyId = db.companies?.[0]?.id || null;
+  const norm = (v) => String(v || "").trim().toLowerCase();
+
+  for (const def of DEFAULT_PRODUCT_TYPES) {
+    let cat = db.categories.find((c) => norm(c.name) === norm(def.name));
+    if (!cat) {
+      cat = {
+        id: newId(), companyId, name: def.name, code: toCode(def.name),
+        description: "", isActive: true,
+        createdAt: nowIso(), updatedAt: nowIso(),
+      };
+      mockStore.insert("categories", cat);
+    }
+
+    const mappedIds = new Set(
+      db.categoryAttributes.filter((m) => m.categoryId === cat.id).map((m) => m.attributeId),
+    );
+    def.attrs.forEach((attrName, i) => {
+      const attr = db.attributes.find((a) => norm(a.name) === norm(attrName));
+      if (!attr || mappedIds.has(attr.id)) return;
+      mockStore.insert("categoryAttributes", {
+        id: newId(), categoryId: cat.id, attributeId: attr.id,
+        isRequired: attr.isRequired, sortOrder: i,
+      });
+    });
+  }
 }
 
 function build() {

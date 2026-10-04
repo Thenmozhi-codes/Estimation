@@ -10,6 +10,11 @@ export const FIXED_PRODUCT_TYPES = [
   { label: "Edge Band", categoryName: "Edge Band" },
   { label: "WPC", categoryName: "WPC" },
   { label: "Fevicol", categoryName: "Adhesive" },
+  { label: "Timber", categoryName: "Timber" },
+  { label: "Beading", categoryName: "Beading" },
+  { label: "Laminated Board", categoryName: "Laminated Board" },
+  { label: "HMR Board", categoryName: "HMR Board" },
+  { label: "Door", categoryName: "Door" },
 ];
 
 export function normalize(value) {

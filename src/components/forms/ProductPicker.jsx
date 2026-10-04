@@ -22,6 +22,20 @@ const PRODUCT_TYPES = [
   },
   { key: "WPC", label: "WPC", aliases: ["WPC"] },
   { key: "Adhesive", label: "Fevicol", aliases: ["Adhesive", "Fevicol", "FEVICOL"] },
+  { key: "Timber", label: "Timber", aliases: ["Timber", "TIMBER"] },
+  { key: "Beading", label: "Beading", aliases: ["Beading", "BEADING"] },
+  {
+    key: "Laminated Board",
+    label: "Laminated Board",
+    aliases: ["Laminated Board", "LaminatedBoard", "LAMINATED_BOARD"],
+  },
+  {
+    key: "HMR Board",
+    label: "HMR Board",
+    aliases: ["HMR Board", "HMRBoard", "HMR_BOARD"],
+  },
+  /* Door has no Brand Master: thickness + rate are typed in */
+  { key: "Door", label: "Door", aliases: ["Door", "DOOR"], noBrand: true },
 ];
 
 /* ==========================================================================
@@ -58,7 +72,63 @@ const MEASUREMENT_BY_TYPE = {
     label: "Volume",
   },
   Adhesive: { fields: [], unit: "pcs", label: "" },
+
+  /* Timber: Width(in) × Thickness(in, from Master) × Length(ft) × Nos ÷ 144 */
+  Timber: {
+    fields: ["width", "length"],
+    labels: { width: "Width (in)", length: "Length (ft)" },
+    unit: "cft",
+    label: "Qty (CFT)",
+    formula: "Width × Thickness × Length × Nos ÷ 144",
+    needsThickness: true,
+    calc: ({ width, length }, nos, thickness) =>
+      (width * thickness * length * nos) / 144,
+  },
+
+  /* Beading: Qty (RFT) = Length × Nos. Width is recorded but not in the qty. */
+  Beading: {
+    fields: ["width", "length"],
+    labels: { width: "Width (in)", length: "Length (ft)" },
+    unit: "rft",
+    label: "Qty (RFT)",
+    formula: "Length × Nos",
+    calc: ({ length }, nos) => length * nos,
+  },
+
+  "Laminated Board": {
+    fields: ["length", "width"],
+    unit: "sq.ft",
+    label: "Qty (Sq.ft)",
+    formula: "Length × Width × Nos",
+  },
+  "HMR Board": {
+    fields: ["length", "width"],
+    unit: "sq.ft",
+    label: "Qty (Sq.ft)",
+    formula: "Length × Width × Nos",
+  },
+  Door: {
+    fields: ["length", "width"],
+    unit: "sq.ft",
+    label: "Qty (Sq.ft)",
+    formula: "Length × Width × Nos",
+  },
 };
+
+/* "18mm" -> 18, "1.5 inch" -> 1.5, "1 1/2" -> 1.5, "3/4" -> 0.75 */
+function thicknessFromLabel(label) {
+  const text = String(label ?? "");
+  let m = text.match(/(\d+)\s+(\d+)\s*\/\s*(\d+)/);
+  if (m) return Number(m[1]) + Number(m[2]) / Number(m[3]);
+  m = text.match(/(\d+)\s*\/\s*(\d+)/);
+  if (m) return Number(m[1]) / Number(m[2]);
+  m = text.match(/(\d+(?:\.\d+)?)/);
+  return m ? Number(m[1]) : 0;
+}
+
+function fieldLabel(measure, field) {
+  return measure?.labels?.[field] || MEASURE_LABELS[field];
+}
 
 const NO_MEASUREMENT = { fields: [], unit: "pcs", label: "" };
 
@@ -102,22 +172,40 @@ function uniqueBy(items, keyFn) {
   });
 }
 
-function calcMeasurement(typeKey, values, pcs) {
+function calcMeasurement(typeKey, values, pcs, thickness = 0) {
   const config = MEASUREMENT_BY_TYPE[typeKey] || NO_MEASUREMENT;
 
   const numbers = config.fields.map((field) => safeNumber(values?.[field]));
 
-  const active = config.fields.length > 0 && numbers.every((n) => n > 0);
+  const thicknessMissing = Boolean(config.needsThickness) && !(thickness > 0);
 
-  const qty = active
-    ? numbers.reduce((product, n) => product * n, 1) * pcs
-    : 0;
+  const active =
+    config.fields.length > 0 &&
+    numbers.every((n) => n > 0) &&
+    !thicknessMissing;
 
-  return { ...config, active, qty };
+  let qty = 0;
+  if (active) {
+    qty = config.calc
+      ? config.calc(
+          {
+            length: safeNumber(values?.length),
+            width: safeNumber(values?.width),
+            height: safeNumber(values?.height),
+          },
+          pcs,
+          thickness,
+        )
+      : numbers.reduce((product, n) => product * n, 1) * pcs;
+  }
+
+  return { ...config, active, qty, thicknessMissing };
 }
 
 function formatMeasureQty(measure) {
-  return measure.qty.toFixed(measure.unit === "cu.ft" ? 3 : 2);
+  return measure.qty.toFixed(
+    measure.unit === "cu.ft" || measure.unit === "cft" ? 3 : 2,
+  );
 }
 
 function getTypeConfig(type) {
@@ -412,6 +500,10 @@ export function ProductPicker({
   const [height, setHeight] = useState("");
   const [pcs, setPcs] = useState(1);
 
+  /* DOOR (no Brand Master): thickness and rate are typed in */
+  const [doorThickness, setDoorThickness] = useState("");
+  const [doorRate, setDoorRate] = useState("");
+
   const inputRef = useRef(null);
 
   /* READ STORE */
@@ -431,6 +523,8 @@ export function ProductPicker({
     setLength("");
     setWidth("");
     setHeight("");
+    setDoorThickness("");
+    setDoorRate("");
   }
 
   /* CLOSE ON ESCAPE */
@@ -460,6 +554,8 @@ export function ProductPicker({
     setLength("");
     setWidth("");
     setHeight("");
+    setDoorThickness("");
+    setDoorRate("");
     setPcs(1);
 
     const timer = setTimeout(() => {
@@ -485,6 +581,25 @@ export function ProductPicker({
       ) || null;
 
     if (!typeConfig) return;
+
+    if (typeConfig.noBrand) {
+      const doorProduct = ensureProductForType(typeConfig.key);
+      setSelectedType(typeConfig.key);
+      setSelectedBrand(null);
+      setSelectedProduct(doorProduct);
+      setLength(initialItem?.length ? String(initialItem.length) : "");
+      setWidth(initialItem?.width ? String(initialItem.width) : "");
+      setPcs(Math.max(1, safeNumber(initialItem?.pcs) || 1));
+      const savedThickness = thicknessFromLabel(
+        initialItem?.attributeValues?.Thickness ||
+          initialItem?.thickness ||
+          initialItem?.selectedSpecification,
+      );
+      setDoorThickness(savedThickness > 0 ? String(savedThickness) : "");
+      const savedRate = safeNumber(initialItem?.rate ?? initialItem?.unitPrice);
+      setDoorRate(savedRate > 0 ? String(savedRate) : "");
+      return;
+    }
 
     const brand =
       brands.find((item) => sameId(item?.id, initialItem?.brandId)) ||
@@ -622,6 +737,45 @@ export function ProductPicker({
       products: [...currentProducts, product],
     });
 
+    return product;
+  }
+
+  /* Product for brand-less types (Door): one shared product per Product Type */
+  function ensureProductForType(typeKey) {
+    const typeCfg = getTypeConfig(typeKey);
+    if (!typeCfg) return null;
+
+    const latestDb = mockStore.get() || {};
+    const currentProducts = toArray(latestDb.products);
+    const category = toArray(latestDb.categories).find((item) =>
+      categoryMatchesType(item, typeCfg),
+    );
+
+    const existing = currentProducts.find(
+      (product) =>
+        product?.status !== "inactive" &&
+        !product?.brandId &&
+        (category
+          ? sameId(product?.categoryId, category.id)
+          : normalize(product?.name) === normalize(typeCfg.label)),
+    );
+    if (existing) return existing;
+
+    const now = new Date().toISOString();
+    const product = {
+      id: newId(),
+      companyId: latestDb.companies?.[0]?.id || null,
+      name: typeCfg.label,
+      sku: toCode(typeCfg.label),
+      categoryId: category?.id || null,
+      brandId: null,
+      description: "",
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    mockStore.set({ ...latestDb, products: [...currentProducts, product] });
     return product;
   }
 
@@ -816,6 +970,76 @@ export function ProductPicker({
     queryClient.invalidateQueries({ queryKey: ["brands"] });
   }
 
+  /* FINAL ADD — Door (thickness + rate typed in, no Brand Master) */
+  function handleAddDoor() {
+    const nos = Math.max(1, safeNumber(pcs) || 1);
+    const dims = {
+      length: safeNumber(length),
+      width: safeNumber(width),
+      height: 0,
+    };
+    const measure = calcMeasurement("Door", dims, nos);
+    const thickness = safeNumber(doorThickness);
+    const rate = safeNumber(doorRate);
+
+    if (!measure.active || thickness <= 0 || rate <= 0) return;
+
+    const product = selectedProduct || ensureProductForType("Door");
+    if (!product?.id) return;
+
+    const specLabel = `${thickness} mm`;
+
+    onSelect({
+      product,
+      productId: product.id,
+      productName: "Door",
+      categoryId: product.categoryId || null,
+
+      brandId: null,
+      brandName: "Door",
+
+      productType: "Door",
+
+      sku: product.sku || "DOOR",
+      productSku: product.sku || "DOOR",
+
+      variantId: null,
+      variant: null,
+      matchedVariant: null,
+
+      attributeValues: {
+        Thickness: specLabel,
+        Specification: specLabel,
+        Unit: measure.unit,
+      },
+
+      specifications: [{ specification: specLabel, price: rate }],
+      selectedSpecification: specLabel,
+
+      defaultPrice: rate,
+      price: rate,
+      rate,
+
+      stock: 0,
+
+      quantity: Number(formatMeasureQty(measure)),
+      unit: measure.unit,
+
+      length: dims.length,
+      width: dims.width,
+      height: "",
+      pcs: nos,
+
+      thickness: specLabel,
+      grade: "",
+      finish: "",
+      color: "",
+      packSize: "",
+    });
+
+    onClose();
+  }
+
   /* FINAL ADD */
   function handleAddToLine() {
     if (!selectedProduct?.id || !selectedSpecification) return;
@@ -861,7 +1085,12 @@ export function ProductPicker({
       width: safeNumber(width),
       height: safeNumber(height),
     };
-    const measure = calcMeasurement(selectedType, dims, numericPcs);
+    const measure = calcMeasurement(
+      selectedType,
+      dims,
+      numericPcs,
+      thicknessFromLabel(selectedSpecification.label),
+    );
 
     if (MEASUREMENT_REQUIRED && measure.fields.length > 0 && !measure.active) {
       return;
@@ -993,7 +1222,7 @@ export function ProductPicker({
               </span>
               <SearchableSelect
                 value={selectedBrand ? String(selectedBrand.id) : ""}
-                disabled={!selectedType}
+                disabled={!selectedType || Boolean(typeConfig?.noBrand)}
                 onChange={(brandId) => {
                   const brand =
                     availableBrands.find((item) =>
@@ -1013,7 +1242,9 @@ export function ProductPicker({
                   value: String(brand.id),
                   label: brand.name,
                 }))}
-                placeholder="Select Brand"
+                placeholder={
+                  typeConfig?.noBrand ? "Not required" : "Select Brand"
+                }
                 searchPlaceholder="Search brand…"
                 emptyText="No brands found"
               />
@@ -1021,7 +1252,7 @@ export function ProductPicker({
 
             <label className="min-w-0">
               <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
-                Pcs
+                Nos
               </span>
               <input
                 type="number"
@@ -1039,7 +1270,7 @@ export function ProductPicker({
             </label>
           </div>
 
-          {selectedType && !availableBrands.length && (
+          {selectedType && !typeConfig?.noBrand && !availableBrands.length && (
             <div className="rounded-lg border border-dashed border-line px-3 py-2 text-[10px] text-muted">
               No brands found for this Product Type. Add the brand in Brand
               Master first.
@@ -1047,7 +1278,22 @@ export function ProductPicker({
           )}
 
           {/* SPECIFICATION + MEASUREMENT */}
-          {selectedBrand && selectedProduct && (
+          {typeConfig?.noBrand && (
+            <DoorStep
+              thickness={doorThickness}
+              length={length}
+              width={width}
+              pcs={pcs}
+              rate={doorRate}
+              onThicknessChange={setDoorThickness}
+              onLengthChange={setLength}
+              onWidthChange={setWidth}
+              onRateChange={setDoorRate}
+              onAdd={handleAddDoor}
+            />
+          )}
+
+          {!typeConfig?.noBrand && selectedBrand && selectedProduct && (
             <SpecificationStep
               typeKey={selectedType}
               specifications={specifications}
@@ -1113,7 +1359,10 @@ function SpecificationStep({
     height: onHeightChange,
   };
 
-  const measure = calcMeasurement(typeKey, fieldValues, numericPcs);
+  /* Thickness comes from the selected Brand Master specification */
+  const specThickness = thicknessFromLabel(selectedSpecification?.label);
+
+  const measure = calcMeasurement(typeKey, fieldValues, numericPcs, specThickness);
 
   /* Billing quantity: measurement result when filled, otherwise pieces */
   const billingQty = measure.active ? measure.qty : numericPcs;
@@ -1134,7 +1383,7 @@ function SpecificationStep({
     MEASUREMENT_REQUIRED && measure.fields.length > 0 && !measure.active;
 
   const missingLabel = measure.fields
-    .map((field) => MEASURE_LABELS[field].replace(" (ft)", ""))
+    .map((field) => fieldLabel(measure, field).replace(/\s*\(.*\)/, ""))
     .join(", ");
 
   const total =
@@ -1256,10 +1505,21 @@ function SpecificationStep({
 
               <div className="mt-0.5 text-[10px] text-muted">
                 {measure.fields.length
-                  ? `${measure.label} = ${measure.fields
-                      .map((field) => MEASURE_NAMES[field])
-                      .join(" × ")} × Pcs`
-                  : "Not needed for this product type. Total = Price × Pcs."}
+                  ? `${measure.label} = ${
+                      measure.formula ||
+                      `${measure.fields
+                        .map((field) => MEASURE_NAMES[field])
+                        .join(" × ")} × Pcs`
+                    }`
+                  : "Not needed for this product type. Total = Price × Nos."}
+                {measure.needsThickness && (
+                  <span>
+                    {" "}
+                    (Thickness
+                    {specThickness > 0 ? ` = ${specThickness}` : ""} comes from
+                    the selected specification)
+                  </span>
+                )}
               </div>
             </div>
 
@@ -1279,7 +1539,7 @@ function SpecificationStep({
               {measure.fields.map((field) => (
                 <MeasurementField
                   key={field}
-                  label={MEASURE_LABELS[field]}
+                  label={fieldLabel(measure, field)}
                   value={fieldValues[field]}
                   onChange={(event) => fieldHandlers[field](event.target.value)}
                   placeholder={MEASURE_NAMES[field]}
@@ -1313,7 +1573,9 @@ function SpecificationStep({
               </div>
 
               <div className="mt-0.5 text-[10px] text-muted">
-                {selectedSpecification && needsMeasurement
+                {selectedSpecification && measure.thicknessMissing
+                  ? "This specification needs a numeric thickness (e.g. 1.5)."
+                  : selectedSpecification && needsMeasurement
                   ? `Enter ${missingLabel} to continue.`
                   : selectedSpecification
                   ? selectedRate > 0
@@ -1346,6 +1608,115 @@ function SpecificationStep({
           </div>
         </>
       )}
+    </section>
+  );
+}
+
+/* ==========================================================================
+   DOOR — thickness, length, width, nos and rate are all typed in
+   ========================================================================== */
+
+function DoorStep({
+  thickness,
+  length,
+  width,
+  pcs,
+  rate,
+  onThicknessChange,
+  onLengthChange,
+  onWidthChange,
+  onRateChange,
+  onAdd,
+}) {
+  const nos = Math.max(1, safeNumber(pcs) || 1);
+  const measure = calcMeasurement("Door", { length, width }, nos);
+  const rateValue = safeNumber(rate);
+  const thicknessValue = safeNumber(thickness);
+
+  const ready = measure.active && rateValue > 0 && thicknessValue > 0;
+  const total = ready ? measure.qty * rateValue : 0;
+
+  const formatINR = (value, digits = 2) =>
+    Number(value).toLocaleString("en-IN", { maximumFractionDigits: digits });
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <div className="text-xs font-bold text-ink">
+          Door Details<span className="ml-0.5 text-red-500">*</span>
+        </div>
+        <div className="mt-0.5 text-[10px] text-muted">
+          {measure.label} = {measure.formula}. Enter the rate per Sq.ft.
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <MeasurementField
+          label="Thickness (mm)"
+          value={thickness}
+          onChange={(event) => onThicknessChange(event.target.value)}
+          placeholder="18"
+        />
+        <MeasurementField
+          label="Length (ft)"
+          value={length}
+          onChange={(event) => onLengthChange(event.target.value)}
+          placeholder="Length"
+        />
+        <MeasurementField
+          label="Width (ft)"
+          value={width}
+          onChange={(event) => onWidthChange(event.target.value)}
+          placeholder="Width"
+        />
+        <MeasurementField
+          label="Rate (₹ / Sq.ft)"
+          value={rate}
+          onChange={(event) => onRateChange(event.target.value)}
+          placeholder="Rate"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <ReadOnlyMetric
+          label="Qty (Sq.ft)"
+          value={measure.active ? formatMeasureQty(measure) : "—"}
+        />
+        <ReadOnlyMetric
+          label="Amount (₹)"
+          value={total > 0 ? formatINR(total) : "—"}
+          strong
+        />
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-lg border border-primary-500/15 bg-primary-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 text-[10px] text-muted">
+          {ready
+            ? `${formatMeasureQty(measure)} sq.ft × ₹${formatINR(rateValue)}`
+            : "Enter thickness, length, width and rate to continue."}
+        </div>
+
+        <div className="flex shrink-0 items-center justify-between gap-4 sm:justify-end">
+          <div className="text-right">
+            <div className="text-[9px] font-bold uppercase tracking-wide text-muted">
+              Total
+            </div>
+            <div className="text-base font-black text-ink">
+              ₹ {total > 0 ? formatINR(total) : "0"}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={!ready}
+            onClick={onAdd}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-xs font-bold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Check className="h-4 w-4" />
+            Add to Line
+          </button>
+        </div>
+      </div>
     </section>
   );
 }

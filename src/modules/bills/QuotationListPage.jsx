@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download,FileText, Pencil, Plus } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, Pencil, Plus } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
 import { Button } from "@/components/ui/Button";
@@ -10,8 +10,12 @@ import { Toolbar } from "@/components/ui/Toolbar";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { toast } from "@/lib/toast";
+import { usePermission } from "@/lib/store/authStore";
 import { companyRepo, quotationItemRepo } from "@/lib/api/repos";
-import { downloadDocumentExcel } from "@/lib/services/excelService";
+import {
+  downloadDocumentExcel,
+  downloadDocumentsExcel,
+} from "@/lib/services/excelService";
 import { downloadDocumentPdf } from "@/lib/services/pdfService";
 import { formatMoney } from "@/lib/utils/money";
 import { fmtDate } from "@/lib/utils/date";
@@ -31,6 +35,12 @@ export function QuotationListPage() {
   const { data: quotations = [], isLoading } = useQuotations();
   const { data: parties = [] } = useParties();
   const deleteMut = useDeleteQuotation();
+
+  const canCreate = usePermission("canCreateDocuments");
+  const canEdit = usePermission("canEditDocuments");
+  const canDelete = usePermission("canDeleteDocuments");
+  const canExportAll = usePermission("canExportAll");
+  const [exporting, setExporting] = useState(false);
 
   const partyById = useMemo(
     () => Object.fromEntries(parties.map((p) => [p.id, p])),
@@ -103,6 +113,40 @@ export function QuotationListPage() {
     }
   };
 
+  /* Excel — export every quotation in the current list (search + status filter) */
+  const onExportAll = async () => {
+    if (!filtered.length) {
+      toast.error("No quotations to export");
+      return;
+    }
+
+    setExporting(true);
+
+    try {
+      const [allItems, companies] = await Promise.all([
+        quotationItemRepo.list(),
+        companyRepo.list(),
+      ]);
+
+      const ids = new Set(filtered.map((row) => row.id));
+
+      downloadDocumentsExcel({
+        company: companies?.[0],
+        parties,
+        docs: filtered,
+        items: (allItems || []).filter((item) => ids.has(item.quotationId)),
+        kind: "quotation",
+      });
+
+      toast.success(`${filtered.length} quotations exported`);
+    } catch (error) {
+      console.error("Export all failed:", error);
+      toast.error("Could not create the Excel file");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   /* EDIT */
   const onEdit = (quotation) => {
     if (!quotation?.id) return;
@@ -114,11 +158,30 @@ export function QuotationListPage() {
       <PageHeader
         title="Quotations"
         actions={
-          <Button size="sm" onClick={() => navigate("/bills/quotations/new")}>
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">New Quotation</span>
-            <span className="sm:hidden">New</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            {canExportAll && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onExportAll}
+                disabled={exporting}
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                <span className="hidden sm:inline">
+                  {exporting ? "Exporting…" : "Export All"}
+                </span>
+                <span className="sm:hidden">Export</span>
+              </Button>
+            )}
+
+            {canCreate && (
+              <Button size="sm" onClick={() => navigate("/bills/quotations/new")}>
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">New Quotation</span>
+                <span className="sm:hidden">New</span>
+              </Button>
+            )}
+          </div>
         }
       />
       <ModuleTabs tabs={MODULE_TABS.bills} />
@@ -225,7 +288,7 @@ export function QuotationListPage() {
               header: "",
               width: 75,
               align: "right",
-              render: (row) => (
+              render: (row) => !canEdit ? null : (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -246,7 +309,7 @@ export function QuotationListPage() {
               header: "",
               width: 70,
               align: "right",
-              render: (row) => (
+              render: (row) => !canDelete ? null : (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -266,9 +329,11 @@ export function QuotationListPage() {
           emptyTitle="No quotations yet"
           emptyDescription="Create your first quotation to send to a customer."
           emptyAction={
-            <Button onClick={() => navigate("/bills/quotations/new")}>
-              <Plus className="h-4 w-4" /> New Quotation
-            </Button>
+            canCreate ? (
+              <Button onClick={() => navigate("/bills/quotations/new")}>
+                <Plus className="h-4 w-4" /> New Quotation
+              </Button>
+            ) : null
           }
         />
       </div>

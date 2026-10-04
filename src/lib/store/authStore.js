@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { mockStore } from "@/lib/store/mockStore";
+import { roleCan } from "@/lib/domain/roles";
 
 const STORAGE_KEY = "timber-erp-auth-v1";
 
@@ -11,12 +13,20 @@ const loadInitial = () => {
   }
 };
 
-export const useAuthStore = create((set) => ({
+const persist = (user) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+  } catch {
+    /* ignore */
+  }
+};
+
+export const useAuthStore = create((set, get) => ({
   user: loadInitial(),
 
-  login: ({ name, email, role }) => {
-    const user = { name, email, role, loginAt: new Date().toISOString() };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+  login: ({ id, name, email, role }) => {
+    const user = { id, name, email, role, loginAt: new Date().toISOString() };
+    persist(user);
     set({ user });
     return user;
   },
@@ -24,6 +34,44 @@ export const useAuthStore = create((set) => ({
   logout: () => {
     localStorage.removeItem(STORAGE_KEY);
     set({ user: null });
+  },
+
+  /*
+   * Keeps the saved session in step with the Users list:
+   *  - user deleted or disabled  -> signed out
+   *  - role / name / email changed -> session updated straight away
+   *  - old demo session (no user id) -> signed out, must sign in again
+   * Returns false when the session was ended.
+   */
+  validateSession: () => {
+    const { user } = get();
+    if (!user) return true;
+
+    const record = user.id
+      ? mockStore.all("users").find((item) => item.id === user.id)
+      : null;
+
+    if (!record || record.isActive === false) {
+      get().logout();
+      return false;
+    }
+
+    if (
+      record.role !== user.role ||
+      record.name !== user.name ||
+      record.email !== user.email
+    ) {
+      const next = {
+        ...user,
+        name: record.name,
+        email: record.email,
+        role: record.role,
+      };
+      persist(next);
+      set({ user: next });
+    }
+
+    return true;
   },
 
   hasRole: (roles) => {
@@ -37,16 +85,11 @@ export const useAuthStore = create((set) => ({
 /** Convenience hook */
 export function usePermission(permission) {
   const user = useAuthStore((s) => s.user);
-  const role = user?.role;
 
-  const PERMS = {
-    canOverridePrice: ["admin", "manager"],
-    canDeleteDocuments: ["admin", "manager"],
-    canManageMasters: ["admin", "manager"],
-    canViewReports: ["admin", "manager", "sales", "viewer"],
-    canManageUsers: ["admin"],
-    canEditCompany: ["admin"],
-  };
+  return roleCan(user?.role, permission);
+}
 
-  return PERMS[permission]?.includes(role) ?? false;
+/** Same check for event handlers / non-React code */
+export function can(permission) {
+  return roleCan(useAuthStore.getState().user?.role, permission);
 }

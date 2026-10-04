@@ -176,6 +176,11 @@ function typeFromSku(sku) {
   if (/^(eb|edg)/i.test(text)) return "Edge Band";
   if (/^wpc/i.test(text)) return "WPC";
   if (/^(fev|adh)/i.test(text)) return "Fevicol";
+  if (/^tim/i.test(text)) return "Timber";
+  if (/^bead/i.test(text)) return "Beading";
+  if (/^(lb|lamb)/i.test(text)) return "Laminated Board";
+  if (/^hmr/i.test(text)) return "HMR Board";
+  if (/^door/i.test(text)) return "Door";
 
   return "";
 }
@@ -185,6 +190,9 @@ function unitForType(type) {
   const key = String(type || "").toLowerCase().replace(/[^a-z]/g, "");
 
   if (key === "plywood" || key === "laminate") return "sq.ft";
+  if (key === "laminatedboard" || key === "hmrboard" || key === "door") return "sq.ft";
+  if (key === "timber") return "cft";
+  if (key === "beading") return "rft";
   if (key === "edgeband") return "rft";
   if (key === "wpc") return "cu.ft";
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Boxes, Receipt, BarChart3, Settings as SettingsIcon,
   Search, LogOut, ChevronDown,
@@ -12,19 +12,36 @@ import { MobileBottomNav } from "@/components/common/MobileBottomNav";
 import { Dropdown, DropdownItem, DropdownDivider } from "@/components/ui/Dropdown";
 import { PageTransition } from "@/components/common/PageTransition";
 import { useAuthStore } from "@/lib/store/authStore";
+import { AccessDenied } from "@/components/common/AccessDenied";
+import { canAccessPath, getNavTarget, roleCan } from "@/lib/domain/roles";
 
+/* paths = the pages of the section; the first one the role can open is used
+   as the link, and the item is hidden when the role can open none of them */
 const NAV = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/master",    label: "Master",    icon: Boxes },
-  { to: "/bills",     label: "Bills",     icon: Receipt },
-  { to: "/reports",   label: "Reports",   icon: BarChart3 },
-  { to: "/settings",  label: "Settings",  icon: SettingsIcon },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, paths: ["/dashboard"] },
+  {
+    to: "/master", label: "Master", icon: Boxes,
+    paths: ["/master/attributes", "/master/brands", "/master/customers"],
+  },
+  { to: "/bills",     label: "Bills",     icon: Receipt,   paths: ["/bills/quotations"] },
+  { to: "/reports",   label: "Reports",   icon: BarChart3, paths: ["/reports/sales"] },
+  { to: "/settings",  label: "Settings",  icon: SettingsIcon, paths: ["/settings/company"] },
 ];
 
 export function AppLayout() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const location = useLocation();
+
+  /* only the menu items this role may open */
+  const visibleNav = NAV.map((item) => ({
+    ...item,
+    target: getNavTarget(user?.role, item.paths),
+  })).filter((item) => item.target);
+
+  const baseActive = (to) =>
+    location.pathname === to || location.pathname.startsWith(`${to}/`);
 
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -66,14 +83,14 @@ export function AppLayout() {
 
         {/* Nav */}
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto scrollbar-thin">
-          {NAV.map(({ to, label, icon: Icon }) => (
+          {visibleNav.map(({ to, target, label, icon: Icon }) => (
             <NavLink
               key={to}
-              to={to}
+              to={target}
               className={({ isActive }) =>
                 cn(
                   "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-150",
-                  isActive
+                  (isActive || baseActive(to))
                     ? "bg-primary-50 text-primary-700 font-semibold dark:bg-primary-950/40 dark:text-primary-300"
                     : "text-ink/70 hover:text-ink hover:bg-slate-100 dark:hover:bg-slate-800",
                 )
@@ -84,9 +101,9 @@ export function AppLayout() {
                   <Icon
                     className={cn(
                       "h-4 w-4 shrink-0 transition-colors",
-                      isActive ? "text-primary-500" : "text-muted group-hover:text-ink",
+                      (isActive || baseActive(to)) ? "text-primary-500" : "text-muted group-hover:text-ink",
                     )}
-                    strokeWidth={isActive ? 2 : 1.75}
+                    strokeWidth={(isActive || baseActive(to)) ? 2 : 1.75}
                   />
                   <span>{label}</span>
                 </>
@@ -149,9 +166,11 @@ export function AppLayout() {
                 </div>
                 <div className="text-2xs text-muted truncate">{user?.email}</div>
               </div>
-              <DropdownItem icon={SettingsIcon} onClick={() => navigate("/settings/company")}>
-                Settings
-              </DropdownItem>
+              {roleCan(user?.role, "canViewSettings") && (
+                <DropdownItem icon={SettingsIcon} onClick={() => navigate("/settings/company")}>
+                  Settings
+                </DropdownItem>
+              )}
               <DropdownDivider />
               <DropdownItem icon={LogOut} danger onClick={handleLogout}>
                 Sign out
@@ -162,7 +181,7 @@ export function AppLayout() {
 
         <main className="flex-1 overflow-auto scrollbar-thin pb-16 md:pb-0">
           <PageTransition>
-            <Outlet />
+            {canAccessPath(user?.role, location.pathname) ? <Outlet /> : <AccessDenied />}
           </PageTransition>
         </main>
       </div>

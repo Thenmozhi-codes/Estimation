@@ -297,6 +297,23 @@ function RowActions({ onEdit, onRemove }) {
 }
 
 function MeasurementSummary({ item }) {
+  /* Timber & Beading: width in inches, length in feet */
+  const typeKey = String(item?.productType || "").toLowerCase();
+  if (typeKey === "timber" || typeKey === "beading") {
+    const w = Number(item?.width) || 0;
+    const l = Number(item?.length) || 0;
+    const nos = Number(item?.pcs) || 1;
+    const parts = [];
+    if (w > 0) parts.push(`${w} in (W)`);
+    if (l > 0) parts.push(`${l} ft (L)`);
+    if (!parts.length) return null;
+    return (
+      <div className="mt-0.5 text-[10px] text-muted">
+        {parts.join(" × ")} × {nos} nos
+      </div>
+    );
+  }
+
   const dims = [item?.length, item?.width, item?.height]
     .map((value) => Number(value) || 0)
     .filter((value) => value > 0);

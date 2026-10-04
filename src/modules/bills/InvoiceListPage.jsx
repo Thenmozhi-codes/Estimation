@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download, FileText, Pencil, Plus, X } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, Pencil, Plus, X } from "lucide-react";
 
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
@@ -12,8 +12,12 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 import { toast } from "@/lib/toast";
+import { usePermission } from "@/lib/store/authStore";
 import { companyRepo, invoiceItemRepo } from "@/lib/api/repos";
-import { downloadDocumentExcel } from "@/lib/services/excelService";
+import {
+  downloadDocumentExcel,
+  downloadDocumentsExcel,
+} from "@/lib/services/excelService";
 import { downloadDocumentPdf } from "@/lib/services/pdfService";
 import { formatMoney } from "@/lib/utils/money";
 import { fmtDate } from "@/lib/utils/date";
@@ -43,6 +47,12 @@ export function InvoiceListPage() {
   const { data: allPayments = [] } = usePayments();
 
   const deleteMut = useDeleteInvoice();
+
+  const canCreate = usePermission("canCreateDocuments");
+  const canEdit = usePermission("canEditDocuments");
+  const canDelete = usePermission("canDeleteDocuments");
+  const canExportAll = usePermission("canExportAll");
+  const [exporting, setExporting] = useState(false);
 
   /* PAYMENTS GROUPED BY INVOICE
      A payment is matched to an invoice if ANY of its fields holds that
@@ -171,6 +181,40 @@ export function InvoiceListPage() {
     }
   };
 
+  /* Excel — export every invoice in the current list (search + status filter) */
+  const onExportAll = async () => {
+    if (!filtered.length) {
+      toast.error("No invoices to export");
+      return;
+    }
+
+    setExporting(true);
+
+    try {
+      const [allItems, companies] = await Promise.all([
+        invoiceItemRepo.list(),
+        companyRepo.list(),
+      ]);
+
+      const ids = new Set(filtered.map((row) => row.id));
+
+      downloadDocumentsExcel({
+        company: companies?.[0],
+        parties,
+        docs: filtered,
+        items: (allItems || []).filter((item) => ids.has(item.invoiceId)),
+        kind: "invoice",
+      });
+
+      toast.success(`${filtered.length} invoices exported`);
+    } catch (error) {
+      console.error("Export all failed:", error);
+      toast.error("Could not create the Excel file");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   /* EDIT */
   const onEdit = (invoice) => {
     if (!invoice?.id) return;
@@ -208,12 +252,31 @@ export function InvoiceListPage() {
       <PageHeader
         title="Invoices"
         actions={
-          <Button size="sm" onClick={() => navigate("/bills/invoices/new")}>
-            <Plus className="h-4 w-4" />
+          <div className="flex items-center gap-2">
+            {canExportAll && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onExportAll}
+                disabled={exporting}
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                <span className="hidden sm:inline">
+                  {exporting ? "Exporting…" : "Export All"}
+                </span>
+                <span className="sm:hidden">Export</span>
+              </Button>
+            )}
 
-            <span className="hidden sm:inline">New Invoice</span>
-            <span className="sm:hidden">New</span>
-          </Button>
+            {canCreate && (
+              <Button size="sm" onClick={() => navigate("/bills/invoices/new")}>
+                <Plus className="h-4 w-4" />
+
+                <span className="hidden sm:inline">New Invoice</span>
+                <span className="sm:hidden">New</span>
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -373,7 +436,7 @@ export function InvoiceListPage() {
               header: "",
               width: 75,
               align: "right",
-              render: (row) => (
+              render: (row) => !canEdit ? null : (
                 <button
                   type="button"
                   onClick={(event) => {
@@ -394,7 +457,7 @@ export function InvoiceListPage() {
               header: "",
               width: 70,
               align: "right",
-              render: (row) => (
+              render: (row) => !canDelete ? null : (
                 <button
                   type="button"
                   onClick={(event) => {
@@ -414,10 +477,12 @@ export function InvoiceListPage() {
           emptyTitle="No invoices yet"
           emptyDescription="Issue your first invoice, or convert a quotation."
           emptyAction={
-            <Button onClick={() => navigate("/bills/invoices/new")}>
-              <Plus className="h-4 w-4" />
-              New Invoice
-            </Button>
+            canCreate ? (
+              <Button onClick={() => navigate("/bills/invoices/new")}>
+                <Plus className="h-4 w-4" />
+                New Invoice
+              </Button>
+            ) : null
           }
         />
       </div>
