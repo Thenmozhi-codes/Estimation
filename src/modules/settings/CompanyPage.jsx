@@ -166,7 +166,7 @@ export function CompanyPage() {
       />
       <ModuleTabs tabs={MODULE_TABS.settings} />
 
-      <div className="p-3 md:p-6 max-w-3xl space-y-4">
+      <div className="p-3 md:p-6 w-full space-y-4">
         {/* LOGO */}
         <Card>
           <CardBody>

@@ -52,7 +52,7 @@ export function OutstandingReportPage() {
       />
       <ModuleTabs tabs={MODULE_TABS.reports} />
 
-      <div className="p-3 md:p-6 space-y-4 max-w-5xl">
+      <div className="p-3 md:p-6 space-y-4 w-full">
         <Card>
           <CardBody>
             <div className="text-[11px] font-semibold text-muted uppercase">

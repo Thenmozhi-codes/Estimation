@@ -50,7 +50,7 @@ export function DocumentsPage() {
       />
       <ModuleTabs tabs={MODULE_TABS.settings} />
 
-      <div className="p-3 md:p-6 max-w-3xl">
+      <div className="p-3 md:p-6 w-full">
         <Card>
           <CardBody>
             <FormGrid cols={2}>

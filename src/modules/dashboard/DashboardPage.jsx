@@ -183,7 +183,7 @@ export function DashboardPage() {
         actions={<ChipToggle value={range} onChange={setRange} options={RANGES} />}
       />
 
-      <div className="p-4 md:p-6 space-y-4 md:space-y-5 max-w-[1500px]">
+      <div className="p-4 md:p-6 space-y-4 md:space-y-5 w-full">
 
         {/* ─── KPI row ─── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">

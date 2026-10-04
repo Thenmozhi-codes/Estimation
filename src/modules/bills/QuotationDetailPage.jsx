@@ -12,7 +12,6 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { formatMoney } from "@/lib/utils/money";
 import { fmtDate } from "@/lib/utils/date";
 import { toast } from "@/lib/toast";
-import { usePermission } from "@/lib/store/authStore";
 import {
   useQuotation,
   useQuotationItems,
@@ -27,8 +26,6 @@ import { MODULE_TABS } from "@/app/moduleNav";
 export function QuotationDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const canEditDocs = usePermission("canEditDocuments");
-  const canCreateDocs = usePermission("canCreateDocuments");
   const [confirmConvert, setConfirmConvert] = useState(false);
 
   const { data: q } = useQuotation(id);
@@ -117,17 +114,17 @@ export function QuotationDetailPage() {
             <Button size="sm" variant="outline" onClick={handleDownloadPdf}>
               <Download className="h-4 w-4" /> PDF
             </Button>
-            {canEditDocs && q.status === "draft" && (
+            {q.status === "draft" && (
               <Button size="sm" onClick={() => setStatus("sent")}>
                 <Send className="h-4 w-4" /> Mark Sent
               </Button>
             )}
-            {canEditDocs && (q.status === "sent" || q.status === "draft") && (
+            {(q.status === "sent" || q.status === "draft") && (
               <Button size="sm" onClick={() => setStatus("approved")}>
                 <Check className="h-4 w-4" /> Approve
               </Button>
             )}
-            {canCreateDocs && canConvert && (
+            {canConvert && (
               <Button
                 size="sm"
                 variant="outline"
@@ -141,7 +138,7 @@ export function QuotationDetailPage() {
       />
       <ModuleTabs tabs={MODULE_TABS.bills} />
 
-      <div className="p-4 md:p-6 pb-24 space-y-4 max-w-5xl mx-auto">
+      <div className="p-4 md:p-6 pb-24 space-y-4 w-full">
         <Card>
           <CardHeader title="Summary" />
           <CardBody>

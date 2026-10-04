@@ -740,6 +740,30 @@ export function ProductPicker({
     return product;
   }
 
+  /* Door thickness suggestions come from the Specification Master */
+  const doorThicknessOptions = useMemo(() => {
+    const doorCategory = categories.find((item) => normalize(item?.name) === "door");
+    if (!doorCategory) return [];
+
+    const mappings = toArray(db.categoryAttributes).filter((item) =>
+      sameId(item?.categoryId, doorCategory.id),
+    );
+
+    const out = [];
+    mappings.forEach((mapping) => {
+      const attribute = attributes.find((a) => sameId(a?.id, mapping.attributeId));
+      if (normalize(attribute?.name) !== "thickness") return;
+      attributeValues
+        .filter((v) => sameId(v?.attributeId, attribute.id) && v?.isActive !== false)
+        .forEach((v) => {
+          const n = thicknessFromLabel(v.label);
+          if (n > 0) out.push(String(n));
+        });
+    });
+    return [...new Set(out)];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categories, attributes, attributeValues, open]);
+
   /* Product for brand-less types (Door): one shared product per Product Type */
   function ensureProductForType(typeKey) {
     const typeCfg = getTypeConfig(typeKey);
@@ -1280,6 +1304,7 @@ export function ProductPicker({
           {/* SPECIFICATION + MEASUREMENT */}
           {typeConfig?.noBrand && (
             <DoorStep
+              thicknessOptions={doorThicknessOptions}
               thickness={doorThickness}
               length={length}
               width={width}
@@ -1617,6 +1642,7 @@ function SpecificationStep({
    ========================================================================== */
 
 function DoorStep({
+  thicknessOptions = [],
   thickness,
   length,
   width,
@@ -1656,7 +1682,13 @@ function DoorStep({
           value={thickness}
           onChange={(event) => onThicknessChange(event.target.value)}
           placeholder="18"
+          listId="door-thickness-options"
         />
+        <datalist id="door-thickness-options">
+          {thicknessOptions.map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
         <MeasurementField
           label="Length (ft)"
           value={length}
@@ -1721,7 +1753,7 @@ function DoorStep({
   );
 }
 
-function MeasurementField({ label, value, onChange, placeholder, min }) {
+function MeasurementField({ label, value, onChange, placeholder, min, listId }) {
   return (
     <label className="min-w-0">
       <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
@@ -1732,6 +1764,7 @@ function MeasurementField({ label, value, onChange, placeholder, min }) {
         type="number"
         min={min}
         step="any"
+        list={listId}
         value={value}
         onChange={onChange}
         placeholder={placeholder}

@@ -18,7 +18,6 @@ import { FormGrid } from "@/components/ui/FormGrid";
 import { formatMoney } from "@/lib/utils/money";
 import { fmtDate } from "@/lib/utils/date";
 import { toast } from "@/lib/toast";
-import { usePermission } from "@/lib/store/authStore";
 import {
   useInvoice,
   useInvoiceItems,
@@ -37,7 +36,6 @@ import { MODULE_TABS } from "@/app/moduleNav";
 export function InvoiceDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const canRecordPayments = usePermission("canRecordPayments");
   const [payOpen, setPayOpen] = useState(false);
 
   const { data: inv } = useInvoice(id);
@@ -164,7 +162,7 @@ export function InvoiceDetailPage() {
             <Button size="sm" variant="outline" onClick={handleDownloadPdf}>
               <Download className="h-4 w-4" /> PDF
             </Button>
-            {canRecordPayments && balance > 0.009 && inv.status !== "cancelled" && (
+            {balance > 0.009 && inv.status !== "cancelled" && (
               <Button size="sm" onClick={openPay}>
                 <Banknote className="h-4 w-4" /> Record Payment
               </Button>
@@ -174,7 +172,7 @@ export function InvoiceDetailPage() {
       />
       <ModuleTabs tabs={MODULE_TABS.bills} />
 
-      <div className="p-4 md:p-6 pb-24 space-y-4 max-w-5xl mx-auto">
+      <div className="p-4 md:p-6 pb-24 space-y-4 w-full">
         <Card>
           <CardHeader title="Summary" />
           <CardBody>

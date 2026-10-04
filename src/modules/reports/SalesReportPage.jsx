@@ -53,7 +53,7 @@ export function SalesReportPage() {
       <PageHeader title="Sales Report" description="Revenue by period and customer" />
       <ModuleTabs tabs={MODULE_TABS.reports} />
 
-      <div className="p-3 md:p-6 space-y-4 max-w-5xl">
+      <div className="p-3 md:p-6 space-y-4 w-full">
         <Card>
           <CardBody>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">

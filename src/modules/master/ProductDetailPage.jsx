@@ -173,7 +173,7 @@ export function ProductDetailPage() {
       />
       <ModuleTabs tabs={MODULE_TABS.master} />
 
-      <div className="p-4 md:p-6 pb-24 space-y-4 max-w-5xl mx-auto">
+      <div className="p-4 md:p-6 pb-24 space-y-4 w-full">
         <Card>
           <CardHeader title="Overview" />
           <CardBody>

@@ -714,7 +714,7 @@ export function InvoiceFormPage() {
 
       <ModuleTabs tabs={MODULE_TABS.bills} />
 
-      <div className="mx-auto max-w-[1500px] p-4 pb-28 md:p-6">
+      <div className="w-full p-4 pb-28 md:p-6">
         {/* ONE FORM CARD: form sections on the left, full-height summary on the right */}
         <div className="flex flex-col rounded-2xl border border-line bg-surface shadow-sm lg:flex-row">
           {/* ============================ LEFT — FORM ============================ */}
@@ -796,52 +796,33 @@ export function InvoiceFormPage() {
               <LineItemsEditor items={items} onChange={setItems} />
             </section>
 
-            {/* GST — off unless switched on */}
+            {/* GST — chosen from Settings → Tax Rates */}
             <section className="p-4 md:p-5">
-              <label className="flex cursor-pointer items-start gap-3">
-                <input
-                  type="checkbox"
-                  checked={gstEnabled}
-                  onChange={(event) => {
-                    setGstEnabled(event.target.checked);
-                    if (event.target.checked && !gstTaxId && taxes[0]) {
-                      setGstTaxId(String(taxes[0].id));
-                    }
-                  }}
-                  className="mt-0.5 h-4 w-4 accent-primary-500"
-                />
-                <span>
-                  <span className="block text-sm font-bold text-ink">
-                    Apply GST
-                  </span>
-                  <span className="block text-xs text-muted">
-                    Off = no tax on this document and no GST in the PDF.
-                  </span>
-                </span>
-              </label>
+              <div className="max-w-xs">
+                <Field label="GST">
+                  <Select
+                    value={gstEnabled ? String(activeTax?.id ?? "") : ""}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setGstTaxId(value);
+                      setGstEnabled(Boolean(value));
+                    }}
+                  >
+                    <option value="">No GST</option>
+                    {taxes.map((tax) => (
+                      <option key={tax.id} value={String(tax.id)}>
+                        {tax.name || "GST"} {Number(tax.rate) || 0}%
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
 
-              {gstEnabled && (
-                <div className="mt-3 max-w-xs">
-                  {taxes.length ? (
-                    <Field label="GST rate">
-                      <Select
-                        value={String(activeTax?.id ?? "")}
-                        onChange={(event) => setGstTaxId(event.target.value)}
-                      >
-                        {taxes.map((tax) => (
-                          <option key={tax.id} value={String(tax.id)}>
-                            {tax.name || "GST"} {Number(tax.rate) || 0}%
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                  ) : (
-                    <div className="text-xs text-red-500">
-                      No tax rates found. Add them in Settings → Tax.
-                    </div>
-                  )}
-                </div>
-              )}
+                {!taxes.length && (
+                  <div className="mt-1 text-xs text-muted">
+                    No tax rates yet. Add them in Settings → Tax.
+                  </div>
+                )}
+              </div>
             </section>
 
             {/* DISCOUNT + NOTES */}

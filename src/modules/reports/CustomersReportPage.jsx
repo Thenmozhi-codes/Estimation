@@ -46,7 +46,7 @@ export function CustomersReportPage() {
       <PageHeader title="Customers Report" description="Sales by customer" />
       <ModuleTabs tabs={MODULE_TABS.reports} />
 
-      <div className="p-3 md:p-5 space-y-4 max-w-5xl">
+      <div className="p-3 md:p-5 space-y-4 w-full">
         <Card>
           <CardBody>
             <div className="grid grid-cols-2 gap-3">

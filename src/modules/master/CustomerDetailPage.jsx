@@ -111,7 +111,7 @@ export function CustomerDetailPage({ type }) {
         </nav>
       </div>
 
-      <div className="p-3 md:p-6 space-y-4 max-w-6xl">
+      <div className="p-3 md:p-6 space-y-4 w-full">
         {tab === "overview" && (
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
