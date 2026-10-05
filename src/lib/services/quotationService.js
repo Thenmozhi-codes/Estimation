@@ -2,6 +2,7 @@ import { quotationRepo, quotationItemRepo } from "@/lib/api/repos";
 import { buildLineItem, computeTotals } from "./documentService";
 import { nextDocumentNumber } from "./numbering";
 import { newId } from "@/lib/utils/id";
+import { mockStore } from "@/lib/store/mockStore";
 
 function buildItems(items = [], gstEnabled, gstTaxId) {
   const effectiveGst = Boolean(gstEnabled);
@@ -24,6 +25,11 @@ function headerTotals(builtItems, discount, gstEnabled) {
   };
 }
 
+const clampAdvance = (value, total) =>
+  Math.round(
+    Math.min(Math.max(Number(value) || 0, 0), Math.max(Number(total) || 0, 0)) * 100,
+  ) / 100;
+
 export const quotationService = {
   async create({
     partyId = null,
@@ -37,6 +43,7 @@ export const quotationService = {
     gstEnabled = false,
     gstPercentage = 0,
     gstTaxId = null,
+    advancePayment = 0,
   }) {
     const effectiveGst = Boolean(gstEnabled);
     const number = nextDocumentNumber("QTN");
@@ -61,6 +68,7 @@ export const quotationService = {
       discount: totals.discount,
       taxTotal: totals.taxTotal,
       grandTotal: totals.grandTotal,
+      advancePayment: clampAdvance(advancePayment, totals.grandTotal),
       notes,
     });
 
@@ -157,11 +165,33 @@ export const quotationService = {
       discount: totals.discount,
       taxTotal: totals.taxTotal,
       grandTotal: totals.grandTotal,
+      advancePayment: clampAdvance(
+        fields.advancePayment ?? existing.advancePayment ?? 0,
+        totals.grandTotal,
+      ),
       notes: fields.notes ?? existing.notes ?? "",
     }).then((updated) => ({ ...(updated || existing), items: builtItems }));
   },
 
   async listItems(quotationId) {
     return quotationItemRepo.list({ quotationId });
+  },
+
+  /*
+   * Clear ALL saved quotations (and their line items) and nothing else.
+   * Customers, invoices, payments, stock and the document counters are
+   * not touched, so new quotation numbers keep counting up.
+   */
+  async clearAll() {
+    const db = mockStore.get();
+    const removed = (db.quotations || []).length;
+
+    mockStore.set({
+      ...db,
+      quotations: [],
+      quotationItems: [],
+    });
+
+    return { removed };
   },
 };

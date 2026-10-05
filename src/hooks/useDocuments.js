@@ -61,6 +61,19 @@ export const useDeleteQuotation = () => {
   });
 };
 
+export const useClearQuotations = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => quotationService.clearAll(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.quotations });
+      qc.invalidateQueries({ queryKey: ["quotation"] });
+      qc.invalidateQueries({ queryKey: ["quotationItems"] });
+      qc.invalidateQueries({ queryKey: ["partyQuotations"] });
+    },
+  });
+};
+
 /* ─────────────── Invoices ─────────────── */
 
 export const useInvoices = () =>

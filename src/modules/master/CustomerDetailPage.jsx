@@ -15,6 +15,7 @@ import {
   usePartyInvoices,
   usePartyPayments,
 } from "@/hooks/useParties";
+import { PaymentReminder } from "@/components/common/PaymentReminder";
 import { MODULE_TABS } from "@/app/moduleNav";
 
 export function CustomerDetailPage({ type }) {
@@ -114,6 +115,8 @@ export function CustomerDetailPage({ type }) {
       <div className="p-3 md:p-6 space-y-4 w-full">
         {tab === "overview" && (
           <>
+            {isCustomer && <PaymentReminder partyId={party.id} />}
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Stat label="Total Sales" value={formatMoney(totalSales)} />
               <Stat label="Received" value={formatMoney(totalPaid)} />

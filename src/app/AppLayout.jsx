@@ -13,7 +13,8 @@ import { Dropdown, DropdownItem, DropdownDivider } from "@/components/ui/Dropdow
 import { PageTransition } from "@/components/common/PageTransition";
 import { useAuthStore } from "@/lib/store/authStore";
 import { AccessDenied } from "@/components/common/AccessDenied";
-import { canAccessPath, getNavTarget, roleCan } from "@/lib/domain/roles";
+import { canAccessPath, getNavTarget, roleCan, roleLabel } from "@/lib/domain/roles";
+import { useRolesVersion } from "@/lib/store/rolesStore";
 
 /* paths = the pages of the section; the first one the role can open is used
    as the link, and the item is hidden when the role can open none of them */
@@ -33,6 +34,9 @@ export function AppLayout() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const location = useLocation();
+
+  /* re-check menus and access when an admin edits a role */
+  useRolesVersion();
 
   /* only the menu items this role may open */
   const visibleNav = NAV.map((item) => ({
@@ -153,7 +157,7 @@ export function AppLayout() {
                       {user?.name || "Guest"}
                     </div>
                     <div className="text-2xs text-muted capitalize leading-tight">
-                      {user?.role || "—"}
+                      {roleLabel(user?.role)}
                     </div>
                   </div>
                   <ChevronDown className="h-3.5 w-3.5 text-muted shrink-0" />

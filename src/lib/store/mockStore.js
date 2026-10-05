@@ -1,7 +1,7 @@
 const KEY = "timber-erp-db-v1";
 
 const EMPTY = () => ({
-  companies: [], users: [],
+  companies: [], users: [], roles: [],
   units: [], brands: [], taxes: [],
   attributes: [], attributeValues: [],
   categories: [], categoryAttributes: [],
@@ -30,9 +30,10 @@ export const mockStore = {
   set(next) { db = next; save(); },
   reset() { db = EMPTY(); save(); },
   all: (col) => load()[col] || [],
-  insert(col, row) { const d = load(); d[col].push(row); save(); return row; },
+  insert(col, row) { const d = load(); if (!d[col]) d[col] = []; d[col].push(row); save(); return row; },
   update(col, id, patch) {
     const d = load();
+    if (!d[col]) return null;
     const i = d[col].findIndex((r) => r.id === id);
     if (i < 0) return null;
     d[col][i] = { ...d[col][i], ...patch };
@@ -40,6 +41,7 @@ export const mockStore = {
   },
   remove(col, id) {
     const d = load();
+    if (!d[col]) return false;
     const n = d[col].length;
     d[col] = d[col].filter((r) => r.id !== id);
     save(); return n !== d[col].length;

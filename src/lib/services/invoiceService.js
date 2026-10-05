@@ -81,6 +81,7 @@ export const invoiceService = {
     gstEnabled = false,
     gstPercentage = 0,
     gstTaxId = null,
+    advancePayment = 0,
   }) {
     const number = nextDocumentNumber("INV");
     const effectiveGst = Boolean(gstEnabled);
@@ -126,6 +127,48 @@ export const invoiceService = {
           unitCost: it.unitPrice,
         });
       }
+    }
+
+    /*
+     * Advance payment = the first payment on the invoice.
+     * It gets its own receipt, so Outstanding / Balance stay correct.
+     */
+    const advance = Math.min(
+      Math.max(round2(advancePayment), 0),
+      Number(invoice.grandTotal) || 0,
+    );
+
+    if (advance > 0) {
+      await paymentRepo.create({
+        invoiceId: invoice.id,
+        partyId: invoice.partyId,
+        direction: "in",
+        amount: advance,
+        method: "advance",
+        reference: "",
+        date: new Date().toISOString().slice(0, 10),
+        notes: "Advance payment",
+        receiptNo: nextReceiptNo(invoice.number, []),
+      });
+
+      const advanceStatus =
+        (status || "draft") === "draft"
+          ? "draft"
+          : advance >= (Number(invoice.grandTotal) || 0) - EPSILON
+            ? "paid"
+            : "partially_paid";
+
+      await invoiceRepo.update(invoice.id, {
+        amountPaid: advance,
+        status: advanceStatus,
+      });
+
+      return {
+        ...invoice,
+        amountPaid: advance,
+        status: advanceStatus,
+        items: builtItems,
+      };
     }
 
     return { ...invoice, items: builtItems };
@@ -339,6 +382,8 @@ export const invoiceService = {
       status: "issued",
       discount: q.discount,
       notes: q.notes,
+      /* advance taken on the quotation becomes the first payment */
+      advancePayment: Number(q.advancePayment) || 0,
       items: items.map((i) => ({
         variantId: i.variantId,
         quantity: i.quantity,

@@ -54,12 +54,14 @@ const MEASURE_LABELS = {
   length: "Length (ft)",
   width: "Width (ft)",
   height: "Height (ft)",
+  thickness: "Thickness (in)",
 };
 
 const MEASURE_NAMES = {
   length: "Length",
   width: "Width",
   height: "Height",
+  thickness: "Thickness",
 };
 
 const MEASUREMENT_BY_TYPE = {
@@ -73,15 +75,24 @@ const MEASUREMENT_BY_TYPE = {
   },
   Adhesive: { fields: [], unit: "pcs", label: "" },
 
-  /* Timber: Width(in) × Thickness(in, from Master) × Length(ft) × Nos ÷ 144 */
+  /*
+   * Timber: Width (in) x Thickness (in) x Length (ft) x Nos / 144 = CFT.
+   * Thickness is typed here (a Brand specification fills it in when the
+   * label has a number). The Sq. Ft. value is shown live beside the fields:
+   * Width (in) x Length (ft) x Nos / 12.
+   */
   Timber: {
-    fields: ["width", "length"],
-    labels: { width: "Width (in)", length: "Length (ft)" },
+    fields: ["width", "thickness", "length"],
+    labels: {
+      width: "Width (in)",
+      thickness: "Thickness (in)",
+      length: "Length (ft)",
+    },
     unit: "cft",
     label: "Qty (CFT)",
     formula: "Width × Thickness × Length × Nos ÷ 144",
-    needsThickness: true,
-    calc: ({ width, length }, nos, thickness) =>
+    showSqft: true,
+    calc: ({ width, thickness, length }, nos) =>
       (width * thickness * length * nos) / 144,
   },
 
@@ -162,6 +173,13 @@ function safeNumber(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+/* Rupee amount rounded to paise, so the picker, the line row and the saved
+   quotation always agree to the last digit. */
+function roundMoney(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0;
+}
+
 function uniqueBy(items, keyFn) {
   const seen = new Set();
   return (items || []).filter((item) => {
@@ -192,6 +210,7 @@ function calcMeasurement(typeKey, values, pcs, thickness = 0) {
             length: safeNumber(values?.length),
             width: safeNumber(values?.width),
             height: safeNumber(values?.height),
+            thickness: safeNumber(values?.thickness) || safeNumber(thickness),
           },
           pcs,
           thickness,
@@ -199,7 +218,13 @@ function calcMeasurement(typeKey, values, pcs, thickness = 0) {
       : numbers.reduce((product, n) => product * n, 1) * pcs;
   }
 
-  return { ...config, active, qty, thicknessMissing };
+  /* live Sq. Ft. (Timber): Width (in) x Length (ft) x Nos / 12 */
+  const areaSqft =
+    config.showSqft && active
+      ? (safeNumber(values?.width) * safeNumber(values?.length) * pcs) / 12
+      : 0;
+
+  return { ...config, active, qty, areaSqft, thicknessMissing };
 }
 
 function formatMeasureQty(measure) {
@@ -504,6 +529,14 @@ export function ProductPicker({
   const [doorThickness, setDoorThickness] = useState("");
   const [doorRate, setDoorRate] = useState("");
 
+  /* TIMBER: thickness is typed (spec optional); rate fills from the spec */
+  const [timberThickness, setTimberThickness] = useState("");
+  const [timberRate, setTimberRate] = useState("");
+
+  /* set when the user un-selects a specification (Timber), so the edit-mode
+     auto-match does not select it again */
+  const specClearedRef = useRef(false);
+
   const inputRef = useRef(null);
 
   /* READ STORE */
@@ -525,6 +558,8 @@ export function ProductPicker({
     setHeight("");
     setDoorThickness("");
     setDoorRate("");
+    setTimberThickness("");
+    setTimberRate("");
   }
 
   /* CLOSE ON ESCAPE */
@@ -556,6 +591,9 @@ export function ProductPicker({
     setHeight("");
     setDoorThickness("");
     setDoorRate("");
+    setTimberThickness("");
+    setTimberRate("");
+    specClearedRef.current = false;
     setPcs(1);
 
     const timer = setTimeout(() => {
@@ -639,6 +677,16 @@ export function ProductPicker({
         : "",
     );
     setPcs(Math.max(1, safeNumber(initialItem?.pcs) || 1));
+
+    if (typeConfig.key === "Timber") {
+      const savedThickness = thicknessFromLabel(
+        initialItem?.attributeValues?.Thickness || initialItem?.thickness,
+      );
+      setTimberThickness(savedThickness > 0 ? String(savedThickness) : "");
+
+      const savedRate = safeNumber(initialItem?.rate ?? initialItem?.unitPrice);
+      setTimberRate(savedRate > 0 ? String(savedRate) : "");
+    }
 
     const wantedSpecification = String(
       initialItem?.selectedSpecification || "",
@@ -903,6 +951,7 @@ export function ProductPicker({
    */
   useEffect(() => {
     if (!open || !initialItem) return;
+    if (specClearedRef.current) return;
     if (selectedSpecification || !specifications.length) return;
     if (!selectedBrand) return;
 
@@ -989,6 +1038,11 @@ export function ProductPicker({
     };
 
     setSelectedSpecification(created);
+    if (selectedType === "Timber") {
+      const t = thicknessFromLabel(label);
+      if (t > 0) setTimberThickness(String(t));
+      if (safeNumber(price) > 0) setTimberRate(String(safeNumber(price)));
+    }
     setCustomSpecification("");
     setCustomPrice("");
     queryClient.invalidateQueries({ queryKey: ["brands"] });
@@ -1066,10 +1120,15 @@ export function ProductPicker({
 
   /* FINAL ADD */
   function handleAddToLine() {
-    if (!selectedProduct?.id || !selectedSpecification) return;
+    /* Specification is optional for Timber only */
+    const isTimber = selectedType === "Timber";
+
+    if (!selectedProduct?.id || (!selectedSpecification && !isTimber)) return;
+
+    const timberT = safeNumber(timberThickness);
 
     const variant =
-      selectedSpecification.matchedVariant ||
+      selectedSpecification?.matchedVariant ||
       selectedVariant ||
       productVariants.find((item) => item.isDefault) ||
       productVariants[0] ||
@@ -1094,13 +1153,21 @@ export function ProductPicker({
         legacyMaterialDetails?.uom ||
         legacyMaterialDetails?.unitName ||
         "",
-      Specification: selectedSpecification.label,
+      Specification: selectedSpecification?.label || "",
+      ...(isTimber && timberT > 0 ? { Thickness: `${timberT} inch` } : {}),
     };
 
-    /* PRICE: Brand Master first, then variant */
-    const brandPrice = safeNumber(selectedSpecification.price);
+    /* PRICE: Brand Master first, then variant (Timber: the rate field) */
+    const brandPrice = safeNumber(selectedSpecification?.price);
     const variantPrice = safeNumber(variant?.price);
-    const rate = brandPrice > 0 ? brandPrice : variantPrice;
+    const rate =
+      isTimber && safeNumber(timberRate) > 0
+        ? safeNumber(timberRate)
+        : brandPrice > 0
+          ? brandPrice
+          : variantPrice;
+
+    if (isTimber && !(rate > 0)) return;
 
     /* MEASUREMENT (fields depend on the product type) */
     const numericPcs = Math.max(1, safeNumber(pcs) || 1);
@@ -1108,12 +1175,13 @@ export function ProductPicker({
       length: safeNumber(length),
       width: safeNumber(width),
       height: safeNumber(height),
+      thickness: isTimber ? timberT : 0,
     };
     const measure = calcMeasurement(
       selectedType,
       dims,
       numericPcs,
-      thicknessFromLabel(selectedSpecification.label),
+      thicknessFromLabel(selectedSpecification?.label),
     );
 
     if (MEASUREMENT_REQUIRED && measure.fields.length > 0 && !measure.active) {
@@ -1141,9 +1209,9 @@ export function ProductPicker({
       attributeValues: attributeValuesPayload,
 
       specifications: [
-        { specification: selectedSpecification.label, price: rate },
+        { specification: selectedSpecification?.label || "", price: rate },
       ],
-      selectedSpecification: selectedSpecification.label,
+      selectedSpecification: selectedSpecification?.label || "",
 
       defaultPrice: rate,
       price: rate,
@@ -1326,13 +1394,38 @@ export function ProductPicker({
               length={length}
               width={width}
               height={height}
+              thickness={timberThickness}
+              timberRate={timberRate}
               pcs={pcs}
               onLengthChange={setLength}
               onWidthChange={setWidth}
               onHeightChange={setHeight}
+              onThicknessChange={setTimberThickness}
+              onTimberRateChange={setTimberRate}
               onSelectSpecification={(specification) => {
+                const isTimber = selectedType === "Timber";
+
+                /* Timber: click the selected specification again to clear it */
+                if (isTimber && selectedSpecification?.id === specification?.id) {
+                  specClearedRef.current = true;
+                  setSelectedSpecification(null);
+                  setSelectedVariant(null);
+                  return;
+                }
+
                 setSelectedSpecification(specification);
                 setSelectedVariant(specification?.matchedVariant || null);
+
+                if (isTimber) {
+                  const t = thicknessFromLabel(specification?.label);
+                  if (t > 0) setTimberThickness(String(t));
+
+                  const price =
+                    safeNumber(specification?.price) > 0
+                      ? safeNumber(specification.price)
+                      : safeNumber(specification?.matchedVariant?.price);
+                  setTimberRate(price > 0 ? String(price) : "");
+                }
               }}
               customSpecification={customSpecification}
               customPrice={customPrice}
@@ -1361,11 +1454,15 @@ function SpecificationStep({
   length,
   width,
   height,
+  thickness,
+  timberRate,
   pcs,
 
   onLengthChange,
   onWidthChange,
   onHeightChange,
+  onThicknessChange,
+  onTimberRateChange,
 
   onSelectSpecification,
   customSpecification,
@@ -1377,17 +1474,18 @@ function SpecificationStep({
 }) {
   const numericPcs = Math.max(1, safeNumber(pcs) || 1);
 
-  const fieldValues = { length, width, height };
+  /* Timber: specification is optional; thickness + rate are typed here */
+  const isTimber = typeKey === "Timber";
+
+  const fieldValues = { length, width, height, thickness };
   const fieldHandlers = {
     length: onLengthChange,
     width: onWidthChange,
     height: onHeightChange,
+    thickness: onThicknessChange,
   };
 
-  /* Thickness comes from the selected Brand Master specification */
-  const specThickness = thicknessFromLabel(selectedSpecification?.label);
-
-  const measure = calcMeasurement(typeKey, fieldValues, numericPcs, specThickness);
+  const measure = calcMeasurement(typeKey, fieldValues, numericPcs, 0);
 
   /* Billing quantity: measurement result when filled, otherwise pieces */
   const billingQty = measure.active ? measure.qty : numericPcs;
@@ -1403,7 +1501,11 @@ function SpecificationStep({
       ? safeNumber(specification.price)
       : safeNumber(specification?.matchedVariant?.price);
 
-  const selectedRate = selectedSpecification ? rateOf(selectedSpecification) : 0;
+  const selectedRate = isTimber
+    ? safeNumber(timberRate)
+    : selectedSpecification
+      ? rateOf(selectedSpecification)
+      : 0;
   const needsMeasurement =
     MEASUREMENT_REQUIRED && measure.fields.length > 0 && !measure.active;
 
@@ -1411,20 +1513,29 @@ function SpecificationStep({
     .map((field) => fieldLabel(measure, field).replace(/\s*\(.*\)/, ""))
     .join(", ");
 
+  /* Use the SAME rounded quantity that is shown and saved on the line */
+  const billedQty = measure.active
+    ? Number(formatMeasureQty(measure))
+    : billingQty;
+
   const total =
-    selectedSpecification && !needsMeasurement ? billingQty * selectedRate : 0;
+    (selectedSpecification || isTimber) && !needsMeasurement
+      ? roundMoney(billedQty * selectedRate)
+      : 0;
 
   return (
     <section className="space-y-4">
       <div>
-        <div className="text-xs font-bold text-ink">Specifications & Price</div>
+        <div className="text-xs font-bold text-ink">
+          {isTimber ? "Specifications & Price (optional)" : "Specifications & Price"}
+        </div>
         <div className="mt-0.5 text-[10px] text-muted">
           Price is the default rate from Brand Master and does not change with
           Pcs. Only the Total changes.
         </div>
       </div>
 
-      {!specifications.length ? (
+      {!specifications.length && !isTimber ? (
         <div className="rounded-lg border border-dashed border-line bg-bg/40 p-4 text-center">
           <div className="text-sm font-bold text-ink">No specifications found</div>
           <div className="mt-1 text-[10px] text-muted">
@@ -1434,6 +1545,7 @@ function SpecificationStep({
       ) : (
         <>
           {/* SPECIFICATION TABLE */}
+          {specifications.length > 0 && (
           <div className="overflow-hidden rounded-lg border border-line">
             <div className="grid grid-cols-[1fr_110px_32px] items-center gap-2 border-b border-line bg-bg/60 px-2.5 py-2 text-[9px] font-bold uppercase tracking-wide text-muted">
               <div>Specification</div>
@@ -1481,6 +1593,7 @@ function SpecificationStep({
               })}
             </div>
           </div>
+          )}
 
           {/* CUSTOM SPECIFICATION + PRICE */}
           <div className="rounded-lg border border-dashed border-line bg-bg/40 p-3">
@@ -1537,13 +1650,8 @@ function SpecificationStep({
                         .join(" × ")} × Pcs`
                     }`
                   : "Not needed for this product type. Total = Price × Nos."}
-                {measure.needsThickness && (
-                  <span>
-                    {" "}
-                    (Thickness
-                    {specThickness > 0 ? ` = ${specThickness}` : ""} comes from
-                    the selected specification)
-                  </span>
+                {isTimber && (
+                  <span> · Sq. Ft. = Width × Length × Nos ÷ 12</span>
                 )}
               </div>
             </div>
@@ -1551,7 +1659,7 @@ function SpecificationStep({
             <div
               className={[
                 "grid grid-cols-2 gap-2",
-                [
+                isTimber ? "sm:grid-cols-4" : [
                   "",
                   "sm:grid-cols-1",
                   "sm:grid-cols-2",
@@ -1578,6 +1686,22 @@ function SpecificationStep({
                 />
               )}
 
+              {isTimber && (
+                <>
+                  {/* live Sq. Ft. + rate (auto from the specification, editable) */}
+                  <ReadOnlyMetric
+                    label="Sq. Ft."
+                    value={measure.active ? formatINR(measure.areaSqft, 2) : "—"}
+                  />
+                  <MeasurementField
+                    label="Rate (₹ / CFT)"
+                    value={timberRate}
+                    onChange={(event) => onTimberRateChange(event.target.value)}
+                    placeholder="Rate"
+                  />
+                </>
+              )}
+
               <ReadOnlyMetric
                 label="Total (₹)"
                 value={total > 0 ? formatINR(total) : "—"}
@@ -1594,17 +1718,20 @@ function SpecificationStep({
               </div>
 
               <div className="mt-0.5 truncate text-sm font-black text-ink">
-                {selectedSpecification?.label || "Select a specification"}
+                {selectedSpecification?.label ||
+                  (isTimber ? "None (optional)" : "Select a specification")}
               </div>
 
               <div className="mt-0.5 text-[10px] text-muted">
                 {selectedSpecification && measure.thicknessMissing
                   ? "This specification needs a numeric thickness (e.g. 1.5)."
-                  : selectedSpecification && needsMeasurement
+                  : (selectedSpecification || isTimber) && needsMeasurement
                   ? `Enter ${missingLabel} to continue.`
-                  : selectedSpecification
+                  : selectedSpecification || isTimber
                   ? selectedRate > 0
                     ? `${qtyLabel} × ₹${formatINR(selectedRate)}`
+                    : isTimber
+                    ? "Enter the rate to continue."
                     : "No price set in Brand Master"
                   : "Select a specification."}
               </div>
@@ -1622,7 +1749,11 @@ function SpecificationStep({
 
               <button
                 type="button"
-                disabled={!selectedSpecification || needsMeasurement}
+                disabled={
+                  (!selectedSpecification && !isTimber) ||
+                  needsMeasurement ||
+                  (isTimber && !(selectedRate > 0))
+                }
                 onClick={onAdd}
                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-xs font-bold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -1660,7 +1791,17 @@ function DoorStep({
   const thicknessValue = safeNumber(thickness);
 
   const ready = measure.active && rateValue > 0 && thicknessValue > 0;
-  const total = ready ? measure.qty * rateValue : 0;
+
+  /* Amount = Qty (sq.ft) x Rate. It only needs the size and the rate, so it
+     shows as soon as those are filled; thickness is only needed to add the
+     line. The qty is rounded exactly like the saved line (2 decimals). */
+  const billedQty = measure.active ? Number(formatMeasureQty(measure)) : 0;
+  const total =
+    billedQty > 0 && rateValue > 0 ? roundMoney(billedQty * rateValue) : 0;
+
+  /* catches typing slips such as 988098 instead of 9.8 */
+  const oversized =
+    safeNumber(length) > 1000 || safeNumber(width) > 1000;
 
   const formatINR = (value, digits = 2) =>
     Number(value).toLocaleString("en-IN", { maximumFractionDigits: digits });
@@ -1709,10 +1850,16 @@ function DoorStep({
         />
       </div>
 
+      {oversized && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-semibold text-amber-600">
+          Length / width looks very large. Please check the size is in feet.
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-2">
         <ReadOnlyMetric
           label="Qty (Sq.ft)"
-          value={measure.active ? formatMeasureQty(measure) : "—"}
+          value={measure.active ? formatINR(billedQty) : "—"}
         />
         <ReadOnlyMetric
           label="Amount (₹)"
@@ -1724,7 +1871,7 @@ function DoorStep({
       <div className="flex flex-col gap-3 rounded-lg border border-primary-500/15 bg-primary-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 text-[10px] text-muted">
           {ready
-            ? `${formatMeasureQty(measure)} sq.ft × ₹${formatINR(rateValue)}`
+            ? `${formatINR(billedQty)} sq.ft × ₹${formatINR(rateValue)}`
             : "Enter thickness, length, width and rate to continue."}
         </div>
 

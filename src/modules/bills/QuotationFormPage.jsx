@@ -23,6 +23,9 @@ import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { LineItemsEditor } from "@/components/forms/LineItemsEditor";
+import { CustomerQuickAddSheet } from "@/components/forms/CustomerQuickAddSheet";
+import { AdvanceBalanceRows } from "@/components/forms/AdvanceBalanceRows";
+import { PaymentReminder } from "@/components/common/PaymentReminder";
 
 
 import { toast } from "@/lib/toast";
@@ -38,6 +41,8 @@ import { useTaxes } from "@/hooks/useMasters";
 import { variantResolver } from "@/lib/api/repos";
 import { mockStore } from "@/lib/store/mockStore";
 import { getNextDocumentNumber } from "@/lib/utils/docNumber";
+import { ensureGlobalCustomer } from "@/lib/utils/globalCustomer";
+import { useQueryClient } from "@tanstack/react-query";
 import { MODULE_TABS } from "@/app/moduleNav";
 
 const NO_TAXES = [];
@@ -362,6 +367,15 @@ export function QuotationFormPage() {
   const isEdit = Boolean(quotationId);
 
   const { data: parties = [] } = useParties();
+
+  /* make sure the global "Walk-in Customer" exists, so it can be picked
+     (and un-picked with the × button) like any other customer */
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    ensureGlobalCustomer(queryClient).catch((error) =>
+      console.error("Could not prepare the Walk-in customer:", error),
+    );
+  }, [queryClient]);
   const { data: quotations = [] } = useQuotations();
 
   /* Existing quotation (edit mode only — the hooks are disabled without an id).
@@ -388,9 +402,13 @@ export function QuotationFormPage() {
   const [partyId, setPartyId] = useState("");
   const [date, setDate] = useState(today);
   const [discount, setDiscount] = useState(0);
+  const [advance, setAdvance] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [customerSheetOpen, setCustomerSheetOpen] = useState(false);
+  const [customerSeed, setCustomerSeed] = useState("");
+  const [newCustomer, setNewCustomer] = useState(null);
   const [loaded, setLoaded] = useState(!isEdit);
 
   /* GST is OFF unless the user switches it on */
@@ -415,6 +433,7 @@ export function QuotationFormPage() {
       setPartyId(draft.partyId || "");
       setDate(draft.date || today);
       setDiscount(draft.discount ?? 0);
+      setAdvance(draft.advance ?? "");
       setNotes(draft.notes || "");
       setItems(Array.isArray(draft.items) ? draft.items : []);
       setGstEnabled(Boolean(draft.gstEnabled));
@@ -439,6 +458,7 @@ export function QuotationFormPage() {
       partyId,
       date,
       discount,
+      advance,
       notes,
       items,
       gstEnabled,
@@ -452,7 +472,7 @@ export function QuotationFormPage() {
 
     const timer = setTimeout(() => setDraftSaved(false), 1200);
     return () => clearTimeout(timer);
-  }, [isEdit, draftLoaded, partyId, date, discount, notes, items, gstEnabled, gstTaxId]);
+  }, [isEdit, draftLoaded, partyId, date, discount, advance, notes, items, gstEnabled, gstTaxId]);
 
   /* LOAD EXISTING QUOTATION */
   useEffect(() => {
@@ -465,6 +485,7 @@ export function QuotationFormPage() {
       normalizeDate(quotation.date || quotation.quotationDate || quotation.createdAt),
     );
     setDiscount(quotation.discount ?? 0);
+    setAdvance(Number(quotation.advancePayment) > 0 ? String(quotation.advancePayment) : "");
     setNotes(quotation.notes || "");
     setGstEnabled(
       quotation.gstEnabled !== undefined
@@ -499,13 +520,16 @@ export function QuotationFormPage() {
   }, [isEdit, savedItems, quotation?.gstEnabled]);
 
   /* CUSTOMERS */
-  const customers = useMemo(
-    () =>
-      parties.filter(
-        (party) => party.type === "customer" || party.type === "both",
-      ),
-    [parties],
-  );
+  const customers = useMemo(() => {
+    const base = parties.filter(
+      (party) => party.type === "customer" || party.type === "both",
+    );
+
+    /* a customer created from this form is usable before the list refreshes */
+    return newCustomer && !base.some((p) => String(p.id) === String(newCustomer.id))
+      ? [...base, newCustomer]
+      : base;
+  }, [parties, newCustomer]);
 
   const selectedCustomer = useMemo(
     () =>
@@ -555,7 +579,9 @@ export function QuotationFormPage() {
     let taxTotal = 0;
 
     billedItems.forEach((item) => {
-      grossSubtotal += getQuantity(item) * getUnitPrice(item);
+      /* each line is rounded to paise first, exactly like the saved quotation */
+      grossSubtotal +=
+        Math.round(getQuantity(item) * getUnitPrice(item) * 100) / 100;
       lineDiscountTotal += getLineDiscount(item);
       taxTotal += getLineTax(item);
     });
@@ -569,16 +595,24 @@ export function QuotationFormPage() {
 
     const taxableSubtotal = Math.max(0, afterLineDiscount - headerDiscount);
 
+    const r2 = (n) => Math.round(n * 100) / 100;
+
     return {
       itemCount: items.length,
-      grossSubtotal,
-      lineDiscountTotal,
-      headerDiscount,
-      taxableSubtotal,
-      taxTotal,
-      grandTotal: taxableSubtotal + taxTotal,
+      grossSubtotal: r2(grossSubtotal),
+      lineDiscountTotal: r2(lineDiscountTotal),
+      headerDiscount: r2(headerDiscount),
+      taxableSubtotal: r2(taxableSubtotal),
+      taxTotal: r2(taxTotal),
+      grandTotal: r2(r2(taxableSubtotal) + r2(taxTotal)),
     };
   }, [billedItems, items.length, discount]);
+
+  /* ADVANCE — deducted from the grand total; never more than the total */
+  const advanceEntered = Math.max(Number(advance) || 0, 0);
+  const advanceAmount = Math.min(advanceEntered, summary.grandTotal);
+  const balanceDue = Math.max(0, summary.grandTotal - advanceAmount);
+  const advanceTooHigh = advanceEntered > summary.grandTotal + 0.009;
 
   /* LOADING / ERROR (edit mode) */
   if (isEdit && (quotationError || itemsError)) {
@@ -683,6 +717,7 @@ export function QuotationFormPage() {
         gstTaxId: gstEnabled ? activeTax?.id || null : null,
         date,
         discount: Number(discount) || 0,
+        advancePayment: Math.round(advanceAmount * 100) / 100,
         notes,
         items: enrichedItems,
       };
@@ -819,8 +854,16 @@ export function QuotationFormPage() {
                         label: customer.name,
                       }))}
                       placeholder="Select customer (optional)"
+                      clearable
                       searchPlaceholder="Search customer…"
                       emptyText="No customers found"
+                      footerAction={{
+                        label: "Add New Customer",
+                        onClick: (typed) => {
+                          setCustomerSeed(typed || "");
+                          setCustomerSheetOpen(true);
+                        },
+                      }}
                       className="pl-9"
                     />
                   </div>
@@ -838,6 +881,9 @@ export function QuotationFormPage() {
                   </div>
                 </Field>
               </div>
+
+              {/* Outstanding reminder — only while this customer still owes money */}
+              <PaymentReminder partyId={partyId} className="mt-4" />
             </section>
 
             {/* ITEMS */}
@@ -886,7 +932,23 @@ export function QuotationFormPage() {
                   />
                 </Field>
 
-                <Field label="Notes">
+                <Field
+                  label="Advance payment"
+                  error={
+                    advanceTooHigh
+                      ? "Advance cannot be more than the grand total"
+                      : undefined
+                  }
+                >
+                  <MoneyInput
+                    min="0"
+                    value={advance}
+                    onChange={(event) => setAdvance(event.target.value)}
+                    placeholder="0.00"
+                  />
+                </Field>
+
+                <Field label="Notes" className="md:col-span-2">
                   <Textarea
                     rows={2}
                     value={notes}
@@ -989,11 +1051,25 @@ export function QuotationFormPage() {
                     </div>
                   </div>
                 </div>
+
+                <AdvanceBalanceRows advance={advanceAmount} balance={balanceDue} />
               </div>
             </div>
           </aside>
         </div>
       </div>
+
+      {/* + Add New Customer — created here, then selected automatically */}
+      <CustomerQuickAddSheet
+        open={customerSheetOpen}
+        initialName={customerSeed}
+        onClose={() => setCustomerSheetOpen(false)}
+        onCreated={(customer) => {
+          if (!customer?.id) return;
+          setNewCustomer(customer);
+          setPartyId(String(customer.id));
+        }}
+      />
     </div>
   );
 }

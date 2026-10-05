@@ -32,6 +32,7 @@ import { OutstandingReportPage } from "@/modules/reports/OutstandingReportPage";
 import { CompanyPage } from "@/modules/settings/CompanyPage";
 import { TaxPage } from "@/modules/settings/TaxPage";
 import { UsersPage } from "@/modules/settings/UsersPage";
+import { RolesPage } from "@/modules/settings/RolesPage";
 
 
 export function AppRouter() {
@@ -257,6 +258,11 @@ export function AppRouter() {
         <Route
           path="/settings/users"
           element={<UsersPage />}
+        />
+
+        <Route
+          path="/settings/roles"
+          element={<RolesPage />}
         />
 
        

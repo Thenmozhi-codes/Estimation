@@ -57,7 +57,7 @@ export function ensureDefaultProductTypes() {
 
 function build() {
   const db = {
-    companies: [], users: [],
+    companies: [], users: [], roles: [],
     units: [], brands: [], taxes: [],
     attributes: [], attributeValues: [],
     categories: [], categoryAttributes: [],

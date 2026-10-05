@@ -9,6 +9,7 @@ import {
 import { cn } from "@/lib/utils/cn";
 import { useAuthStore } from "@/lib/store/authStore";
 import { getNavTarget } from "@/lib/domain/roles";
+import { useRolesVersion } from "@/lib/store/rolesStore";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, paths: ["/dashboard"] },
@@ -33,6 +34,7 @@ const NAV = [
 export function MobileBottomNav() {
   const user = useAuthStore((s) => s.user);
   const location = useLocation();
+  useRolesVersion(); /* refresh when an admin edits a role */
 
   /* only the tabs this role may open */
   const visibleNav = NAV.map((item) => ({

@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useMemo, useState, useEffect } from "react";
 import { useInvoices, useQuotations } from "@/hooks/useDocuments";
 import { useStockEnriched } from "@/hooks/useInventory";
+import { useParties } from "@/hooks/useParties";
+import { outstandingByParty } from "@/lib/utils/reminder";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { formatMoney } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
@@ -11,6 +13,7 @@ export function NotificationBell() {
   const navigate = useNavigate();
   const { data: invoices = [] } = useInvoices();
   const { data: quotations = [] } = useQuotations();
+  const { data: parties = [] } = useParties();
   const { rows: stockRows } = useStockEnriched();
 
   const [seenIds, setSeenIds] = useState(() => {
@@ -47,6 +50,22 @@ export function NotificationBell() {
         }),
       );
 
+    // Payment reminders — one per customer who still owes money.
+    // Calculated live, so it disappears when the outstanding becomes Rs. 0.
+    outstandingByParty(invoices)
+      .slice(0, 5)
+      .forEach((row) => {
+        const party = parties.find((p) => String(p.id) === String(row.partyId));
+        items.push({
+          id: `reminder-${row.partyId}-${Math.round(row.total * 100)}`,
+          type: "danger",
+          icon: Bell,
+          title: `Payment reminder: ${party?.name || "Customer"}`,
+          subtitle: `${formatMoney(row.total)} outstanding · ${row.count} invoice${row.count === 1 ? "" : "s"}`,
+          path: `/master/customers/${row.partyId}`,
+        });
+      });
+
     // Pending quotations (draft or sent)
     quotations
       .filter((q) => q.status === "draft" || q.status === "sent")
@@ -78,7 +97,7 @@ export function NotificationBell() {
       );
 
     return items;
-  }, [invoices, quotations, stockRows]);
+  }, [invoices, quotations, stockRows, parties]);
 
   const unread = notifications.filter((n) => !seenIds.includes(n.id)).length;
 

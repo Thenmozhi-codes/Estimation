@@ -19,6 +19,9 @@ import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { LineItemsEditor } from "@/components/forms/LineItemsEditor";
+import { CustomerQuickAddSheet } from "@/components/forms/CustomerQuickAddSheet";
+import { AdvanceBalanceRows } from "@/components/forms/AdvanceBalanceRows";
+import { PaymentReminder } from "@/components/common/PaymentReminder";
 
 import { toast } from "@/lib/toast";
 
@@ -36,6 +39,8 @@ import { useTaxes } from "@/hooks/useMasters";
 import { variantResolver } from "@/lib/api/repos";
 import { mockStore } from "@/lib/store/mockStore";
 import { getNextDocumentNumber } from "@/lib/utils/docNumber";
+import { ensureGlobalCustomer } from "@/lib/utils/globalCustomer";
+import { useQueryClient } from "@tanstack/react-query";
 import { MODULE_TABS } from "@/app/moduleNav";
 
 const NO_TAXES = [];
@@ -342,6 +347,15 @@ export function InvoiceFormPage() {
   ------------------------------------------------------------------------ */
 
   const { data: parties = [] } = useParties();
+
+  /* make sure the global "Walk-in Customer" exists, so it can be picked
+     (and un-picked with the × button) like any other customer */
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    ensureGlobalCustomer(queryClient).catch((error) =>
+      console.error("Could not prepare the Walk-in customer:", error),
+    );
+  }, [queryClient]);
   const { data: allInvoices = [] } = useInvoices();
 
   /* Preview of the number this invoice will get (confirmed on save) */
@@ -391,6 +405,10 @@ export function InvoiceFormPage() {
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [advance, setAdvance] = useState("");
+  const [customerSheetOpen, setCustomerSheetOpen] = useState(false);
+  const [customerSeed, setCustomerSeed] = useState("");
+  const [newCustomer, setNewCustomer] = useState(null);
   const [loaded, setLoaded] = useState(!isEdit);
 
   /* GST is OFF unless the user switches it on */
@@ -403,9 +421,15 @@ export function InvoiceFormPage() {
      CUSTOMERS
   ------------------------------------------------------------------------ */
 
-  const customers = parties.filter(
+  const baseCustomers = parties.filter(
     (party) => party.type === "customer" || party.type === "both",
   );
+
+  /* a customer created from this form is usable before the list refreshes */
+  const customers =
+    newCustomer && !baseCustomers.some((p) => String(p.id) === String(newCustomer.id))
+      ? [...baseCustomers, newCustomer]
+      : baseCustomers;
 
   /* Tax used on every line: only when GST is switched on */
   const activeTax = useMemo(
@@ -466,6 +490,12 @@ export function InvoiceFormPage() {
       grandTotal: taxableSubtotal + taxTotal,
     };
   }, [billedItems, items.length, discount]);
+
+  /* ADVANCE — new invoices only; saved as the first payment */
+  const advanceEntered = Math.max(Number(advance) || 0, 0);
+  const advanceAmount = isEdit ? 0 : Math.min(advanceEntered, summary.grandTotal);
+  const balanceDue = Math.max(0, summary.grandTotal - advanceAmount);
+  const advanceTooHigh = !isEdit && advanceEntered > summary.grandTotal + 0.009;
 
   /* ==========================================================================
      LOAD EXISTING INVOICE
@@ -647,7 +677,10 @@ export function InvoiceFormPage() {
 
       /* CREATE */
       if (!isEdit) {
-        const created = await createMut.mutateAsync(payload);
+        const created = await createMut.mutateAsync({
+          ...payload,
+          advancePayment: Math.round(advanceAmount * 100) / 100,
+        });
 
         toast.success(`Invoice ${created.number} created`);
         navigate(`/bills/invoices/${created.id}`);
@@ -743,8 +776,16 @@ export function InvoiceFormPage() {
                       label: party.name,
                     }))}
                     placeholder="Select customer (optional)"
+                      clearable
                     searchPlaceholder="Search customer…"
                     emptyText="No customers found"
+                    footerAction={{
+                      label: "Add New Customer",
+                      onClick: (typed) => {
+                        setCustomerSeed(typed || "");
+                        setCustomerSheetOpen(true);
+                      },
+                    }}
                   />
                 </Field>
 
@@ -787,6 +828,9 @@ export function InvoiceFormPage() {
                   />
                 </Field>
               </div>
+
+              {/* Outstanding reminder — only while this customer still owes money */}
+              <PaymentReminder partyId={partyId} excludeInvoiceId={isEdit ? invoiceId : null} className="mt-4" />
             </section>
 
             {/* ITEMS */}
@@ -835,7 +879,26 @@ export function InvoiceFormPage() {
                   />
                 </Field>
 
-                <Field label="Notes">
+                {!isEdit && (
+                  <Field
+                    label="Advance payment"
+                    hint="Saved as the first payment on this invoice"
+                    error={
+                      advanceTooHigh
+                        ? "Advance cannot be more than the grand total"
+                        : undefined
+                    }
+                  >
+                    <MoneyInput
+                      min="0"
+                      value={advance}
+                      onChange={(event) => setAdvance(event.target.value)}
+                      placeholder="0.00"
+                    />
+                  </Field>
+                )}
+
+                <Field label="Notes" className={isEdit ? "" : "md:col-span-2"}>
                   <Textarea
                     rows={2}
                     value={notes}
@@ -942,11 +1005,25 @@ export function InvoiceFormPage() {
                     </div>
                   </div>
                 </div>
+
+                <AdvanceBalanceRows advance={advanceAmount} balance={balanceDue} />
               </div>
             </div>
           </aside>
         </div>
       </div>
+
+      {/* + Add New Customer — created here, then selected automatically */}
+      <CustomerQuickAddSheet
+        open={customerSheetOpen}
+        initialName={customerSeed}
+        onClose={() => setCustomerSheetOpen(false)}
+        onCreated={(customer) => {
+          if (!customer?.id) return;
+          setNewCustomer(customer);
+          setPartyId(String(customer.id));
+        }}
+      />
     </div>
   );
 }

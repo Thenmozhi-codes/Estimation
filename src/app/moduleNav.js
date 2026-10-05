@@ -26,6 +26,6 @@ export const MODULE_TABS = {
     { label: "Company", path: "/settings/company" },
     { label: "Tax", path: "/settings/tax" },
     { label: "Users", path: "/settings/users" },
-    
+    { label: "Roles", path: "/settings/roles" },
   ],
 };

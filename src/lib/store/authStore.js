@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { mockStore } from "@/lib/store/mockStore";
 import { roleCan } from "@/lib/domain/roles";
+import { useRolesStore } from "@/lib/store/rolesStore";
 
 const STORAGE_KEY = "timber-erp-auth-v1";
 
@@ -85,6 +86,9 @@ export const useAuthStore = create((set, get) => ({
 /** Convenience hook */
 export function usePermission(permission) {
   const user = useAuthStore((s) => s.user);
+
+  /* re-check when an admin edits a role */
+  useRolesStore((s) => s.version);
 
   return roleCan(user?.role, permission);
 }

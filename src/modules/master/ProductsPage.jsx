@@ -21,7 +21,7 @@ import {
   getFixedProductTypes,
   normalize,
   resolveBrandCategoryId,
-} from "@/pages/master/brands/brandConfig";
+} from "@/modules/master/brandConfig";
 
 /* =========================================================
    HELPERS

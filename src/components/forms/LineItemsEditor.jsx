@@ -71,6 +71,23 @@ function buildPickedFields(picked) {
   };
 }
 
+/* "9 sq.ft", "0.5 cft", "12 pcs" — the quantity written beside its unit */
+function formatUnitValue(item) {
+  const unit = String(item?.unit || "").trim();
+  const quantity = Number(item?.quantity);
+
+  if (!unit) return "—";
+  if (!Number.isFinite(quantity) || item?.quantity === "") return unit;
+
+  const digits = unit === "cft" || unit === "cu.ft" ? 3 : 2;
+
+  const value = quantity.toLocaleString("en-IN", {
+    maximumFractionDigits: digits,
+  });
+
+  return `${value} ${unit}`;
+}
+
 function formatAmount(value) {
   const amount = Number(value) || 0;
 
@@ -175,7 +192,8 @@ export function LineItemsEditor({ items = [], onChange }) {
   const lineAmount = (item) => {
     const quantity = Number(item.quantity) || 0;
     const price = Number(item.unitPrice) || 0;
-    return quantity * price;
+    /* rounded to paise, same as the saved line */
+    return Math.round(quantity * price * 100) / 100;
   };
 
   return (
@@ -183,7 +201,7 @@ export function LineItemsEditor({ items = [], onChange }) {
       {items.length > 0 && (
           <div className="overflow-hidden rounded-xl border border-line">
             {/* TABLE HEADER */}
-            <div className="hidden border-b border-line bg-bg/60 px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-muted lg:grid lg:grid-cols-[32px_minmax(135px,1.25fr)_minmax(105px,1fr)_72px_72px_88px_64px] lg:items-center lg:gap-2">
+            <div className="hidden border-b border-line bg-bg/60 px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-muted lg:grid lg:grid-cols-[32px_minmax(135px,1.25fr)_minmax(105px,1fr)_72px_120px_88px_64px] lg:items-center lg:gap-2">
               <div>#</div>
               <div>Brand</div>
               <div>Specification</div>
@@ -302,9 +320,14 @@ function MeasurementSummary({ item }) {
   if (typeKey === "timber" || typeKey === "beading") {
     const w = Number(item?.width) || 0;
     const l = Number(item?.length) || 0;
+    const th =
+      parseFloat(
+        String(item?.attributeValues?.Thickness || item?.thickness || "").match(/[\d.]+/)?.[0],
+      ) || 0;
     const nos = Number(item?.pcs) || 1;
     const parts = [];
     if (w > 0) parts.push(`${w} in (W)`);
+    if (typeKey === "timber" && th > 0) parts.push(`${th} in (T)`);
     if (l > 0) parts.push(`${l} ft (L)`);
     if (!parts.length) return null;
     return (
@@ -340,7 +363,7 @@ function LineItemRow({
   return (
     <div className="bg-surface p-3.5 transition hover:bg-bg/20">
       {/* DESKTOP GRID */}
-      <div className="hidden lg:grid lg:grid-cols-[32px_minmax(135px,1.25fr)_minmax(105px,1fr)_72px_72px_88px_64px] lg:items-center lg:gap-2">
+      <div className="hidden lg:grid lg:grid-cols-[32px_minmax(135px,1.25fr)_minmax(105px,1fr)_72px_120px_88px_64px] lg:items-center lg:gap-2">
         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-500/10 text-xs font-black text-primary-600">
           {index + 1}
         </div>
@@ -361,8 +384,11 @@ function LineItemRow({
 
         <QuantityInput item={item} onUpdate={onUpdate} className="h-9" />
 
-        <div className="flex h-9 items-center rounded-lg border border-line bg-bg/40 px-3 text-xs font-semibold text-ink">
-          {item.unit || "—"}
+        <div
+          className="flex h-9 min-w-0 items-center rounded-lg border border-line bg-bg/40 px-2.5 text-xs font-semibold text-ink"
+          title={formatUnitValue(item)}
+        >
+          <span className="truncate">{formatUnitValue(item)}</span>
         </div>
 
         <RateInput
@@ -416,7 +442,7 @@ function LineItemRow({
               Unit
             </label>
             <div className="mt-1 flex h-10 items-center rounded-lg border border-line bg-bg/40 px-3 text-sm font-semibold text-ink">
-              {item.unit || "—"}
+              <span className="truncate">{formatUnitValue(item)}</span>
             </div>
           </div>
 

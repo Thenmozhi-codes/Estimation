@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Search } from "lucide-react";
+import { Check, ChevronDown, Plus, Search, X } from "lucide-react";
 
 /*
  * SearchableSelect
@@ -31,6 +31,8 @@ export function SearchableSelect({
   disabled = false,
   className = "",
   buttonRef = null,
+  footerAction = null, // { label, onClick } — e.g. "+ Add New Customer"
+  clearable = false, // shows an × to unselect, and clicking the chosen row unselects it
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -77,8 +79,20 @@ export function SearchableSelect({
     setQuery("");
   };
 
+  const clear = () => {
+    onChange?.("");
+    closeMenu();
+  };
+
   const choose = (option) => {
     if (!option) return;
+
+    /* clicking the already-selected row unselects it (clearable lists only) */
+    if (clearable && String(option.value) === String(value)) {
+      clear();
+      triggerRef.current?.focus();
+      return;
+    }
 
     onChange?.(String(option.value));
     closeMenu();
@@ -202,8 +216,11 @@ export function SearchableSelect({
 
   /* ------------------------------------------------------------------ UI */
 
+  const showClear = clearable && Boolean(selected) && !disabled;
+
   return (
     <>
+      <div className="relative w-full">
       <button
         ref={(node) => {
           triggerRef.current = node;
@@ -235,9 +252,23 @@ export function SearchableSelect({
           className={[
             "h-4 w-4 shrink-0 text-muted transition",
             open ? "rotate-180" : "",
+            showClear ? "mr-5" : "",
           ].join(" ")}
         />
       </button>
+
+      {showClear && (
+        <button
+          type="button"
+          onClick={clear}
+          aria-label="Clear selection"
+          title="Clear selection"
+          className="absolute right-8 top-1/2 z-10 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-muted transition hover:bg-red-500/10 hover:text-red-500"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
+      </div>
 
       {menuStyle &&
         createPortal(
@@ -305,6 +336,20 @@ export function SearchableSelect({
                 })
               )}
             </div>
+
+            {footerAction && (
+              <button
+                type="button"
+                onClick={() => {
+                  closeMenu();
+                  footerAction.onClick?.(query.trim());
+                }}
+                className="flex w-full items-center gap-2 border-t border-line px-3 py-2.5 text-left text-sm font-bold text-primary-600 transition hover:bg-primary-500/10"
+              >
+                <Plus className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 truncate">{footerAction.label}</span>
+              </button>
+            )}
           </div>,
           document.body,
         )}

@@ -9,6 +9,8 @@ import { formatMoney } from "@/lib/utils/money";
 import { fmtDate } from "@/lib/utils/date";
 import { useInvoices } from "@/hooks/useDocuments";
 import { useParties } from "@/hooks/useParties";
+import { MessageCircle } from "lucide-react";
+import { buildReminderMessage, whatsappUrl } from "@/lib/utils/reminder";
 import { MODULE_TABS } from "@/app/moduleNav";
 
 export function OutstandingReportPage() {
@@ -37,8 +39,9 @@ export function OutstandingReportPage() {
     const map = {};
     outstandingInvoices.forEach((i) => {
       const name = partyById[i.partyId]?.name || "—";
-      if (!map[name]) map[name] = { name, count: 0, balance: 0 };
+      if (!map[name]) map[name] = { name, partyId: i.partyId, phone: partyById[i.partyId]?.phone || "", count: 0, balance: 0, numbers: [] };
       map[name].count += 1;
+      map[name].numbers.push(i);
       map[name].balance += Math.max(0, (i.grandTotal || 0) - (i.amountPaid || 0));
     });
     return Object.values(map).sort((a, b) => b.balance - a.balance);
@@ -129,6 +132,39 @@ export function OutstandingReportPage() {
                       {formatMoney(r.balance)}
                     </span>
                   ),
+                },
+                {
+                  key: "__remind",
+                  header: "",
+                  width: 120,
+                  align: "right",
+                  render: (r) => {
+                    const url = whatsappUrl(
+                      r.phone,
+                      buildReminderMessage({
+                        name: r.name,
+                        total: r.balance,
+                        invoices: r.numbers,
+                      }),
+                    );
+
+                    return url ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          window.open(url, "_blank", "noopener,noreferrer");
+                        }}
+                        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold text-emerald-600 transition hover:bg-emerald-500/10"
+                        title="Send payment reminder on WhatsApp"
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" />
+                        <span>Remind</span>
+                      </button>
+                    ) : (
+                      <span className="text-2xs text-muted">No phone</span>
+                    );
+                  },
                 },
               ]}
               rows={byParty}

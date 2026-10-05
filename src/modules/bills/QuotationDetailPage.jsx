@@ -157,6 +157,22 @@ export function QuotationDetailPage() {
                   {formatMoney(q.grandTotal)}
                 </span>
               </Detail>
+              {Number(q.advancePayment) > 0 && (
+                <>
+                  <Detail label="Advance Paid">
+                    <span className="font-bold text-emerald-600">
+                      {formatMoney(q.advancePayment)}
+                    </span>
+                  </Detail>
+                  <Detail label="Balance Due">
+                    <span className="text-ink font-black text-base">
+                      {formatMoney(
+                        Math.max(0, (q.grandTotal || 0) - (Number(q.advancePayment) || 0)),
+                      )}
+                    </span>
+                  </Detail>
+                </>
+              )}
             </div>
             {q.notes && (
               <div className="mt-4 text-sm">

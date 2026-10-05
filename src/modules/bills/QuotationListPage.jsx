@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download, FileSpreadsheet, FileText, Pencil, Plus } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, Pencil, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
 import { Button } from "@/components/ui/Button";
@@ -10,18 +10,19 @@ import { Toolbar } from "@/components/ui/Toolbar";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { toast } from "@/lib/toast";
-import { usePermission } from "@/lib/store/authStore";
 import { companyRepo, quotationItemRepo } from "@/lib/api/repos";
 import {
   downloadDocumentExcel,
   downloadDocumentsExcel,
 } from "@/lib/services/excelService";
+import { usePermission } from "@/lib/store/authStore";
 import { downloadDocumentPdf } from "@/lib/services/pdfService";
 import { formatMoney } from "@/lib/utils/money";
 import { fmtDate } from "@/lib/utils/date";
 import {
   useQuotations,
   useDeleteQuotation,
+  useClearQuotations,
 } from "@/hooks/useDocuments";
 import { useParties } from "@/hooks/useParties";
 import { MODULE_TABS } from "@/app/moduleNav";
@@ -31,16 +32,14 @@ export function QuotationListPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [confirm, setConfirm] = useState(null);
+  const [clearOpen, setClearOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const canExportAll = usePermission("canExportAll");
 
   const { data: quotations = [], isLoading } = useQuotations();
   const { data: parties = [] } = useParties();
   const deleteMut = useDeleteQuotation();
-
-  const canCreate = usePermission("canCreateDocuments");
-  const canEdit = usePermission("canEditDocuments");
-  const canDelete = usePermission("canDeleteDocuments");
-  const canExportAll = usePermission("canExportAll");
-  const [exporting, setExporting] = useState(false);
+  const clearMut = useClearQuotations();
 
   const partyById = useMemo(
     () => Object.fromEntries(parties.map((p) => [p.id, p])),
@@ -71,6 +70,19 @@ export function QuotationListPage() {
     }
   };
 
+  /* CLEAR ALL — quotations only (customers / invoices / other data stay) */
+  const onClearAll = async () => {
+    try {
+      const { removed } = await clearMut.mutateAsync();
+      toast.success(
+        removed === 1 ? "1 quotation cleared" : `${removed} quotations cleared`,
+      );
+      setClearOpen(false);
+    } catch (e) {
+      toast.error(e?.message || "Could not clear quotations");
+    }
+  };
+
   /* Excel — download straight from the list */
   const onDownloadExcel = async (row) => {
     try {
@@ -89,6 +101,42 @@ export function QuotationListPage() {
     } catch (error) {
       console.error("Excel download failed:", error);
       toast.error("Could not create the Excel file");
+    }
+  };
+
+  /* Excel — export every quotation in the current list (search + status filter) */
+  const onExportAll = async () => {
+    if (!filtered.length) {
+      toast.error("No quotations to export");
+      return;
+    }
+
+    setExporting(true);
+
+    try {
+      const [allItems, companies] = await Promise.all([
+        quotationItemRepo.list(),
+        companyRepo.list(),
+      ]);
+
+      const ids = new Set(filtered.map((row) => row.id));
+
+      const count = downloadDocumentsExcel({
+        company: companies?.[0],
+        parties,
+        docs: filtered,
+        items: (allItems || []).filter((item) => ids.has(item.quotationId)),
+        kind: "quotation",
+      });
+
+      toast.success(
+        `${count} quotation${count === 1 ? "" : "s"} exported to Excel`,
+      );
+    } catch (error) {
+      console.error("Export all failed:", error);
+      toast.error("Could not create the Excel file");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -113,40 +161,6 @@ export function QuotationListPage() {
     }
   };
 
-  /* Excel — export every quotation in the current list (search + status filter) */
-  const onExportAll = async () => {
-    if (!filtered.length) {
-      toast.error("No quotations to export");
-      return;
-    }
-
-    setExporting(true);
-
-    try {
-      const [allItems, companies] = await Promise.all([
-        quotationItemRepo.list(),
-        companyRepo.list(),
-      ]);
-
-      const ids = new Set(filtered.map((row) => row.id));
-
-      downloadDocumentsExcel({
-        company: companies?.[0],
-        parties,
-        docs: filtered,
-        items: (allItems || []).filter((item) => ids.has(item.quotationId)),
-        kind: "quotation",
-      });
-
-      toast.success(`${filtered.length} quotations exported`);
-    } catch (error) {
-      console.error("Export all failed:", error);
-      toast.error("Could not create the Excel file");
-    } finally {
-      setExporting(false);
-    }
-  };
-
   /* EDIT */
   const onEdit = (quotation) => {
     if (!quotation?.id) return;
@@ -159,12 +173,27 @@ export function QuotationListPage() {
         title="Quotations"
         actions={
           <div className="flex items-center gap-2">
-            {canExportAll && (
+           
+
+            {quotations.length > 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setClearOpen(true)}
+                className="text-danger hover:bg-red-50 dark:hover:bg-red-950/40"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Clear All</span>
+                <span className="sm:hidden">Clear</span>
+              </Button>
+            )}
+
+             {canExportAll && (
               <Button
                 size="sm"
                 variant="outline"
                 onClick={onExportAll}
-                disabled={exporting}
+                disabled={exporting || quotations.length === 0}
               >
                 <FileSpreadsheet className="h-4 w-4" />
                 <span className="hidden sm:inline">
@@ -174,13 +203,11 @@ export function QuotationListPage() {
               </Button>
             )}
 
-            {canCreate && (
-              <Button size="sm" onClick={() => navigate("/bills/quotations/new")}>
-                <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">New Quotation</span>
-                <span className="sm:hidden">New</span>
-              </Button>
-            )}
+            <Button size="sm" onClick={() => navigate("/bills/quotations/new")}>
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">New Quotation</span>
+              <span className="sm:hidden">New</span>
+            </Button>
           </div>
         }
       />
@@ -288,7 +315,7 @@ export function QuotationListPage() {
               header: "",
               width: 75,
               align: "right",
-              render: (row) => !canEdit ? null : (
+              render: (row) => (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -309,7 +336,7 @@ export function QuotationListPage() {
               header: "",
               width: 70,
               align: "right",
-              render: (row) => !canDelete ? null : (
+              render: (row) => (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -329,11 +356,9 @@ export function QuotationListPage() {
           emptyTitle="No quotations yet"
           emptyDescription="Create your first quotation to send to a customer."
           emptyAction={
-            canCreate ? (
-              <Button onClick={() => navigate("/bills/quotations/new")}>
-                <Plus className="h-4 w-4" /> New Quotation
-              </Button>
-            ) : null
+            <Button onClick={() => navigate("/bills/quotations/new")}>
+              <Plus className="h-4 w-4" /> New Quotation
+            </Button>
           }
         />
       </div>
@@ -346,6 +371,19 @@ export function QuotationListPage() {
         description={`"${confirm?.number}" will be removed.`}
         confirmLabel="Delete"
         loading={deleteMut.isPending}
+      />
+
+      {/* Confirmation before clearing every saved quotation */}
+      <ConfirmDialog
+        open={clearOpen}
+        onClose={() => setClearOpen(false)}
+        onConfirm={onClearAll}
+        title="Clear all quotations?"
+        description={`All ${quotations.length} saved quotation${
+          quotations.length === 1 ? "" : "s"
+        } will be permanently removed. Customers, invoices and other data are not affected. This cannot be undone.`}
+        confirmLabel="Clear All"
+        loading={clearMut.isPending}
       />
     </div>
   );

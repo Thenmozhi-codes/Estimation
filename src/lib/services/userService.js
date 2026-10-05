@@ -1,5 +1,5 @@
 import { userRepo, companyRepo } from "@/lib/api/repos";
-import { ROLE_VALUES } from "@/lib/domain/roles";
+import { getRoleValues } from "@/lib/domain/roles";
 import { hashPassword } from "@/lib/utils/password";
 import { newId } from "@/lib/utils/id";
 import { nowIso } from "@/lib/utils/date";
@@ -37,7 +37,7 @@ function validateBasics({ name, email, role }) {
   if (!cleanEmail) throw new Error("Email is required");
   if (!/^\S+@\S+$/.test(cleanEmail)) throw new Error("Enter a valid email");
 
-  if (!ROLE_VALUES.includes(role)) throw new Error("Select a valid role");
+  if (!getRoleValues().includes(role)) throw new Error("Select a valid role");
 }
 
 function validatePassword(password) {

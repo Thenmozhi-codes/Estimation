@@ -3,6 +3,7 @@ import { createRepo } from "./baseRepo";
 /* ─────── Masters ─────── */
 export const companyRepo           = createRepo("companies");
 export const userRepo              = createRepo("users");
+export const roleRepo              = createRepo("roles");
 export const unitRepo              = createRepo("units",   { softDelete: true });
 export const brandRepo             = createRepo("brands",  { softDelete: true });
 export const taxRepo               = createRepo("taxes",   { softDelete: true });

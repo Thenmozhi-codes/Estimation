@@ -268,7 +268,8 @@ function generateDocumentPdf({ company, party, doc, items, kind }) {
     const rate = Number(doc.gstPercentage ?? doc.taxRate ?? (items.find((x) => Number(x?.taxRate) > 0)?.taxRate ?? 0));
     totalRows.push([rate ? `GST (${rate}%)` : "GST", money(doc.taxTotal)]);
   }
-  const requiredH = totalRows.length * 16 + (kind === "invoice" && doc.amountPaid != null ? 52 : 28);
+  const advanceAmt = kind === "quotation" ? Math.max(Number(doc.advancePayment) || 0, 0) : 0;
+  const requiredH = totalRows.length * 16 + (kind === "invoice" && doc.amountPaid != null ? 52 : 28) + (advanceAmt > 0 ? 34 : 0);
   if (y + requiredH > pageH - 65) { pdf.addPage(); y = 42; }
   pdf.setFillColor(249,246,242); pdf.rect(tx, y - 8, totalsW, requiredH, "F");
   totalRows.forEach(([label,value]) => {
@@ -279,6 +280,11 @@ function generateDocumentPdf({ company, party, doc, items, kind }) {
   if (kind === "invoice" && doc.amountPaid != null) {
     pdf.setFont("helvetica","normal"); pdf.setFontSize(8.5); setText(MUTED); pdf.text("Paid",tx+10,y); setText(TEXT); pdf.text(money(doc.amountPaid),valueX-10,y,{align:"right"}); y+=14;
     pdf.setFont("helvetica","bold"); setText(DARK); pdf.text("Balance",tx+10,y); pdf.text(money(Math.max(0,(doc.grandTotal||0)-(doc.amountPaid||0))),valueX-10,y,{align:"right"}); y+=14;
+  }
+
+  if (advanceAmt > 0) {
+    pdf.setFont("helvetica","normal"); pdf.setFontSize(8.5); setText(MUTED); pdf.text("Advance Paid",tx+10,y); setText(TEXT); pdf.text("- " + money(advanceAmt),valueX-10,y,{align:"right"}); y+=14;
+    pdf.setFont("helvetica","bold"); setText(DARK); pdf.text("Balance Due",tx+10,y); pdf.text(money(Math.max(0,(doc.grandTotal||0)-advanceAmt)),valueX-10,y,{align:"right"}); y+=14;
   }
 
   if (doc.notes) {

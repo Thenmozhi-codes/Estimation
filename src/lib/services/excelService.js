@@ -10,11 +10,18 @@ const shortDate = (d) =>
       })
     : "";
 
-function describeItem(it) {
-  const brand = it.productNameSnapshot || it.brandName || it.productName || "";
+function describeItem(it = {}) {
+  const brand =
+    it.productNameSnapshot ||
+    it.brandName ||
+    it.productName ||
+    "";
 
   const attrs = Array.isArray(it.attributesSnapshot)
-    ? it.attributesSnapshot.map((a) => a?.value).filter(Boolean).join(" · ")
+    ? it.attributesSnapshot
+        .map((a) => a?.value)
+        .filter(Boolean)
+        .join(" · ")
     : "";
 
   const spec =
@@ -24,35 +31,118 @@ function describeItem(it) {
     it.skuSnapshot ||
     "";
 
-  return { brand, spec: String(spec || "") };
+  return {
+    brand: String(brand || ""),
+    spec: String(spec || ""),
+  };
 }
 
 /**
  * Downloads ONE quotation / invoice / purchase as an .xlsx file.
  */
-export function downloadDocumentExcel({ company, party, doc, items = [], kind }) {
+export function downloadDocumentExcel({
+  company = {},
+  party = {},
+  doc = {},
+  items = [],
+  kind = "invoice",
+}) {
   const label =
-    kind === "quotation" ? "Quotation" : kind === "invoice" ? "Invoice" : "Purchase";
+    kind === "quotation"
+      ? "Quotation"
+      : kind === "invoice"
+        ? "Invoice"
+        : "Purchase";
+
   const prefix =
-    kind === "quotation" ? "QTN" : kind === "invoice" ? "INV" : "PUR";
+    kind === "quotation"
+      ? "QTN"
+      : kind === "invoice"
+        ? "INV"
+        : "PUR";
 
   const showGst = isGstEnabled(doc, items);
 
   const rows = [];
 
+  // --------------------------------------------------
+  // COMPANY DETAILS
+  // --------------------------------------------------
+
   rows.push([company?.name || "Company"]);
-  if (company?.address) rows.push([company.address]);
-  if (company?.gstin) rows.push([`GSTIN: ${company.gstin}`]);
+
+  if (company?.address) {
+    rows.push([company.address]);
+  }
+
+  if (company?.phone) {
+    rows.push([`Phone: ${company.phone}`]);
+  }
+
+  if (company?.email) {
+    rows.push([`Email: ${company.email}`]);
+  }
+
+  if (company?.gstin) {
+    rows.push([`GSTIN: ${company.gstin}`]);
+  }
+
   rows.push([]);
 
-  rows.push([label, doc.number || ""]);
-  rows.push(["Date", shortDate(doc.date)]);
-  if (doc.validUntil) rows.push(["Valid Until", shortDate(doc.validUntil)]);
-  if (doc.dueDate) rows.push(["Due Date", shortDate(doc.dueDate)]);
-  rows.push(["Status", doc.status || ""]);
-  rows.push(["Customer", party?.name || ""]);
-  if (party?.phone) rows.push(["Phone", party.phone]);
+  // --------------------------------------------------
+  // DOCUMENT DETAILS
+  // --------------------------------------------------
+
+  rows.push([label, doc?.number || ""]);
+
+  rows.push([
+    "Date",
+    shortDate(doc?.date),
+  ]);
+
+  if (doc?.validUntil) {
+    rows.push([
+      "Valid Until",
+      shortDate(doc.validUntil),
+    ]);
+  }
+
+  if (doc?.dueDate) {
+    rows.push([
+      "Due Date",
+      shortDate(doc.dueDate),
+    ]);
+  }
+
+  rows.push([
+    "Status",
+    doc?.status || "",
+  ]);
+
+  rows.push([
+    "Customer",
+    party?.name || "",
+  ]);
+
+  if (party?.phone) {
+    rows.push([
+      "Phone",
+      party.phone,
+    ]);
+  }
+
+  if (party?.email) {
+    rows.push([
+      "Email",
+      party.email,
+    ]);
+  }
+
   rows.push([]);
+
+  // --------------------------------------------------
+  // ITEMS HEADER
+  // --------------------------------------------------
 
   const header = [
     "S.No",
@@ -63,9 +153,21 @@ export function downloadDocumentExcel({ company, party, doc, items = [], kind })
     "Rate",
     "Discount",
   ];
-  if (showGst) header.push("Tax %", "Tax Amount");
+
+  if (showGst) {
+    header.push(
+      "Tax %",
+      "Tax Amount"
+    );
+  }
+
   header.push("Total");
+
   rows.push(header);
+
+  // --------------------------------------------------
+  // ITEMS
+  // --------------------------------------------------
 
   items.forEach((it, index) => {
     const { brand, spec } = describeItem(it);
@@ -74,198 +176,350 @@ export function downloadDocumentExcel({ company, party, doc, items = [], kind })
       index + 1,
       brand,
       spec,
-      it.unit || it.unitSnapshot || "",
-      Number(it.quantity) || 0,
-      Number(it.unitPrice) || 0,
-      Number(it.discount) || 0,
+      it?.unit ||
+        it?.unitSnapshot ||
+        "",
+
+      Number(it?.quantity) || 0,
+
+      Number(it?.unitPrice) || 0,
+
+      Number(it?.discount) || 0,
     ];
 
     if (showGst) {
-      line.push(Number(it.taxRate) || 0, Number(it.taxAmount) || 0);
+      line.push(
+        Number(it?.taxRate) || 0,
+        Number(it?.taxAmount) || 0
+      );
     }
 
-    line.push(Number(it.lineTotal) || 0);
+    line.push(
+      Number(it?.lineTotal) || 0
+    );
+
     rows.push(line);
   });
 
-  rows.push([]);
-  rows.push(["Subtotal", Number(doc.subtotal) || 0]);
-  if ((doc.discount || 0) > 0) rows.push(["Discount", Number(doc.discount) || 0]);
-  if (showGst) rows.push(["Tax / GST", Number(doc.taxTotal) || 0]);
-  rows.push(["Grand Total", Number(doc.grandTotal) || 0]);
+  // --------------------------------------------------
+  // TOTALS
+  // --------------------------------------------------
 
-  if (kind === "invoice" && doc.amountPaid != null) {
-    rows.push(["Paid", Number(doc.amountPaid) || 0]);
+  rows.push([]);
+
+  rows.push([
+    "Subtotal",
+    Number(doc?.subtotal) || 0,
+  ]);
+
+  if (Number(doc?.discount) > 0) {
     rows.push([
-      "Balance Due",
-      Math.max(0, (doc.grandTotal || 0) - (doc.amountPaid || 0)),
+      "Discount",
+      Number(doc.discount) || 0,
     ]);
   }
 
-  if (doc.notes) {
-    rows.push([]);
-    rows.push(["Notes", doc.notes]);
+  if (showGst) {
+    rows.push([
+      "Tax / GST",
+      Number(doc?.taxTotal) || 0,
+    ]);
   }
 
-  const sheet = XLSX.utils.aoa_to_sheet(rows);
+  rows.push([
+    "Grand Total",
+    Number(doc?.grandTotal) || 0,
+  ]);
+
+  // --------------------------------------------------
+  // QUOTATION PAYMENT DETAILS
+  // --------------------------------------------------
+
+  if (
+    kind === "quotation" &&
+    Number(doc?.advancePayment) > 0
+  ) {
+    const advance =
+      Number(doc.advancePayment) || 0;
+
+    const grandTotal =
+      Number(doc?.grandTotal) || 0;
+
+    rows.push([
+      "Advance Paid",
+      advance,
+    ]);
+
+    rows.push([
+      "Balance Due",
+      Math.max(
+        0,
+        grandTotal - advance
+      ),
+    ]);
+  }
+
+  // --------------------------------------------------
+  // INVOICE PAYMENT DETAILS
+  // --------------------------------------------------
+
+  if (
+    kind === "invoice" &&
+    doc?.amountPaid != null
+  ) {
+    const amountPaid =
+      Number(doc.amountPaid) || 0;
+
+    const grandTotal =
+      Number(doc?.grandTotal) || 0;
+
+    rows.push([
+      "Paid",
+      amountPaid,
+    ]);
+
+    rows.push([
+      "Balance Due",
+      Math.max(
+        0,
+        grandTotal - amountPaid
+      ),
+    ]);
+  }
+
+  // --------------------------------------------------
+  // NOTES
+  // --------------------------------------------------
+
+  if (doc?.notes) {
+    rows.push([]);
+
+    rows.push([
+      "Notes",
+      doc.notes,
+    ]);
+  }
+
+  // --------------------------------------------------
+  // CREATE WORKSHEET
+  // --------------------------------------------------
+
+  const sheet =
+    XLSX.utils.aoa_to_sheet(rows);
+
+  // --------------------------------------------------
+  // COLUMN WIDTHS
+  // --------------------------------------------------
+
   sheet["!cols"] = [
-    { wch: 14 },
-    { wch: 32 },
-    { wch: 24 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 14 },
-    { wch: 12 },
-    { wch: 12 },
-    { wch: 14 },
-    { wch: 14 },
+    { wch: 8 },   // S.No
+    { wch: 32 },  // Product
+    { wch: 28 },  // Specification
+    { wch: 12 },  // Unit
+    { wch: 10 },  // Qty
+    { wch: 14 },  // Rate
+    { wch: 14 },  // Discount
+    { wch: 12 },  // Tax %
+    { wch: 16 },  // Tax Amount
+    { wch: 16 },  // Total
   ];
 
-  const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, sheet, label);
-  XLSX.writeFile(book, `${prefix}-${doc.number}.xlsx`);
+  // --------------------------------------------------
+  // CREATE WORKBOOK
+  // --------------------------------------------------
+
+  const book =
+    XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(
+    book,
+    sheet,
+    label
+  );
+
+  // --------------------------------------------------
+  // FILE NAME
+  // --------------------------------------------------
+
+  const documentNumber =
+    doc?.number ||
+    `${Date.now()}`;
+
+  XLSX.writeFile(
+    book,
+    `${prefix}-${documentNumber}.xlsx`
+  );
 }
 
-/* ───────────────────────── EXPORT ALL (list pages) ───────────────────────── */
-
-const stamp = () => {
-  const now = new Date();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  return `${now.getFullYear()}-${mm}-${dd}`;
-};
-
-const DOC_KEY = {
-  quotation: "quotationId",
-  invoice: "invoiceId",
-  purchase: "purchaseId",
-};
-
 /**
- * Downloads MANY quotations / invoices / purchases as one .xlsx file.
- *   Sheet 1 "Summary" — one row per document
- *   Sheet 2 "Items"   — every line item, with its document number
+ * Downloads MANY quotations / invoices / purchases as ONE .xlsx file.
  *
- * @param {object} opts
- *   company — company record
- *   parties — all parties (used to show customer names)
- *   docs    — the documents to export (usually the filtered list)
- *   items   — line items of those documents
- *   kind    — 'quotation' | 'invoice' | 'purchase'
+ * Sheet 1 "Quotations" (or "Invoices"): one row per document.
+ * Sheet 2 "Line Items": one row per item, with its document number.
+ *
+ * Accepts `documents` or `docs`, and an optional flat `items` list and
+ * `parties` list (both are looked up by id), so every list page can use it.
  */
 export function downloadDocumentsExcel({
-  company,
-  parties = [],
-  docs = [],
+  documents,
+  docs,
   items = [],
-  kind,
+  parties = [],
+  company = {},
+  kind = "invoice",
 }) {
-  const isInvoice = kind === "invoice";
-  const isQuotation = kind === "quotation";
+  const list = Array.isArray(documents)
+    ? documents
+    : Array.isArray(docs)
+      ? docs
+      : [];
 
-  const label = isQuotation ? "Quotations" : isInvoice ? "Invoices" : "Purchases";
-  const idKey = DOC_KEY[kind] || "documentId";
+  if (list.length === 0) {
+    throw new Error("No documents available to export.");
+  }
 
-  const partyById = Object.fromEntries(parties.map((party) => [party.id, party]));
+  const label =
+    kind === "quotation"
+      ? "Quotations"
+      : kind === "purchase"
+        ? "Purchases"
+        : "Invoices";
 
-  const itemsByDoc = {};
-  items.forEach((item) => {
-    (itemsByDoc[item[idKey]] ||= []).push(item);
+  const prefix =
+    kind === "quotation" ? "QTN" : kind === "purchase" ? "PUR" : "INV";
+
+  const idKey =
+    kind === "quotation"
+      ? "quotationId"
+      : kind === "purchase"
+        ? "purchaseId"
+        : "invoiceId";
+
+  const num = (value) => Number(value) || 0;
+  const money = (value) => Math.round(num(value) * 100) / 100;
+
+  const partyById = new Map(
+    (Array.isArray(parties) ? parties : []).map((p) => [String(p.id), p]),
+  );
+
+  /* items grouped by document id (a doc may also carry its own items) */
+  const itemsByDoc = new Map();
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const key = String(item?.[idKey] ?? "");
+    if (!key) return;
+    if (!itemsByDoc.has(key)) itemsByDoc.set(key, []);
+    itemsByDoc.get(key).push(item);
   });
 
-  /* ───── Summary sheet ───── */
-  const summary = [];
+  const itemsOf = (doc) =>
+    itemsByDoc.get(String(doc?.id)) ||
+    (Array.isArray(doc?.items) ? doc.items : []);
 
-  summary.push([company?.name || "Company"]);
-  summary.push([`All ${label}`]);
-  summary.push(["Exported on", shortDate(new Date())]);
-  summary.push(["Documents", docs.length]);
-  summary.push([]);
+  const partyOf = (doc) =>
+    doc?.party ||
+    doc?.customer ||
+    partyById.get(String(doc?.partyId ?? "")) ||
+    {};
+
+  const hasGst = list.some((doc) => isGstEnabled(doc, itemsOf(doc)));
+  const hasPayments = kind === "invoice" || kind === "quotation";
+  const paidLabel = kind === "quotation" ? "Advance Paid" : "Paid";
+
+  /* ---------------------------------------------------------- SUMMARY SHEET */
+
+  const rows = [];
+
+  rows.push([company?.name || "Company"]);
+  if (company?.address) rows.push([company.address]);
+  if (company?.gstin) rows.push([`GSTIN: ${company.gstin}`]);
+  rows.push([`${label} export`, shortDate(new Date())]);
+  rows.push([]);
 
   const header = [
     "S.No",
-    "Number",
+    "Document No",
     "Date",
-    isQuotation ? "Valid Until" : "Due Date",
     "Customer",
     "Phone",
     "Status",
     "Items",
     "Subtotal",
     "Discount",
-    "GST",
-    "Grand Total",
   ];
-  if (isInvoice) header.push("Paid", "Balance");
-  summary.push(header);
+  if (hasGst) header.push("Tax / GST");
+  header.push("Grand Total");
+  if (hasPayments) header.push(paidLabel, "Balance Due");
 
-  const totals = { subtotal: 0, discount: 0, tax: 0, grand: 0, paid: 0, balance: 0 };
+  rows.push(header);
 
-  docs.forEach((doc, index) => {
-    const party = partyById[doc.partyId];
-    const docItems = itemsByDoc[doc.id] || [];
+  const totals = { subtotal: 0, discount: 0, tax: 0, grand: 0, paid: 0, due: 0 };
+
+  list.forEach((doc, index) => {
+    const party = partyOf(doc);
+    const docItems = itemsOf(doc);
     const gstOn = isGstEnabled(doc, docItems);
 
-    const subtotal = Number(doc.subtotal) || 0;
-    const discount = Number(doc.discount) || 0;
-    const tax = gstOn ? Number(doc.taxTotal) || 0 : 0;
-    const grand = Number(doc.grandTotal) || 0;
-    const paid = Number(doc.amountPaid) || 0;
-    const balance = Math.max(0, grand - paid);
+    const grandTotal = money(doc?.grandTotal);
+    const paid = money(
+      kind === "quotation" ? doc?.advancePayment : doc?.amountPaid,
+    );
+    const balance = Math.max(0, money(grandTotal - paid));
+    const tax = gstOn ? money(doc?.taxTotal) : 0;
 
-    totals.subtotal += subtotal;
-    totals.discount += discount;
+    totals.subtotal += money(doc?.subtotal);
+    totals.discount += money(doc?.discount);
     totals.tax += tax;
-    totals.grand += grand;
+    totals.grand += grandTotal;
     totals.paid += paid;
-    totals.balance += balance;
+    totals.due += balance;
 
     const row = [
       index + 1,
-      doc.number || "",
-      shortDate(doc.date),
-      shortDate(isQuotation ? doc.validUntil : doc.dueDate),
-      party?.name || "",
-      party?.phone || "",
-      doc.status || "",
+      doc?.number || "",
+      shortDate(doc?.date),
+      party?.name || doc?.customerName || doc?.partyName || "",
+      party?.phone || party?.mobile || doc?.customerPhone || "",
+      doc?.status || "",
       docItems.length,
-      subtotal,
-      discount,
-      tax,
-      grand,
+      money(doc?.subtotal),
+      money(doc?.discount),
     ];
-    if (isInvoice) row.push(paid, balance);
+    if (hasGst) row.push(tax);
+    row.push(grandTotal);
+    if (hasPayments) row.push(paid, balance);
 
-    summary.push(row);
+    rows.push(row);
   });
 
-  const totalRow = ["", "TOTAL", "", "", "", "", "", "", totals.subtotal, totals.discount, totals.tax, totals.grand];
-  if (isInvoice) totalRow.push(totals.paid, totals.balance);
-  summary.push([]);
-  summary.push(totalRow);
+  /* totals row */
+  const totalRow = ["", "TOTAL", "", "", "", "", "", money(totals.subtotal), money(totals.discount)];
+  if (hasGst) totalRow.push(money(totals.tax));
+  totalRow.push(money(totals.grand));
+  if (hasPayments) totalRow.push(money(totals.paid), money(totals.due));
+  rows.push([]);
+  rows.push(totalRow);
 
-  const summarySheet = XLSX.utils.aoa_to_sheet(summary);
+  const summarySheet = XLSX.utils.aoa_to_sheet(rows);
   summarySheet["!cols"] = [
-    { wch: 6 },
-    { wch: 16 },
-    { wch: 14 },
+    { wch: 7 },
+    { wch: 18 },
     { wch: 14 },
     { wch: 28 },
     { wch: 16 },
     { wch: 14 },
     { wch: 8 },
-    { wch: 14 },
-    { wch: 12 },
-    { wch: 12 },
+    { wch: 15 },
+    { wch: 13 },
+    ...(hasGst ? [{ wch: 13 }] : []),
     { wch: 16 },
-    { wch: 14 },
-    { wch: 14 },
+    ...(hasPayments ? [{ wch: 15 }, { wch: 15 }] : []),
   ];
 
-  /* ───── Items sheet ───── */
-  const lines = [
+  /* ------------------------------------------------------- LINE ITEMS SHEET */
+
+  const itemRows = [
     [
-      "Number",
+      "Document No",
       "Date",
       "Customer",
       "S.No",
@@ -275,57 +529,72 @@ export function downloadDocumentsExcel({
       "Qty",
       "Rate",
       "Discount",
-      "Tax %",
-      "Tax Amount",
-      "Total",
+      ...(hasGst ? ["Tax %", "Tax Amount"] : []),
+      "Line Total",
     ],
   ];
 
-  docs.forEach((doc) => {
-    const party = partyById[doc.partyId];
-    const docItems = itemsByDoc[doc.id] || [];
+  list.forEach((doc) => {
+    const party = partyOf(doc);
+    const docItems = itemsOf(doc);
     const gstOn = isGstEnabled(doc, docItems);
 
-    docItems.forEach((it, index) => {
+    docItems.forEach((it, i) => {
       const { brand, spec } = describeItem(it);
+      const qty = num(it?.quantity);
+      const rate = num(it?.unitPrice);
+      const discount = num(it?.discount);
 
-      lines.push([
-        doc.number || "",
-        shortDate(doc.date),
-        party?.name || "",
-        index + 1,
+      /* saved line total, else Qty x Rate - discount (+ tax) */
+      const taxAmount = gstOn ? num(it?.taxAmount) : 0;
+      const lineTotal =
+        it?.lineTotal != null && it?.lineTotal !== ""
+          ? money(it.lineTotal)
+          : money(qty * rate - discount + taxAmount);
+
+      itemRows.push([
+        doc?.number || "",
+        shortDate(doc?.date),
+        party?.name || doc?.customerName || "",
+        i + 1,
         brand,
         spec,
-        it.unit || it.unitSnapshot || "",
-        Number(it.quantity) || 0,
-        Number(it.unitPrice) || 0,
-        Number(it.discount) || 0,
-        gstOn ? Number(it.taxRate) || 0 : 0,
-        gstOn ? Number(it.taxAmount) || 0 : 0,
-        Number(it.lineTotal) || 0,
+        it?.unit || it?.unitSnapshot || "",
+        qty,
+        rate,
+        discount,
+        ...(hasGst ? [gstOn ? num(it?.taxRate) : 0, taxAmount] : []),
+        lineTotal,
       ]);
     });
   });
 
-  const itemsSheet = XLSX.utils.aoa_to_sheet(lines);
-  itemsSheet["!cols"] = [
-    { wch: 16 },
+  const itemSheet = XLSX.utils.aoa_to_sheet(itemRows);
+  itemSheet["!cols"] = [
+    { wch: 18 },
     { wch: 14 },
-    { wch: 28 },
+    { wch: 26 },
     { wch: 6 },
-    { wch: 30 },
-    { wch: 24 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 14 },
-    { wch: 12 },
+    { wch: 28 },
+    { wch: 26 },
     { wch: 8 },
     { wch: 12 },
-    { wch: 14 },
+    { wch: 12 },
+    { wch: 11 },
+    ...(hasGst ? [{ wch: 8 }, { wch: 13 }] : []),
+    { wch: 15 },
   ];
 
+  /* ---------------------------------------------------------------- WRITE */
+
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, summarySheet, "Summary");
-  XLSX.utils.book_append_sheet(book, itemsSheet, "Items");
-  XLSX.writeFile(book, `${label}-${stamp()}.xlsx`);
+  XLSX.utils.book_append_sheet(book, summarySheet, label);
+  if (itemRows.length > 1) {
+    XLSX.utils.book_append_sheet(book, itemSheet, "Line Items");
+  }
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(book, `${prefix}-All-${stamp}.xlsx`);
+
+  return list.length;
 }
