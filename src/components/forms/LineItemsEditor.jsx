@@ -261,8 +261,9 @@ export function LineItemsEditor({ items = [], onChange }) {
    LAYOUT CSS
    --------------------------------------------------------------------------
    Columns:  #  | Brand | Specification | Qty | Unit | Rate | Amount | Actions
-   Brand and Specification share the free space (and truncate with "…");
-   every other column has a fixed width so nothing is ever pushed off-screen.
+   Brand and Specification share the free space and WRAP when long (nothing
+   is hidden); every other column has a fixed width so nothing is pushed
+   off-screen. Below 720px the stacked card layout is used instead.
    ========================================================================== */
 
 const LINE_ITEMS_CSS = `
@@ -275,17 +276,17 @@ const LINE_ITEMS_CSS = `
   grid-template-columns:
     22px
     minmax(0, 1fr)
-    minmax(0, 1.35fr)
-    64px
-    80px
-    84px
-    96px
+    minmax(0, 1.4fr)
+    72px
+    76px
+    92px
+    112px
     56px;
   column-gap: 6px;
   align-items: center;
 }
 
-@container li (min-width: 640px) {
+@container li (min-width: 720px) {
   .li-root .li-wide   { display: grid; }
   .li-root .li-narrow { display: none; }
 }
@@ -430,17 +431,17 @@ function LineItemRow({
         </div>
 
         <div className="min-w-0" title={`${brand} • ${type}`}>
-          <div className="truncate text-sm font-bold leading-tight text-ink">
+          <div className="break-words text-sm font-bold leading-tight text-ink">
             {brand}
           </div>
-          <div className="mt-0.5 truncate text-[0.6875rem] leading-tight text-muted">
+          <div className="mt-0.5 break-words text-[0.6875rem] leading-tight text-muted">
             {type}
           </div>
         </div>
 
         <div className="min-w-0">
           <SpecificationField item={item} compact />
-          <MeasurementSummary item={item} truncate />
+          <MeasurementSummary item={item} />
         </div>
 
         <QuantityInput
@@ -450,18 +451,15 @@ function LineItemRow({
         />
 
         <div
-          className="flex h-9 min-w-0 items-center rounded-lg border border-line bg-bg/40 px-2 text-xs font-semibold text-ink"
+          className="flex min-h-9 min-w-0 items-center rounded-lg border border-line bg-bg/40 px-2 py-1 text-xs font-semibold leading-tight text-ink"
           title={formatUnitValue(item)}
         >
-          <span className="truncate">{formatUnitValue(item)}</span>
+          <span className="break-words">{formatUnitValue(item)}</span>
         </div>
 
         <RateInput item={item} onUpdate={onUpdate} className="h-9 pr-2" />
 
-        <div
-          className="truncate text-right text-sm font-black tabular-nums text-ink"
-          title={formatAmount(lineAmount)}
-        >
+        <div className="whitespace-nowrap text-right text-sm font-black tabular-nums text-ink">
           {formatAmount(lineAmount)}
         </div>
 
@@ -477,7 +475,7 @@ function LineItemRow({
             </div>
 
             <div className="min-w-0">
-              <div className="truncate text-sm font-bold text-ink">{brand}</div>
+              <div className="break-words text-sm font-bold text-ink">{brand}</div>
               <div className="mt-0.5 text-[0.6875rem] text-muted">{type}</div>
             </div>
           </div>
@@ -505,8 +503,8 @@ function LineItemRow({
             <label className="text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
               Unit
             </label>
-            <div className="mt-1 flex h-10 items-center rounded-lg border border-line bg-bg/40 px-3 text-sm font-semibold text-ink">
-              <span className="truncate">{formatUnitValue(item)}</span>
+            <div className="mt-1 flex min-h-10 items-center rounded-lg border border-line bg-bg/40 px-3 py-1 text-sm font-semibold text-ink">
+              <span className="break-words">{formatUnitValue(item)}</span>
             </div>
           </div>
 
@@ -534,8 +532,8 @@ function LineItemRow({
 /* ==========================================================================
    SPECIFICATION FIELD
    --------------------------------------------------------------------------
-   compact = used inside the single-line row: plain text, one line, "…" when
-   too long (full text on hover).
+   compact = used inside the one-row layout: plain text, shown in FULL
+   (wraps onto a second line when long — nothing is ever cut with "…").
    ========================================================================== */
 
 function SpecificationField({ item, compact = false }) {
@@ -551,17 +549,12 @@ function SpecificationField({ item, compact = false }) {
 
     if (!text) {
       return (
-        <div className="truncate text-xs leading-tight text-muted">
-          No specification
-        </div>
+        <div className="text-xs leading-tight text-muted">No specification</div>
       );
     }
 
     return (
-      <div
-        className="truncate text-xs font-semibold leading-tight text-ink"
-        title={text}
-      >
+      <div className="break-words text-xs font-semibold leading-tight text-ink">
         {text}
       </div>
     );
