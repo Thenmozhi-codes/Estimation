@@ -20,7 +20,7 @@ const NAV = [
     paths: ["/master/attributes", "/master/brands", "/master/customers"],
   },
   { to: "/bills", label: "Bills", icon: Receipt, paths: ["/bills/quotations"] },
-  { to: "/reports", label: "Reports", icon: BarChart3, paths: ["/reports/sales"] },
+  { to: "/reports", label: "Reports", icon: BarChart3, paths: ["/reports/quotations"] },
   { to: "/settings", label: "Settings", icon: SettingsIcon, paths: ["/settings/company"] },
 ];
 
@@ -77,7 +77,7 @@ export function MobileBottomNav() {
                   className="h-5 w-5 shrink-0"
                   strokeWidth={(isActive || baseActive(to)) ? 2.25 : 1.75}
                 />
-                <span className="text-[9.5px] font-bold leading-none truncate max-w-full">
+                <span className="text-[0.65rem] font-bold leading-none truncate max-w-full">
                   {label}
                 </span>
               </>

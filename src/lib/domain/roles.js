@@ -76,7 +76,7 @@ export const PERMISSION_LABELS = [
   { key: "canManageCustomers", group: "Customers & masters", label: "Manage customers", hint: "Can add and edit customers" },
   { key: "canManageMasters", group: "Customers & masters", label: "Manage brands & specifications", hint: "Can edit brands, products and specifications" },
 
-  { key: "canViewReports", group: "Reports", label: "View reports", hint: "Can open sales, product and outstanding reports" },
+  { key: "canViewReports", group: "Reports", label: "View reports", hint: "Can open quotation, product and outstanding reports" },
 
   { key: "canViewSettings", group: "Administration", label: "Open settings", hint: "Needed for any settings page" },
   { key: "canEditCompany", group: "Administration", label: "Edit company details", hint: "Needs “Open settings”" },

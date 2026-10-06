@@ -368,7 +368,7 @@ function Stat({ label, value, tone }) {
   return (
     <Card>
       <CardBody className="py-3">
-        <div className="text-[11px] font-semibold text-muted uppercase tracking-wide">
+        <div className="text-[0.75rem] font-semibold text-muted uppercase tracking-wide">
           {label}
         </div>
         <div className={"text-lg font-extrabold mt-1 " + color}>{value}</div>
@@ -382,7 +382,7 @@ function Info({ icon: Icon, label, value, className }) {
     <div className={"flex items-start gap-2 " + (className || "")}>
       <Icon className="h-4 w-4 text-muted mt-0.5 shrink-0" />
       <div className="min-w-0">
-        <div className="text-[11px] font-semibold text-muted uppercase tracking-wide">
+        <div className="text-[0.75rem] font-semibold text-muted uppercase tracking-wide">
           {label}
         </div>
         <div className="text-sm">{value || "—"}</div>

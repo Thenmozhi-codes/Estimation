@@ -263,7 +263,7 @@ export function BrandsPage() {
           </div>
 
           {/* Right — Search */}
-          <div className="relative w-full sm:w-[235px]">
+          <div className="relative w-full sm:w-[264px]">
             <Search
               className="
                 pointer-events-none
@@ -361,7 +361,7 @@ export function BrandsPage() {
                       <div
                         className="
                           font-mono
-                          text-[11px]
+                          text-[0.75rem]
                           text-muted
                         "
                       >

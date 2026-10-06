@@ -204,7 +204,7 @@ export function InvoiceDetailPage() {
             </div>
             {inv.notes && (
               <div className="mt-4 text-sm">
-                <div className="text-[10px] font-bold text-muted uppercase tracking-wide">
+                <div className="text-[0.6875rem] font-bold text-muted uppercase tracking-wide">
                   Notes
                 </div>
                 <div className="mt-1 text-ink">{inv.notes}</div>
@@ -240,7 +240,7 @@ export function InvoiceDetailPage() {
                         <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
                           {formatMoney(payment.amount)}
                         </div>
-                        <div className="text-[11px] text-muted">
+                        <div className="text-[0.75rem] text-muted">
                           Balance {formatMoney(payment.balanceAfter)}
                         </div>
                       </div>
@@ -272,7 +272,7 @@ export function InvoiceDetailPage() {
                     <div className="font-bold text-ink">
                       {r.productNameSnapshot}
                     </div>
-                    <div className="text-[11px] text-muted">
+                    <div className="text-[0.75rem] text-muted">
                       {r.skuSnapshot}
                     </div>
                   </div>
@@ -369,7 +369,7 @@ export function InvoiceDetailPage() {
 function Detail({ label, children }) {
   return (
     <div>
-      <div className="text-[10px] font-bold text-muted uppercase tracking-wide">
+      <div className="text-[0.6875rem] font-bold text-muted uppercase tracking-wide">
         {label}
       </div>
       <div className="text-sm mt-1 text-ink">{children}</div>

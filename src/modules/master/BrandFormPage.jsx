@@ -1,15 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  Calculator,
-  Minus,
-  Package,
-  Save,
-  Tag,
-} from "lucide-react";
-import {
-  useNavigate,
-  useParams,
-} from "react-router-dom";
+import { Minus, Package, Plus, RotateCcw, Save, Tag } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/Button";
@@ -35,8 +26,12 @@ import { useProducts } from "@/hooks/useProducts";
 
 import {
   getFixedProductTypes,
+  mapSavedSpecifications,
+  mergeSpecifications,
   normalize,
+  readSavedUnit,
   resolveBrandCategoryId,
+  resolveSpecificationValues,
 } from "./brandConfig";
 
 /* ==========================================================================
@@ -44,18 +39,9 @@ import {
 ========================================================================== */
 
 function toArray(value) {
-  if (Array.isArray(value)) {
-    return value;
-  }
-
-  if (Array.isArray(value?.data)) {
-    return value.data;
-  }
-
-  if (Array.isArray(value?.items)) {
-    return value.items;
-  }
-
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.items)) return value.items;
   return [];
 }
 
@@ -69,11 +55,7 @@ function uniqueBy(items, keyFn) {
 
   for (const item of items || []) {
     const key = keyFn(item);
-
-    if (seen.has(key)) {
-      continue;
-    }
-
+    if (seen.has(key)) continue;
     seen.add(key);
     result.push(item);
   }
@@ -83,30 +65,17 @@ function uniqueBy(items, keyFn) {
 
 function getAttributeValueLabel(item) {
   return String(
-    item?.label ??
-      item?.name ??
-      item?.value ??
-      item?.title ??
-      "",
+    item?.label ?? item?.name ?? item?.value ?? item?.title ?? "",
   ).trim();
 }
 
 function getAttributeName(attribute) {
-  return normalize(
-    attribute?.name ||
-      attribute?.label ||
-      "",
-  );
+  return normalize(attribute?.name || attribute?.label || "");
 }
 
-/* ==========================================================================
-   FIXED UNIT OPTIONS
+const EMPTY_CALCULATION = { wastage: "", markup: "", discount: "" };
 
-   IMPORTANT:
-   Only Unit UI is changed.
-   These options are used in the Brand Form dropdown.
-========================================================================== */
-
+/* Unit choices shown in the Brand Form */
 const UNIT_OPTIONS = [
   "Nos",
   "Sq.ft",
@@ -123,928 +92,332 @@ const UNIT_OPTIONS = [
 ];
 
 /* ==========================================================================
-   DEFAULT SPECIFICATION FALLBACK
-
-   Existing specification flow is preserved.
-========================================================================== */
-
-const FALLBACK_SPECIFICATIONS = {
-  Plywood: [
-    "19mm",
-    "18mm",
-    "16mm",
-    "12mm",
-    "9mm",
-    "6mm",
-  ],
-
-  Laminate: [
-    "0.6mm",
-    "0.8mm",
-    "1mm",
-  ],
-
-  "Edge Band": [
-    "0.5mm",
-  ],
-
-  WPC: [
-    "3x2 inch",
-    "4x2.5 inch",
-  ],
-
-  Fevicol: [
-    "1/2kg",
-    "1kg",
-    "2kg",
-    "5kg",
-    "10kg",
-    "20kg",
-    "50kg",
-  ],
-
-  Hardware: [
-    "Small",
-    "Medium",
-    "Large",
-  ],
-};
-
-/* ==========================================================================
    BRAND FORM
 ========================================================================== */
 
-export function BrandFormPage({
-  open = true,
-  onClose,
-  brandId = null,
-}) {
+export function BrandFormPage({ open = true, onClose, brandId = null }) {
   const routeParams = useParams();
-  const routeId = routeParams.id || null;
-
-  const id = brandId || routeId;
+  const id = brandId || routeParams.id || null;
   const isEdit = Boolean(id);
 
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  /* ------------------------------------------------------------------------
-     MASTER DATA
-  ------------------------------------------------------------------------ */
+  /* ---------------------------------------------------------------- DATA */
 
-  const {
-    data: brands = [],
-  } = useBrands();
+  const { data: brands = [], isLoading: brandsLoading } = useBrands();
+  const { data: categories = [] } = useCategories();
+  const { data: products = [] } = useProducts();
+  const { data: rawAttributes = [] } = useAttributes();
 
-  const {
-    data: categories = [],
-  } = useCategories();
+  /* --------------------------------------------------------------- STATE */
 
-  const {
-    data: products = [],
-  } = useProducts();
+  const [brandName, setBrandName] = useState("");
+  const [productTypeId, setProductTypeId] = useState("");
+  const [specifications, setSpecifications] = useState([]);
+  const [newSpecification, setNewSpecification] = useState("");
+  const [unit, setUnit] = useState("");
+  const [calculation, setCalculation] = useState(EMPTY_CALCULATION);
+  const [loaded, setLoaded] = useState(!isEdit);
 
-  const {
-    data: rawAttributes = [],
-  } = useAttributes();
+  const { data: rawCategoryAttributes = [] } =
+    useCategoryAttributes(productTypeId);
 
-  /* ------------------------------------------------------------------------
-     FORM STATE
+  const createBrand = useCreateBrand();
+  const updateBrand = useUpdateBrand();
+  const saving = createBrand.isPending || updateBrand.isPending;
 
-    
-  ------------------------------------------------------------------------ */
+  const attributes = useMemo(() => toArray(rawAttributes), [rawAttributes]);
 
-  const [brandName, setBrandName] =
-    useState("");
-
-  const [productTypeId, setProductTypeId] =
-    useState("");
-
-  const [specifications, setSpecifications] =
-    useState([]);
-
-  const [unit, setUnit] =
-    useState("");
-
-  const [calculation, setCalculation] =
-    useState({
-      wastage: "",
-      markup: "",
-      discount: "",
-    });
-
-  const [loaded, setLoaded] =
-    useState(!isEdit);
-
-  /* ------------------------------------------------------------------------
-     CATEGORY → ATTRIBUTE MAPPING
-
-     Kept because Specification Master and Unit Master may be
-     configured through the existing attribute system.
-  ------------------------------------------------------------------------ */
-
-  const {
-    data: rawCategoryAttributes = [],
-  } = useCategoryAttributes(
-    productTypeId,
+  const categoryAttributes = useMemo(
+    () => toArray(rawCategoryAttributes),
+    [rawCategoryAttributes],
   );
 
-  const createBrand =
-    useCreateBrand();
-
-  const updateBrand =
-    useUpdateBrand();
-
-  const saving =
-    createBrand.isPending ||
-    updateBrand.isPending;
-
-  /* ------------------------------------------------------------------------
-     NORMALIZED ATTRIBUTE DATA
-  ------------------------------------------------------------------------ */
-
-  const attributes = useMemo(
-    () =>
-      toArray(rawAttributes),
-    [rawAttributes],
-  );
-
-  const categoryAttributes =
-    useMemo(
-      () =>
-        toArray(
-          rawCategoryAttributes,
-        ),
-      [rawCategoryAttributes],
-    );
-
-  /* ------------------------------------------------------------------------
-     PRODUCT TYPES
-  ------------------------------------------------------------------------ */
+  /* -------------------------------------------------------- PRODUCT TYPES */
 
   const productTypes = useMemo(
-    () =>
-      getFixedProductTypes(
-        categories,
-      ),
+    () => getFixedProductTypes(categories),
     [categories],
   );
 
-  /* ------------------------------------------------------------------------
-     CURRENT BRAND
-  ------------------------------------------------------------------------ */
-
   const currentBrand = useMemo(() => {
-    if (!id) {
-      return null;
-    }
-
-    return (
-      brands.find((brand) =>
-        sameId(brand.id, id),
-      ) || null
-    );
+    if (!id) return null;
+    return brands.find((brand) => sameId(brand.id, id)) || null;
   }, [brands, id]);
 
-  /* ------------------------------------------------------------------------
-     SELECTED PRODUCT TYPE
-  ------------------------------------------------------------------------ */
+  /* The Product Type this brand was saved with (edit mode) */
+  const originalTypeId = useMemo(
+    () =>
+      currentBrand
+        ? resolveBrandCategoryId(currentBrand, products, categories)
+        : "",
+    [currentBrand, products, categories],
+  );
 
-  const selectedProductType =
-    useMemo(() => {
-      return (
-        productTypes.find((type) =>
-          sameId(
-            type.categoryId,
-            productTypeId,
-          ),
-        ) || null
+  const savedSpecifications = useMemo(
+    () => mapSavedSpecifications(currentBrand),
+    [currentBrand],
+  );
+
+  const selectedProductType = useMemo(
+    () =>
+      productTypes.find((type) => sameId(type.categoryId, productTypeId)) ||
+      null,
+    [productTypes, productTypeId],
+  );
+
+  /* ------------------------------------------- MASTER SPECIFICATION VALUES */
+
+  const mappedAttributes = useMemo(() => {
+    if (!productTypeId) return [];
+
+    const mapped = categoryAttributes
+      .map((mapping) => ({
+        mapping,
+        attribute: attributes.find((item) => sameId(item.id, mapping.attributeId)),
+      }))
+      .filter((item) => Boolean(item.attribute))
+      .sort(
+        (a, b) =>
+          Number(a.mapping?.sortOrder ?? 0) - Number(b.mapping?.sortOrder ?? 0),
       );
-    }, [
-      productTypes,
-      productTypeId,
-    ]);
 
-  /* ------------------------------------------------------------------------
-     MAPPED ATTRIBUTES
-  ------------------------------------------------------------------------ */
+    return uniqueBy(mapped, (item) => String(item.attribute?.id));
+  }, [categoryAttributes, attributes, productTypeId]);
 
-  const mappedAttributes =
-    useMemo(() => {
-      if (!productTypeId) {
-        return [];
-      }
+  /* Thickness -> Pack Size -> Size -> Specification -> first mapped */
+  const primarySpecification = useMemo(() => {
+    if (!mappedAttributes.length) return null;
 
-      const mapped =
-        categoryAttributes
-          .map((mapping) => {
-            const attribute =
-              attributes.find(
-                (item) =>
-                  sameId(
-                    item.id,
-                    mapping.attributeId,
-                  ),
-              );
-
-            return {
-              mapping,
-              attribute,
-            };
-          })
-          .filter(
-            (item) =>
-              Boolean(item.attribute),
-          )
-          .sort(
-            (a, b) =>
-              Number(
-                a.mapping?.sortOrder ??
-                  0,
-              ) -
-              Number(
-                b.mapping?.sortOrder ??
-                  0,
-              ),
-          );
-
-      return uniqueBy(
-        mapped,
-        (item) =>
-          String(
-            item.attribute?.id,
-          ),
+    for (const preferred of ["thickness", "pack size", "size", "specification"]) {
+      const found = mappedAttributes.find(
+        (item) => getAttributeName(item.attribute) === preferred,
       );
-    }, [
-      categoryAttributes,
-      attributes,
-      productTypeId,
-    ]);
+      if (found) return found.attribute;
+    }
 
-  /* ------------------------------------------------------------------------
-     PRIMARY SPECIFICATION
+    return mappedAttributes[0]?.attribute || null;
+  }, [mappedAttributes]);
 
-     Existing behavior:
-       Thickness → Pack Size → Size → Specification → first mapped attribute
-  ------------------------------------------------------------------------ */
-
-  const primarySpecification =
-    useMemo(() => {
-      if (!mappedAttributes.length) {
-        return null;
-      }
-
-      const preferredNames = [
-        "thickness",
-        "pack size",
-        "size",
-        "specification",
-      ];
-
-      for (
-        const preferredName of preferredNames
-      ) {
-        const found =
-          mappedAttributes.find(
-            (item) =>
-              getAttributeName(
-                item.attribute,
-              ) === preferredName,
-          );
-
-        if (found) {
-          return found.attribute;
-        }
-      }
-
-      return (
-        mappedAttributes[0]
-          ?.attribute || null
-      );
-    }, [mappedAttributes]);
-
-  /* ------------------------------------------------------------------------
-     SPECIFICATION MASTER VALUES
-  ------------------------------------------------------------------------ */
-
-  const {
-    data: rawSpecificationValues = [],
-  } = useAttributeValues(
+  const { data: rawSpecificationValues } = useAttributeValues(
     primarySpecification?.id || "",
   );
 
-  const masterSpecificationValues =
-    useMemo(() => {
-      return uniqueBy(
-        toArray(
-          rawSpecificationValues,
-        )
-          .filter(
-            (item) =>
-              item?.isActive !== false,
-          )
-          .map((item) => ({
-            ...item,
-            displayValue:
-              getAttributeValueLabel(
-                item,
-              ),
-          }))
-          .filter(
-            (item) =>
-              item.displayValue,
-          ),
-        (item) =>
-          normalize(
-            item.displayValue,
-          ),
-      );
-    }, [rawSpecificationValues]);
+  /*
+   * Values for this Product Type:
+   *   Plywood / Laminate / Edge Band / WPC / Fevicol -> their own fixed list
+   *   Timber / Beading / Laminated Board / HMR Board / Door
+   *       -> Master -> Specifications, or the default list when the
+   *          master has nothing yet (so the form is never empty)
+   *
+   * Kept as a STABLE array (rebuilt only when the values change). A new
+   * array on every render used to make the auto-fill re-add rows the user
+   * had just removed.
+   */
+  const specificationKey = useMemo(() => {
+    const master = toArray(rawSpecificationValues)
+      .filter((item) => item?.isActive !== false)
+      .map(getAttributeValueLabel)
+      .filter(Boolean);
 
-  /* ------------------------------------------------------------------------
-     FALLBACK SPECIFICATIONS
+    return JSON.stringify(
+      resolveSpecificationValues(selectedProductType?.label, master),
+    );
+  }, [rawSpecificationValues, selectedProductType]);
 
-     FIX: match the Product Type label against the fixed list using
-     normalize(), so "Fevicol", "fevicol ", etc. all resolve correctly.
-  ------------------------------------------------------------------------ */
-
-  const fallbackSpecifications =
-    useMemo(() => {
-      const type =
-        selectedProductType?.label;
-
-      // FIX: normalized lookup of the fixed Product Type list
-      const fixedKey = Object.keys(
-        FALLBACK_SPECIFICATIONS,
-      ).find(
-        (key) =>
-          normalize(key) ===
-          normalize(type || ""),
-      );
-
-      return fixedKey
-        ? FALLBACK_SPECIFICATIONS[
-            fixedKey
-          ]
-        : [];
-    }, [selectedProductType]);
-
-  /* ------------------------------------------------------------------------
-     SPECIFICATION VALUES
-
-     FIX: For fixed Product Types (Plywood, Laminate, Edge Band, WPC,
-     Fevicol, Hardware) the Product Type-specific list is ALWAYS used.
-     The generic Specification Master values are used only when the
-     Product Type has no fixed list.
-  ------------------------------------------------------------------------ */
-
-  const specificationValues =
-    useMemo(() => {
-      // FIX: fixed Product Type list takes priority
-      if (fallbackSpecifications.length) {
-        return uniqueBy(
-          fallbackSpecifications,
-          (value) =>
-            normalize(value),
-        );
-      }
-
-      const masterValues =
-        masterSpecificationValues
-          .map(
-            (item) =>
-              item.displayValue,
-          )
-          .filter(Boolean);
-
-      return uniqueBy(
-        masterValues,
-        (value) =>
-          normalize(value),
-      );
-    }, [
-      masterSpecificationValues,
-      fallbackSpecifications,
-    ]);
-
-  /* ------------------------------------------------------------------------
-     UNIT ATTRIBUTE
-
-     Existing data reading is preserved so old saved
-     Brand records can still restore their Unit value.
-
-     The visible Unit control below uses the fixed
-     UNIT_OPTIONS list requested by the user.
-  ------------------------------------------------------------------------ */
-
-  const unitAttribute =
-    useMemo(() => {
-      const found =
-        mappedAttributes.find(
-          (item) =>
-            getAttributeName(
-              item.attribute,
-            ) === "unit",
-        );
-
-      return (
-        found?.attribute || null
-      );
-    }, [mappedAttributes]);
-
-  const {
-    data: rawUnitValues = [],
-  } = useAttributeValues(
-    unitAttribute?.id || "",
+  const specificationValues = useMemo(
+    () => JSON.parse(specificationKey),
+    [specificationKey],
   );
 
-  /*
-   * Existing Unit Master data is still read,
-   * but the Brand Form now uses the requested
-   * fixed Unit dropdown options.
-   *
-   * This keeps the existing data flow intact
-   * while changing only the visible Unit choices.
-   */
-  const unitValues = useMemo(() => {
-    return uniqueBy(
-      toArray(rawUnitValues)
-        .filter(
-          (item) =>
-            item?.isActive !== false,
-        )
-        .map((item) => ({
-          ...item,
-          displayValue:
-            getAttributeValueLabel(
-              item,
-            ),
-        }))
-        .filter(
-          (item) =>
-            item.displayValue,
-        ),
-      (item) =>
-        normalize(
-          item.displayValue,
-        ),
-    );
-  }, [rawUnitValues]);
-
-  /* ==========================================================================
-     RESET
-  ========================================================================== */
+  /* ------------------------------------------------------- OPEN / RESET */
 
   useEffect(() => {
-    if (!open) {
-      return;
-    }
+    if (!open) return;
+
+    setNewSpecification("");
 
     if (!isEdit) {
       setBrandName("");
       setProductTypeId("");
       setSpecifications([]);
       setUnit("");
-
-      setCalculation({
-        wastage: "",
-        markup: "",
-        discount: "",
-      });
-
+      setCalculation(EMPTY_CALCULATION);
       setLoaded(true);
       return;
     }
 
     setLoaded(false);
-  }, [
-    open,
-    id,
-    isEdit,
-  ]);
+  }, [open, id, isEdit]);
 
-  /* ==========================================================================
-     LOAD EXISTING BRAND
-  ========================================================================== */
+  /* -------------------------------------------------- LOAD EXISTING BRAND */
 
   useEffect(() => {
-    if (
-      !open ||
-      !isEdit ||
-      loaded ||
-      !currentBrand
-    ) {
-      return;
-    }
+    if (!open || !isEdit || loaded || !currentBrand) return;
 
-    setBrandName(
-      currentBrand.name || "",
-    );
+    setBrandName(currentBrand.name || "");
+    setProductTypeId(originalTypeId);
+    setSpecifications(savedSpecifications);
+    setUnit(readSavedUnit(currentBrand));
 
-    const resolvedCategoryId =
-      resolveBrandCategoryId(
-        currentBrand,
-        products,
-        categories,
-      );
-
-    setProductTypeId(
-      resolvedCategoryId,
-    );
-
-    /* ----------------------------------------------------------------------
-       EXISTING SPECIFICATIONS + PRICE
-
-       DO NOT CHANGE THIS FLOW.
-    ---------------------------------------------------------------------- */
-
-    if (
-      Array.isArray(
-        currentBrand.specifications,
-      ) &&
-      currentBrand.specifications
-        .length
-    ) {
-      const restored =
-        currentBrand.specifications
-          .map((item) => {
-            if (
-              typeof item ===
-              "string"
-            ) {
-              return {
-                specification:
-                  item,
-                price: "",
-              };
-            }
-
-            return {
-              specification:
-                item?.specification ||
-                item?.name ||
-                item?.value ||
-                item?.label ||
-                "",
-
-              price:
-                item?.price !==
-                  undefined &&
-                item?.price !== null
-                  ? String(
-                      item.price,
-                    )
-                  : "",
-            };
-          })
-          .filter(
-            (item) =>
-              item.specification,
-          );
-
-      setSpecifications(
-        restored,
-      );
-    } else {
-      setSpecifications([]);
-    }
-
-    /* ----------------------------------------------------------------------
-       UNIT ONLY
-
-       We intentionally read only unit from old materialDetails.
-       Other legacy fields are not displayed or edited.
-    ---------------------------------------------------------------------- */
-
-    const savedMaterialDetails =
-      currentBrand.materialDetails ||
-      currentBrand.materialData ||
-      currentBrand.details ||
-      {};
-
-    if (
-      savedMaterialDetails &&
-      typeof savedMaterialDetails ===
-        "object" &&
-      !Array.isArray(
-        savedMaterialDetails,
-      )
-    ) {
-      setUnit(
-        savedMaterialDetails.unit ||
-          savedMaterialDetails.uom ||
-          savedMaterialDetails.unitName ||
-          "",
-      );
-    } else {
-      setUnit("");
-    }
-
-    /* ----------------------------------------------------------------------
-       EXISTING CALCULATION
-
-       Keep exactly as before.
-    ---------------------------------------------------------------------- */
-
-    if (
+    setCalculation(
       currentBrand.calculation
-    ) {
-      setCalculation({
-        wastage:
-          currentBrand
-            .calculation?.wastage ??
-          "",
-
-        markup:
-          currentBrand
-            .calculation?.markup ??
-          "",
-
-        discount:
-          currentBrand
-            .calculation?.discount ??
-          "",
-      });
-    } else {
-      setCalculation({
-        wastage: "",
-        markup: "",
-        discount: "",
-      });
-    }
+        ? {
+            wastage: currentBrand.calculation?.wastage ?? "",
+            markup: currentBrand.calculation?.markup ?? "",
+            discount: currentBrand.calculation?.discount ?? "",
+          }
+        : EMPTY_CALCULATION,
+    );
 
     setLoaded(true);
-  }, [
-    open,
-    isEdit,
-    loaded,
-    currentBrand,
-    products,
-    categories,
-  ]);
+  }, [open, isEdit, loaded, currentBrand, originalTypeId, savedSpecifications]);
 
-  /* ==========================================================================
-     AUTO POPULATE SPECIFICATION ROWS
-
-     Existing behavior preserved.
-  ========================================================================== */
+  /* ---------------------------------------------- AUTO-FILL SPECIFICATIONS */
 
   useEffect(() => {
+    if (!open || !loaded) return;
+
     if (!productTypeId) {
-      // Avoid creating a new [] on every effect run. This effect can rerun
-      // when query-derived values change identity; returning the existing
-      // state prevents an unnecessary render/update loop.
-      setSpecifications((previous) =>
-        previous.length ? [] : previous,
-      );
+      setSpecifications((previous) => (previous.length ? [] : previous));
       return;
     }
 
+    /*
+     * An existing brand keeps its saved specifications while it is still on
+     * its original Product Type. If the Product Type is changed, the new
+     * type's values are loaded instead.
+     */
     if (
       isEdit &&
-      currentBrand &&
-      Array.isArray(
-        currentBrand.specifications,
-      ) &&
-      currentBrand.specifications
-        .length > 0
+      savedSpecifications.length > 0 &&
+      sameId(productTypeId, originalTypeId)
     ) {
       return;
     }
 
-    if (
-      !specificationValues.length
-    ) {
-      return;
-    }
+    if (!specificationValues.length) return;
 
-    setSpecifications(
-      (previous) => {
-        const previousPrices =
-          new Map(
-            previous.map(
-              (item) => [
-                normalize(
-                  item.specification,
-                ),
-                item.price ?? "",
-              ],
-            ),
-          );
-
-        const nextSpecifications =
-          specificationValues.map(
-            (value) => ({
-              specification: value,
-              price:
-                previousPrices.get(
-                  normalize(value),
-                ) ?? "",
-            }),
-          );
-
-        const isSame =
-          previous.length ===
-            nextSpecifications.length &&
-          previous.every(
-            (item, index) => {
-              const next =
-                nextSpecifications[
-                  index
-                ];
-
-              return (
-                String(
-                  item.specification ??
-                    "",
-                ) ===
-                  String(
-                    next.specification ??
-                      "",
-                  ) &&
-                String(
-                  item.price ?? "",
-                ) ===
-                  String(
-                    next.price ?? "",
-                  )
-              );
-            },
-          );
-
-        if (isSame) {
-          return previous;
-        }
-
-        return nextSpecifications;
-      },
+    setSpecifications((previous) =>
+      mergeSpecifications(previous, specificationValues),
     );
   }, [
+    open,
+    loaded,
     productTypeId,
     specificationValues,
     isEdit,
-    currentBrand,
+    originalTypeId,
+    savedSpecifications,
   ]);
 
-  /* ==========================================================================
-     PRODUCT TYPE CHANGE
-  ========================================================================== */
+  /* ----------------------------------------------------------- HANDLERS */
 
-  const handleProductTypeChange = (
-    event,
-  ) => {
-    const nextType =
-      event.target.value;
+  const handleProductTypeChange = (event) => {
+    const nextType = event.target.value;
 
-    setProductTypeId(
-      nextType,
-    );
+    setProductTypeId(nextType);
+    setNewSpecification("");
 
-    /*
-     * Existing specification values
-     * belong to the old Product Type.
-     */
+    /* going back to the saved type restores what was saved */
+    if (isEdit && nextType && sameId(nextType, originalTypeId)) {
+      setSpecifications(savedSpecifications);
+      setUnit(readSavedUnit(currentBrand));
+      return;
+    }
+
+    /* specifications and unit belong to the old Product Type */
     setSpecifications([]);
-
-    /*
-     * Unit also belongs to the selected
-     * Product Type.
-     */
     setUnit("");
   };
 
-  /* ==========================================================================
-     SPECIFICATION HANDLERS
-  ========================================================================== */
-
-  const removeSpecification = (
-    index,
-  ) => {
-    setSpecifications(
-      (previous) =>
-        previous.filter(
-          (_, itemIndex) =>
-            itemIndex !== index,
-        ),
+  const removeSpecification = (index) =>
+    setSpecifications((previous) =>
+      previous.filter((_, itemIndex) => itemIndex !== index),
     );
+
+  const updateSpecificationPrice = (index, price) =>
+    setSpecifications((previous) =>
+      previous.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, price } : item,
+      ),
+    );
+
+  /* add a specification by hand */
+  const addSpecification = () => {
+    const label = newSpecification.trim();
+
+    if (!label) return;
+
+    if (label.length > 40) {
+      toast.error("Specification is too long (max 40 characters)");
+      return;
+    }
+
+    if (
+      specifications.some(
+        (item) => normalize(item.specification) === normalize(label),
+      )
+    ) {
+      toast.error(`"${label}" is already in the list`);
+      return;
+    }
+
+    setSpecifications((previous) => [
+      ...previous,
+      { specification: label, price: "", manual: true },
+    ]);
+    setNewSpecification("");
   };
 
-  const updateSpecificationPrice = (
-    index,
-    price,
-  ) => {
-    setSpecifications(
-      (previous) =>
-        previous.map(
-          (item, itemIndex) =>
-            itemIndex === index
-              ? {
-                  ...item,
-                  price,
-                }
-              : item,
-        ),
-    );
-  };
+  /* bring back removed default values; existing rows and prices are kept */
+  const restoreDefaults = () =>
+    setSpecifications((previous) => {
+      const have = new Set(previous.map((item) => normalize(item.specification)));
 
-  /* ==========================================================================
-     CALCULATION HANDLER
-  ========================================================================== */
+      const missing = specificationValues
+        .filter((value) => !have.has(normalize(value)))
+        .map((value) => ({ specification: value, price: "" }));
 
-  const updateCalculation = (
-    field,
-    value,
-  ) => {
-    setCalculation(
-      (previous) => ({
-        ...previous,
-        [field]: value,
-      }),
-    );
-  };
+      return missing.length ? [...previous, ...missing] : previous;
+    });
 
-  /* ==========================================================================
-     VALIDATION
-  ========================================================================== */
+  /* ---------------------------------------------------------- VALIDATION */
 
   const validate = () => {
-    const cleanName =
-      brandName.trim();
+    const cleanName = brandName.trim();
 
-    if (!cleanName) {
-      return "Brand name is required";
-    }
+    if (!cleanName) return "Brand name is required";
+    if (!productTypeId) return "Please select a Product Type";
 
-    if (!productTypeId) {
-      return "Please select a Product Type";
-    }
-
-    const validType =
-      productTypes.some(
-        (type) =>
-          sameId(
-            type.categoryId,
-            productTypeId,
-          ),
-      );
-
-    if (!validType) {
+    if (!productTypes.some((type) => sameId(type.categoryId, productTypeId))) {
       return "Please select a valid Product Type";
     }
 
-    const invalidPrice =
-      specifications.some(
-        (item) =>
-          item.price !== "" &&
-          (
-            Number.isNaN(
-              Number(item.price),
-            ) ||
-            Number(item.price) < 0
-          ),
-      );
-
-    if (invalidPrice) {
-      return "Please enter valid specification prices";
+    if (!specifications.length) {
+      return "Add at least one specification";
     }
 
-    const duplicate =
-      brands.find((brand) => {
-        if (
-          sameId(
-            brand.id,
-            id,
-          )
-        ) {
-          return false;
-        }
+    const invalidPrice = specifications.some(
+      (item) =>
+        item.price !== "" &&
+        (Number.isNaN(Number(item.price)) || Number(item.price) < 0),
+    );
 
-        if (
-          brand.isActive === false
-        ) {
-          return false;
-        }
+    if (invalidPrice) return "Please enter valid specification prices";
 
-        const existingTypeId =
-          resolveBrandCategoryId(
-            brand,
-            products,
-            categories,
-          );
+    const duplicate = brands.find((brand) => {
+      if (sameId(brand.id, id)) return false;
+      if (brand.isActive === false) return false;
 
-        return (
-          normalize(
-            brand.name,
-          ) ===
-            normalize(
-              cleanName,
-            ) &&
-          sameId(
-            existingTypeId,
-            productTypeId,
-          )
-        );
-      });
+      const existingTypeId = resolveBrandCategoryId(brand, products, categories);
+
+      return (
+        normalize(brand.name) === normalize(cleanName) &&
+        sameId(existingTypeId, productTypeId)
+      );
+    });
 
     if (duplicate) {
       return `"${cleanName}" already exists for this Product Type`;
@@ -1053,164 +426,7 @@ export function BrandFormPage({
     return null;
   };
 
-  /* ==========================================================================
-     SAVE
-  ========================================================================== */
-
-  const handleSave = async () => {
-    const error =
-      validate();
-
-    if (error) {
-      toast.error(error);
-      return;
-    }
-
-    const cleanName =
-      brandName.trim();
-
-    const code =
-      toCode(cleanName);
-
-    /* ----------------------------------------------------------------------
-       EXISTING SPECIFICATION DATA
-
-       DO NOT CHANGE.
-    ---------------------------------------------------------------------- */
-
-    const specificationData =
-      specifications.map(
-        (item) => ({
-          specification:
-            item.specification,
-
-          price:
-            item.price === ""
-              ? null
-              : Number(item.price),
-        }),
-      );
-
-    /* ----------------------------------------------------------------------
-       MATERIAL DETAILS
-
-       ONLY UNIT IS NOW PART OF THE ACTIVE UI.
-
-       We preserve category + brand because
-       existing consumers may rely on them.
-
-       Existing legacy fields are intentionally
-       not reconstructed.
-    ---------------------------------------------------------------------- */
-
-    const materialDetailsData = {
-      category:
-        selectedProductType?.label ||
-        "",
-
-      brand: cleanName,
-
-      unit:
-        String(unit || "").trim(),
-    };
-
-    /* ----------------------------------------------------------------------
-       EXISTING PAYLOAD STRUCTURE
-
-       categoryId
-       specifications
-       materialDetails
-       calculation
-
-       All remain compatible.
-    ---------------------------------------------------------------------- */
-
-    const payload = {
-      name: cleanName,
-
-      code,
-
-      categoryId:
-        productTypeId,
-
-      isActive: true,
-
-      specifications:
-        specificationData,
-
-      materialDetails:
-        materialDetailsData,
-
-      calculation: {
-        wastage:
-          calculation.wastage === ""
-            ? null
-            : Number(
-                calculation.wastage,
-              ),
-
-        markup:
-          calculation.markup === ""
-            ? null
-            : Number(
-                calculation.markup,
-              ),
-
-        discount:
-          calculation.discount ===
-          ""
-            ? null
-            : Number(
-                calculation.discount,
-              ),
-      },
-    };
-
-    try {
-      if (!isEdit) {
-        await createBrand.mutateAsync(
-          payload,
-        );
-
-        toast.success(
-          "Brand created",
-        );
-      } else {
-        await updateBrand.mutateAsync(
-          {
-            id,
-            patch: payload,
-          },
-        );
-
-        toast.success(
-          "Brand updated",
-        );
-      }
-
-      await queryClient.invalidateQueries(
-        {
-          queryKey: ["brands"],
-        },
-      );
-
-      close();
-    } catch (error) {
-      console.error(
-        "Brand save failed:",
-        error,
-      );
-
-      toast.error(
-        error?.message ||
-          "Could not save brand",
-      );
-    }
-  };
-
-  /* ==========================================================================
-     CLOSE
-  ========================================================================== */
+  /* ---------------------------------------------------------------- SAVE */
 
   const close = () => {
     if (onClose) {
@@ -1218,24 +434,90 @@ export function BrandFormPage({
       return;
     }
 
-    navigate(
-      "/master/brands",
-    );
+    navigate("/master/brands");
   };
 
-  /* ==========================================================================
-     UI
-  ========================================================================== */
+  const handleSave = async () => {
+    if (saving) return;
+
+    const error = validate();
+
+    if (error) {
+      toast.error(error);
+      return;
+    }
+
+    const cleanName = brandName.trim();
+
+    const toNumberOrNull = (value) =>
+      value === "" || value === null || value === undefined
+        ? null
+        : Number(value);
+
+    const payload = {
+      name: cleanName,
+      code: toCode(cleanName),
+      categoryId: productTypeId,
+      isActive: true,
+
+      specifications: specifications.map((item) => ({
+        specification: item.specification,
+        price: toNumberOrNull(item.price),
+      })),
+
+      materialDetails: {
+        category: selectedProductType?.label || "",
+        brand: cleanName,
+        unit: String(unit || "").trim(),
+      },
+
+      calculation: {
+        wastage: toNumberOrNull(calculation.wastage),
+        markup: toNumberOrNull(calculation.markup),
+        discount: toNumberOrNull(calculation.discount),
+      },
+    };
+
+    try {
+      if (!isEdit) {
+        await createBrand.mutateAsync(payload);
+        toast.success("Brand created");
+      } else {
+        await updateBrand.mutateAsync({ id, patch: payload });
+        toast.success("Brand updated");
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["brands"] });
+
+      close();
+    } catch (err) {
+      console.error("Brand save failed:", err);
+      toast.error(err?.message || "Could not save brand");
+    }
+  };
+
+  /* --------------------------------------------------------------- VIEW */
+
+  /* a saved Unit that is not in the list is still shown */
+  const unitOptions =
+    unit && !UNIT_OPTIONS.includes(unit) ? [unit, ...UNIT_OPTIONS] : UNIT_OPTIONS;
+
+  const canRestoreDefaults =
+    specificationValues.length > 0 &&
+    specificationValues.some(
+      (value) =>
+        !specifications.some(
+          (item) => normalize(item.specification) === normalize(value),
+        ),
+    );
+
+  const brandMissing = isEdit && !brandsLoading && !currentBrand;
 
   return (
     <Sheet
       open={open}
       onClose={close}
-      title={
-        isEdit
-          ? "Edit Brand"
-          : "Add Brand"
-      }
+      title={isEdit ? "Edit Brand" : "Add Brand"}
       subtitle={
         isEdit
           ? "Update brand, specifications, unit and pricing."
@@ -1244,40 +526,24 @@ export function BrandFormPage({
       width="md"
       footer={
         <>
-          <Button
-            variant="ghost"
-            onClick={close}
-            disabled={saving}
-          >
+          <Button variant="ghost" onClick={close} disabled={saving}>
             Cancel
           </Button>
 
-          <Button
-            onClick={handleSave}
-            disabled={
-              saving ||
-              !brandName.trim() ||
-              !productTypeId ||
-              specifications.length ===
-                0
-            }
-          >
+          <Button onClick={handleSave} disabled={saving || !loaded}>
             <Save className="h-4 w-4" />
-
-            {saving
-              ? "Saving…"
-              : isEdit
-                ? "Save Changes"
-                : "Add Brand"}
+            {saving ? "Saving…" : isEdit ? "Save Changes" : "Add Brand"}
           </Button>
         </>
       }
     >
-      {!loaded ? (
+      {brandMissing ? (
+        <div className="flex min-h-[220px] items-center justify-center text-sm font-semibold text-muted">
+          This brand could not be found. It may have been deleted.
+        </div>
+      ) : !loaded ? (
         <div className="flex min-h-[220px] items-center justify-center">
-          <div className="text-sm font-semibold text-muted">
-            Loading brand…
-          </div>
+          <div className="text-sm font-semibold text-muted">Loading brand…</div>
         </div>
       ) : (
         <form
@@ -1287,48 +553,26 @@ export function BrandFormPage({
             handleSave();
           }}
         >
-          {/* ================================================================
-              1. PRODUCT TYPE
-          ================================================================ */}
-
+          {/* 1. PRODUCT TYPE */}
           <div className="rounded-xl border border-line bg-bg/50 p-4">
             <Field
               label="Product Type"
               required
               hint="Choose the Product Type this brand belongs to."
             >
-              <Select
-                value={productTypeId}
-                onChange={
-                  handleProductTypeChange
-                }
-              >
-                <option value="">
-                  Select Product Type
-                </option>
+              <Select value={productTypeId} onChange={handleProductTypeChange}>
+                <option value="">Select Product Type</option>
 
-                {productTypes.map(
-                  (type) => (
-                    <option
-                      key={
-                        type.categoryId
-                      }
-                      value={
-                        type.categoryId
-                      }
-                    >
-                      {type.label}
-                    </option>
-                  ),
-                )}
+                {productTypes.map((type) => (
+                  <option key={type.categoryId} value={type.categoryId}>
+                    {type.label}
+                  </option>
+                ))}
               </Select>
             </Field>
           </div>
 
-          {/* ================================================================
-              2. BRAND NAME
-          ================================================================ */}
-
+          {/* 2. BRAND NAME */}
           <div className="rounded-xl border border-line bg-bg/50 p-4">
             <div className="mb-3 flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-500/10">
@@ -1336,27 +580,17 @@ export function BrandFormPage({
               </div>
 
               <div>
-                <div className="text-sm font-bold text-ink">
-                  Brand Details
-                </div>
-
-                <div className="text-[11px] text-muted">
+                <div className="text-sm font-bold text-ink">Brand Details</div>
+                <div className="text-[0.75rem] text-muted">
                   Enter the brand name for this Product Type.
                 </div>
               </div>
             </div>
 
-            <Field
-              label="Brand Name"
-              required
-            >
+            <Field label="Brand Name" required>
               <Input
                 value={brandName}
-                onChange={(event) =>
-                  setBrandName(
-                    event.target.value,
-                  )
-                }
+                onChange={(event) => setBrandName(event.target.value)}
                 placeholder="e.g. Sharon Sovereign"
                 autoFocus
                 maxLength={100}
@@ -1364,13 +598,7 @@ export function BrandFormPage({
             </Field>
           </div>
 
-          {/* ================================================================
-              3. EXISTING SPECIFICATIONS & PRICE
-
-              IMPORTANT:
-              THIS FLOW IS NOT CHANGED.
-          ================================================================ */}
-
+          {/* 3. SPECIFICATIONS & PRICE */}
           {productTypeId && (
             <div className="rounded-xl border border-line bg-bg/50 p-4">
               <div className="mb-4 flex items-center justify-between gap-3">
@@ -1379,93 +607,115 @@ export function BrandFormPage({
                     Specifications & Price
                   </div>
 
-                  <p className="mt-0.5 text-[11px] text-muted">
-                    Specification values are loaded automatically from Specification Master.
+                  <p className="mt-0.5 text-[0.75rem] text-muted">
+                    Values load automatically for this Product Type. Enter a
+                    price, remove what you don't need, or add your own.
                   </p>
                 </div>
 
-                <div className="rounded-lg bg-primary-500/10 px-2.5 py-1 text-[10px] font-bold text-primary-600">
-                  {specifications.length}{" "}
-                  values
+                <div className="shrink-0 rounded-lg bg-primary-500/10 px-2.5 py-1 text-[0.6875rem] font-bold text-primary-600">
+                  {specifications.length} values
                 </div>
               </div>
 
-              <div className="mb-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_36px] items-center gap-3 px-1">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                  Specification
+              {specifications.length > 0 && (
+                <div className="mb-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_40px] items-center gap-3 px-1">
+                  <div className="text-[0.6875rem] font-semibold uppercase tracking-wide text-muted">
+                    Specification
+                  </div>
+                  <div className="text-[0.6875rem] font-semibold uppercase tracking-wide text-muted">
+                    Price
+                  </div>
+                  <div />
                 </div>
-
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                  Price
-                </div>
-
-                <div />
-              </div>
+              )}
 
               <div className="space-y-3">
-                {specifications.map(
-                  (
-                    item,
-                    index,
-                  ) => (
-                    <div
-                      key={`${item.specification}-${index}`}
-                      className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_36px] items-center gap-3"
+                {specifications.map((item, index) => (
+                  <div
+                    key={`${item.specification}-${index}`}
+                    className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_40px] items-center gap-3"
+                  >
+                    <Input
+                      value={item.specification}
+                      readOnly
+                      className="h-9 bg-bg"
+                    />
+
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={item.price}
+                      onChange={(event) =>
+                        updateSpecificationPrice(index, event.target.value)
+                      }
+                      placeholder="Enter price"
+                      className="h-9 min-w-0"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => removeSpecification(index)}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 transition hover:bg-red-500/10"
+                      title="Remove Specification"
+                      aria-label={`Remove ${item.specification}`}
                     >
-                      <Input
-                        value={
-                          item.specification
-                        }
-                        readOnly
-                        className="h-9 bg-bg"
-                      />
-
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={
-                          item.price
-                        }
-                        onChange={(
-                          event,
-                        ) =>
-                          updateSpecificationPrice(
-                            index,
-                            event.target.value,
-                          )
-                        }
-                        placeholder="Enter price"
-                        className="h-9 min-w-0"
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          removeSpecification(
-                            index,
-                          )
-                        }
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 transition hover:bg-red-500/10"
-                        title="Remove Specification"
-                        aria-label={`Remove ${item.specification}`}
-                      >
-                        <Minus className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ),
-                )}
+                      <Minus className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
               </div>
+
+              {specifications.length === 0 && (
+                <div className="rounded-lg border border-dashed border-line px-3 py-3 text-xs text-muted">
+                  No specifications yet. Add at least one below so this brand
+                  can be used in quotations.
+                </div>
+              )}
+
+              {/* add your own */}
+              <div className="mt-4 flex items-center gap-2">
+                <Input
+                  value={newSpecification}
+                  onChange={(event) => setNewSpecification(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      addSpecification();
+                    }
+                  }}
+                  placeholder="Add specification, e.g. 25mm"
+                  className="h-9 min-w-0 flex-1"
+                  maxLength={40}
+                />
+
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={addSpecification}
+                  disabled={!newSpecification.trim()}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add
+                </Button>
+              </div>
+
+              {canRestoreDefaults && (
+                <button
+                  type="button"
+                  onClick={restoreDefaults}
+                  className="mt-3 inline-flex items-center gap-1.5 text-[0.75rem] font-bold text-primary-600 hover:underline"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Restore removed values
+                </button>
+              )}
             </div>
           )}
 
-          {/* ================================================================
-              4. UNIT
-
-              ONLY THIS SECTION'S INPUT OPTIONS
-              HAVE BEEN CHANGED.
-          ================================================================ */}
-
+          {/* 4. UNIT */}
           {productTypeId && (
             <div className="rounded-xl border border-line bg-bg/50 p-4">
               <div className="mb-4 flex items-center gap-3">
@@ -1474,91 +724,60 @@ export function BrandFormPage({
                 </div>
 
                 <div>
-                  <div className="text-sm font-bold text-ink">
-                    Unit
-                  </div>
-
-                  <p className="mt-0.5 text-[11px] text-muted">
+                  <div className="text-sm font-bold text-ink">Unit</div>
+                  <p className="mt-0.5 text-[0.75rem] text-muted">
                     Configure the default unit used for this brand in quotations.
                   </p>
                 </div>
               </div>
 
-              <Field
-                label="Unit"
-                hint="Select the unit used for this brand."
-              >
+              <Field label="Unit" hint="Select the unit used for this brand.">
                 <Select
                   value={unit}
-                  onChange={(event) =>
-                    setUnit(
-                      event.target.value,
-                    )
-                  }
+                  onChange={(event) => setUnit(event.target.value)}
                 >
-                  <option value="">
-                    Select Unit
-                  </option>
+                  <option value="">Select Unit</option>
 
-                  {UNIT_OPTIONS.map(
-                    (option) => (
-                      <option
-                        key={option}
-                        value={option}
-                      >
-                        {option}
-                      </option>
-                    ),
-                  )}
+                  {unitOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
                 </Select>
               </Field>
             </div>
           )}
 
-         
-
-         
-
-          {/* ================================================================
-              SUMMARY
-          ================================================================ */}
-
+          {/* SUMMARY */}
           {productTypeId && (
             <div className="rounded-xl border border-primary-500/15 bg-primary-500/5 p-4">
-              <div className="text-[10px] font-bold uppercase tracking-wide text-primary-600">
+              <div className="text-[0.6875rem] font-bold uppercase tracking-wide text-primary-600">
                 Brand Configuration
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3">
                 <div>
-                  <div className="text-[10px] uppercase tracking-wide text-muted">
+                  <div className="text-[0.6875rem] uppercase tracking-wide text-muted">
                     Product Type
                   </div>
-
                   <div className="mt-1 text-sm font-bold text-ink">
-                    {
-                      selectedProductType?.label
-                    }
+                    {selectedProductType?.label}
                   </div>
                 </div>
 
                 <div>
-                  <div className="text-[10px] uppercase tracking-wide text-muted">
+                  <div className="text-[0.6875rem] uppercase tracking-wide text-muted">
                     Specifications
                   </div>
-
                   <div className="mt-1 text-sm font-bold text-ink">
-                    {
-                      specifications.length
-                    }
+                    {specifications.length}
                   </div>
                 </div>
 
                 <div>
-                  <div className="text-[10px] uppercase tracking-wide text-muted">
+                  <div className="text-[0.6875rem] uppercase tracking-wide text-muted">
                     Unit
                   </div>
-
                   <div className="mt-1 text-sm font-bold text-ink">
                     {unit || "Not configured"}
                   </div>

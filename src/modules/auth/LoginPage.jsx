@@ -95,7 +95,7 @@ export function LoginPage() {
             <LogIn className="h-4 w-4" /> {loading ? "Signing in…" : "Sign in"}
           </Button>
 
-          <div className="flex items-start gap-2 text-[11px] text-muted pt-1">
+          <div className="flex items-start gap-2 text-[0.75rem] text-muted pt-1">
             <Shield className="h-3.5 w-3.5 mt-0.5 shrink-0" />
             <div>
               Your role (admin, manager, sales or viewer) is set by an admin in

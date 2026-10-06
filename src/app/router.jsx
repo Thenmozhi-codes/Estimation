@@ -23,7 +23,7 @@ import { InvoiceFormPage } from "@/modules/bills/InvoiceFormPage";
 import { InvoiceDetailPage } from "@/modules/bills/InvoiceDetailPage";
 
 /* ── Reports ── */
-import { SalesReportPage } from "@/modules/reports/SalesReportPage";
+import { QuotationReportPage } from "@/modules/reports/QuotationReportPage";
 import { ProductsReportPage } from "@/modules/reports/ProductsReportPage";
 import { CustomersReportPage } from "@/modules/reports/CustomersReportPage";
 import { OutstandingReportPage } from "@/modules/reports/OutstandingReportPage";
@@ -205,15 +205,21 @@ export function AppRouter() {
           path="/reports"
           element={
             <Navigate
-              to="/reports/sales"
+              to="/reports/quotations"
               replace
             />
           }
         />
 
         <Route
+          path="/reports/quotations"
+          element={<QuotationReportPage />}
+        />
+
+        {/* old Sales report address -> Quotation report */}
+        <Route
           path="/reports/sales"
-          element={<SalesReportPage />}
+          element={<Navigate to="/reports/quotations" replace />}
         />
 
         <Route

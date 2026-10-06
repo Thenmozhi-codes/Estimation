@@ -583,7 +583,7 @@ export function AttributesPage() {
                
               </div>
 
-              <div className="sm:w-[280px]">
+              <div className="sm:w-[315px]">
                 <Toolbar
                   search={search}
                   onSearch={setSearch}
@@ -700,7 +700,7 @@ function AllowedValuesPreview({ values }) {
   }
 
   return (
-    <div className="max-w-[560px] overflow-x-auto scrollbar-thin">
+    <div className="max-w-[630px] overflow-x-auto scrollbar-thin">
       <div className="flex w-max min-w-full flex-nowrap items-center gap-1.5 py-0.5">
         {values.map((value) => (
           <span
@@ -985,7 +985,7 @@ function NewAttributeSheet({
 
         <div className="border-t border-line pt-5">
           <div className="mb-3">
-            <p className="mt-0.5 text-[10px] leading-4 text-muted">
+            <p className="mt-0.5 text-[0.6875rem] leading-4 text-muted">
               Add the values users should be able to
               select for this specification. Values
               are optional.
@@ -1044,7 +1044,7 @@ function NewAttributeSheet({
                 ))}
               </div>
             ) : (
-              <div className="py-1 text-[10px] text-muted">
+              <div className="py-1 text-[0.6875rem] text-muted">
                 No values added yet. You can add
                 them now or later.
               </div>
@@ -1053,11 +1053,11 @@ function NewAttributeSheet({
         </div>
 
         <div className="rounded-xl border border-primary-500/15 bg-primary-500/5 p-3">
-          <div className="text-[11px] font-bold text-ink">
+          <div className="text-[0.75rem] font-bold text-ink">
             Specification setup
           </div>
 
-          <p className="mt-0.5 text-[10px] leading-4 text-muted">
+          <p className="mt-0.5 text-[0.6875rem] leading-4 text-muted">
             This creates the specification,
             connects it to{" "}
             {selectedCategory?.name ||
@@ -1372,7 +1372,7 @@ function AttributeValuesSheet({
         </Field>
 
         <div className="rounded-xl border border-line bg-bg/50 p-3">
-          <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted">
+          <div className="text-[0.625rem] font-bold uppercase tracking-[0.12em] text-muted">
             Specification
           </div>
 
@@ -1389,7 +1389,7 @@ function AttributeValuesSheet({
               Allowed Values
             </div>
 
-            <p className="mt-0.5 text-[10px] leading-4 text-muted">
+            <p className="mt-0.5 text-[0.6875rem] leading-4 text-muted">
               Add, edit or remove selectable
               values for this specification.
             </p>
@@ -1457,7 +1457,7 @@ function AttributeValuesSheet({
                                   .value,
                               )
                             }
-                            className="h-6 w-[110px] px-2 text-2xs"
+                            className="h-6 w-[124px] px-2 text-2xs"
                             autoFocus
                           />
 
@@ -1534,7 +1534,7 @@ function AttributeValuesSheet({
                 )}
               </div>
             ) : (
-              <div className="py-1 text-[10px] text-muted">
+              <div className="py-1 text-[0.6875rem] text-muted">
                 No values configured yet.
               </div>
             )}
@@ -1542,11 +1542,11 @@ function AttributeValuesSheet({
         </div>
 
         <div className="rounded-xl border border-primary-500/15 bg-primary-500/5 p-3">
-          <div className="text-[11px] font-bold text-ink">
+          <div className="text-[0.75rem] font-bold text-ink">
             Values are stored separately
           </div>
 
-          <p className="mt-0.5 text-[10px] leading-4 text-muted">
+          <p className="mt-0.5 text-[0.6875rem] leading-4 text-muted">
             Each allowed value is maintained
             independently and will be available
             to Product and Billing forms.

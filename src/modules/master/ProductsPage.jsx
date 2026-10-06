@@ -456,7 +456,7 @@ export function ProductPicker({
               {headerTitle}
             </div>
 
-            <div className="text-[10px] text-muted">
+            <div className="text-[0.6875rem] text-muted">
               {headerSubtitle}
             </div>
           </div>
@@ -576,7 +576,7 @@ export function ProductPicker({
                         {type.label}
                       </div>
 
-                      <div className="mt-0.5 text-[10px] text-muted">
+                      <div className="mt-0.5 text-[0.6875rem] text-muted">
                         Select brand
                       </div>
                     </div>
@@ -593,7 +593,7 @@ export function ProductPicker({
           {selectedType && !selectedBrand && (
             <div className="p-4">
               <div className="mb-3">
-                <div className="text-[11px] font-bold uppercase tracking-wide text-muted">
+                <div className="text-[0.75rem] font-bold uppercase tracking-wide text-muted">
                   {selectedType.label} Brands
                 </div>
 
@@ -649,7 +649,7 @@ export function ProductPicker({
                             {brand.name}
                           </div>
 
-                          <div className="mt-0.5 text-[10px] text-muted">
+                          <div className="mt-0.5 text-[0.6875rem] text-muted">
                             {normalizeBrandSpecifications(brand).length} specifications
                           </div>
                         </div>
@@ -680,7 +680,7 @@ export function ProductPicker({
                   </div>
 
                   <div className="min-w-0">
-                    <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                    <div className="text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
                       Brand
                     </div>
 
@@ -688,7 +688,7 @@ export function ProductPicker({
                       {selectedBrand.name}
                     </div>
 
-                    <div className="mt-0.5 text-[10px] text-muted">
+                    <div className="mt-0.5 text-[0.6875rem] text-muted">
                       {selectedType.label}
                     </div>
                   </div>
@@ -699,7 +699,7 @@ export function ProductPicker({
 
               <div className="mt-4">
                 <div className="mb-3">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-muted">
+                  <div className="text-[0.75rem] font-bold uppercase tracking-wide text-muted">
                     Specifications
                   </div>
 
@@ -779,14 +779,14 @@ export function ProductPicker({
                                 {spec.label}
                               </div>
 
-                              <div className="mt-0.5 text-[10px] text-muted">
+                              <div className="mt-0.5 text-[0.6875rem] text-muted">
                                 {selectedBrand.name}
                               </div>
                             </div>
                           </div>
 
                           <div className="text-right">
-                            <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                            <div className="text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
                               Price
                             </div>
 
@@ -807,7 +807,7 @@ export function ProductPicker({
                 {selectedSpecification ? (
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                      <div className="text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
                         Selected
                       </div>
 
@@ -817,7 +817,7 @@ export function ProductPicker({
                     </div>
 
                     <div className="text-right">
-                      <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                      <div className="text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
                         Default Price
                       </div>
 

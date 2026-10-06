@@ -10,12 +10,37 @@ import { fmtDate } from "@/lib/utils/date";
 import { useInvoices } from "@/hooks/useDocuments";
 import { useParties } from "@/hooks/useParties";
 import { MessageCircle } from "lucide-react";
-import { buildReminderMessage, whatsappUrl } from "@/lib/utils/reminder";
+import { ReminderDialog } from "@/components/common/ReminderDialog";
+import { normalizePhone } from "@/lib/utils/reminder";
 import { MODULE_TABS } from "@/app/moduleNav";
+
+function RemindButton({ onClick, phone }) {
+  const hasPhone = Boolean(normalizePhone(phone));
+
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold text-emerald-600 transition hover:bg-emerald-500/10"
+      title={
+        hasPhone
+          ? "Preview and send the payment reminder"
+          : "Preview the reminder (no phone number saved)"
+      }
+    >
+      <MessageCircle className="h-3.5 w-3.5" />
+      <span>Remind</span>
+    </button>
+  );
+}
 
 export function OutstandingReportPage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState("byInvoice");
+  const [reminder, setReminder] = useState(null);
   const { data: invoices = [] } = useInvoices();
   const { data: parties = [] } = useParties();
 
@@ -39,7 +64,7 @@ export function OutstandingReportPage() {
     const map = {};
     outstandingInvoices.forEach((i) => {
       const name = partyById[i.partyId]?.name || "—";
-      if (!map[name]) map[name] = { name, partyId: i.partyId, phone: partyById[i.partyId]?.phone || "", count: 0, balance: 0, numbers: [] };
+      if (!map[name]) map[name] = { name, partyId: i.partyId, phone: partyById[i.partyId]?.phone || partyById[i.partyId]?.mobile || "", count: 0, balance: 0, numbers: [] };
       map[name].count += 1;
       map[name].numbers.push(i);
       map[name].balance += Math.max(0, (i.grandTotal || 0) - (i.amountPaid || 0));
@@ -58,7 +83,7 @@ export function OutstandingReportPage() {
       <div className="p-3 md:p-6 space-y-4 w-full">
         <Card>
           <CardBody>
-            <div className="text-[11px] font-semibold text-muted uppercase">
+            <div className="text-[0.75rem] font-semibold text-muted uppercase">
               Total Outstanding
             </div>
             <div className="text-2xl font-extrabold text-danger mt-1">
@@ -107,6 +132,29 @@ export function OutstandingReportPage() {
                     </span>
                   ),
                 },
+                {
+                  key: "__remind",
+                  header: "",
+                  width: 110,
+                  align: "right",
+                  render: (r) => {
+                    const party = partyById[r.partyId];
+
+                    return (
+                      <RemindButton
+                        phone={party?.phone || party?.mobile}
+                        onClick={() =>
+                          setReminder({
+                            name: party?.name || "",
+                            phone: party?.phone || party?.mobile || "",
+                            total: Math.max(0, (r.grandTotal || 0) - (r.amountPaid || 0)),
+                            invoices: [r],
+                          })
+                        }
+                      />
+                    );
+                  },
+                },
               ]}
               rows={outstandingInvoices}
               onRowClick={(r) => navigate(`/bills/invoices/${r.id}`)}
@@ -138,33 +186,19 @@ export function OutstandingReportPage() {
                   header: "",
                   width: 120,
                   align: "right",
-                  render: (r) => {
-                    const url = whatsappUrl(
-                      r.phone,
-                      buildReminderMessage({
-                        name: r.name,
-                        total: r.balance,
-                        invoices: r.numbers,
-                      }),
-                    );
-
-                    return url ? (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          window.open(url, "_blank", "noopener,noreferrer");
-                        }}
-                        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold text-emerald-600 transition hover:bg-emerald-500/10"
-                        title="Send payment reminder on WhatsApp"
-                      >
-                        <MessageCircle className="h-3.5 w-3.5" />
-                        <span>Remind</span>
-                      </button>
-                    ) : (
-                      <span className="text-2xs text-muted">No phone</span>
-                    );
-                  },
+                  render: (r) => (
+                    <RemindButton
+                      phone={r.phone}
+                      onClick={() =>
+                        setReminder({
+                          name: r.name,
+                          phone: r.phone,
+                          total: r.balance,
+                          invoices: r.numbers,
+                        })
+                      }
+                    />
+                  ),
                 },
               ]}
               rows={byParty}
@@ -173,6 +207,12 @@ export function OutstandingReportPage() {
           </Card>
         )}
       </div>
+
+      <ReminderDialog
+        open={Boolean(reminder)}
+        onClose={() => setReminder(null)}
+        reminder={reminder}
+      />
     </>
   );
 }

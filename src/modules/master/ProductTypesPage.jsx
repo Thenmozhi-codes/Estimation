@@ -85,7 +85,7 @@ export function ProductTypesPage() {
       />
       <ModuleTabs tabs={MODULE_TABS.master} />
 
-      <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-0 md:gap-4 p-3 md:p-5">
+      <div className="grid grid-cols-1 md:grid-cols-[315px_1fr] gap-0 md:gap-4 p-3 md:p-5">
         <Card className="md:sticky md:top-4 h-fit">
           <div className="px-3 py-2 border-b border-line text-2xs font-bold text-muted uppercase tracking-wider">
             Types ({types.length})

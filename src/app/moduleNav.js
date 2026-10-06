@@ -2,7 +2,7 @@ export const SIDEBAR = [
   { key: "dashboard", label: "Dashboard", path: "/dashboard", icon: "LayoutDashboard" },
   { key: "master", label: "Master", path: "/master/attributes", icon: "Boxes" },
   { key: "bills", label: "Bills", path: "/bills/quotations", icon: "Receipt" },
-  { key: "reports", label: "Reports", path: "/reports/sales", icon: "BarChart3" },
+  { key: "reports", label: "Reports", path: "/reports/quotations", icon: "BarChart3" },
   { key: "settings", label: "Settings", path: "/settings/company", icon: "Settings" },
 ];
 
@@ -17,7 +17,7 @@ export const MODULE_TABS = {
     { label: "Invoices", path: "/bills/invoices" },
   ],
   reports: [
-    { label: "Sales", path: "/reports/sales" },
+    { label: "Quotation", path: "/reports/quotations" },
     { label: "Products", path: "/reports/products" },
     { label: "Customers", path: "/reports/customers" },
     { label: "Outstanding", path: "/reports/outstanding" },

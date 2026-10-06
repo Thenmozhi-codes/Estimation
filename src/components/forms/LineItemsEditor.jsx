@@ -201,7 +201,7 @@ export function LineItemsEditor({ items = [], onChange }) {
       {items.length > 0 && (
           <div className="overflow-hidden rounded-xl border border-line">
             {/* TABLE HEADER */}
-            <div className="hidden border-b border-line bg-bg/60 px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-muted lg:grid lg:grid-cols-[32px_minmax(135px,1.25fr)_minmax(105px,1fr)_72px_120px_88px_64px] lg:items-center lg:gap-2">
+            <div className="hidden border-b border-line bg-bg/60 px-3 py-2.5 text-[0.6875rem] font-bold uppercase tracking-wide text-muted lg:grid lg:grid-cols-[36px_minmax(152px,1.25fr)_minmax(118px,1fr)_81px_135px_99px_72px] lg:items-center lg:gap-2">
               <div>#</div>
               <div>Brand</div>
               <div>Specification</div>
@@ -331,7 +331,7 @@ function MeasurementSummary({ item }) {
     if (l > 0) parts.push(`${l} ft (L)`);
     if (!parts.length) return null;
     return (
-      <div className="mt-0.5 text-[10px] text-muted">
+      <div className="mt-0.5 text-[0.6875rem] text-muted">
         {parts.join(" × ")} × {nos} nos
       </div>
     );
@@ -346,7 +346,7 @@ function MeasurementSummary({ item }) {
   if (!dims.length) return null;
 
   return (
-    <div className="mt-0.5 text-[10px] text-muted">
+    <div className="mt-0.5 text-[0.6875rem] text-muted">
       {dims.join(" × ")} ft × {pcs || 1} pcs
     </div>
   );
@@ -363,7 +363,7 @@ function LineItemRow({
   return (
     <div className="bg-surface p-3.5 transition hover:bg-bg/20">
       {/* DESKTOP GRID */}
-      <div className="hidden lg:grid lg:grid-cols-[32px_minmax(135px,1.25fr)_minmax(105px,1fr)_72px_120px_88px_64px] lg:items-center lg:gap-2">
+      <div className="hidden lg:grid lg:grid-cols-[36px_minmax(152px,1.25fr)_minmax(118px,1fr)_81px_135px_99px_72px] lg:items-center lg:gap-2">
         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-500/10 text-xs font-black text-primary-600">
           {index + 1}
         </div>
@@ -372,7 +372,7 @@ function LineItemRow({
           <div className="truncate text-sm font-bold text-ink">
             {item.brandName || item.productName || "Brand"}
           </div>
-          <div className="mt-0.5 text-[10px] text-muted">
+          <div className="mt-0.5 text-[0.6875rem] text-muted">
             {item.productType || "Product Type"}
           </div>
         </div>
@@ -412,7 +412,7 @@ function LineItemRow({
               <div className="truncate text-sm font-bold text-ink">
                 {item.brandName || item.productName || "Brand"}
               </div>
-              <div className="mt-0.5 text-[10px] text-muted">
+              <div className="mt-0.5 text-[0.6875rem] text-muted">
                 {item.productType || "Product Type"}
               </div>
             </div>
@@ -423,7 +423,7 @@ function LineItemRow({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
+            <label className="text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
               Specification
             </label>
             <SpecificationField item={item} />
@@ -431,14 +431,14 @@ function LineItemRow({
           </div>
 
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
+            <label className="text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
               Quantity
             </label>
             <QuantityInput item={item} onUpdate={onUpdate} className="mt-1" />
           </div>
 
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
+            <label className="text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
               Unit
             </label>
             <div className="mt-1 flex h-10 items-center rounded-lg border border-line bg-bg/40 px-3 text-sm font-semibold text-ink">
@@ -447,7 +447,7 @@ function LineItemRow({
           </div>
 
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wide text-muted">
+            <label className="text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
               Rate
             </label>
             <RateInput
@@ -459,7 +459,7 @@ function LineItemRow({
         </div>
 
         <div className="mt-3 flex items-center justify-between rounded-lg border border-line bg-bg/40 px-3 py-2.5">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-muted">
+          <span className="text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
             Amount
           </span>
           <span className="text-sm font-black text-ink">
@@ -470,7 +470,7 @@ function LineItemRow({
 
       {/* DESKTOP AMOUNT */}
       <div className="mt-3 hidden border-t border-line pt-3 text-right lg:block">
-        <span className="mr-2 text-[10px] font-bold uppercase tracking-wide text-muted">
+        <span className="mr-2 text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
           Amount
         </span>
         <span className="text-sm font-black text-ink">
@@ -504,7 +504,7 @@ function SpecificationField({ item }) {
         {rows.map((row, index) => (
           <span
             key={`${row.specification}-${index}`}
-            className="rounded-md border border-line bg-bg px-1.5 py-0.5 text-[10px] font-semibold text-ink"
+            className="rounded-md border border-line bg-bg px-1.5 py-0.5 text-[0.6875rem] font-semibold text-ink"
           >
             {row.specification}
           </span>

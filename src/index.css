@@ -29,6 +29,20 @@
 }
 
 @layer base {
+  /*
+   * TEXT SIZE — the one place that controls how big everything is.
+   *   100%    = 16px (browser default, the old size)
+   *   112.5%  = 18px (current)
+   * Tailwind sizes (text-*, spacing, h-*, w-*) are all rem, so text,
+   * inputs, buttons and spacing grow together and the layout stays balanced.
+   * Phones get a smaller step so screens do not feel cramped.
+   */
+  html { font-size: 112.5%; }
+
+  @media (max-width: 640px) {
+    html { font-size: 106.25%; }
+  }
+
   html, body, #root { height: 100%; }
 
   body {
@@ -85,6 +99,9 @@
 }
 
 @layer utilities {
+  /* smallest label size, in rem so it scales with the root size above */
+  .text-2xs { font-size: 0.6875rem; line-height: 1rem; }
+
   .scrollbar-thin::-webkit-scrollbar { width: 8px; height: 8px; }
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background: rgb(var(--muted) / 0.35);

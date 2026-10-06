@@ -188,7 +188,7 @@ export default function ProductTypeConfigurator({
                       <div className="text-sm font-semibold text-ink truncate">
                         {attribute.name}
                       </div>
-                      <div className="text-[11px] text-muted mt-0.5">
+                      <div className="text-[0.75rem] text-muted mt-0.5">
                         {attribute.code || attribute.attributeId}
                         {attribute.dataType ? ` · ${attribute.dataType}` : ""}
                       </div>
@@ -284,7 +284,7 @@ export default function ProductTypeConfigurator({
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-semibold text-ink">{attribute.name}</div>
-                      <div className="text-[11px] text-muted mt-0.5">
+                      <div className="text-[0.75rem] text-muted mt-0.5">
                         {attribute.code || "No code"}
                         {attribute.dataType ? ` · ${attribute.dataType}` : ""}
                       </div>

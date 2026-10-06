@@ -961,7 +961,7 @@ export function QuotationFormPage() {
           </div>
 
           {/* ================== RIGHT — SUMMARY ================== */}
-          <aside className="rounded-b-2xl border-t border-line bg-bg/40 lg:w-1/5 lg:min-w-[260px] lg:rounded-b-none lg:rounded-r-2xl lg:border-l lg:border-t-0">
+          <aside className="rounded-b-2xl border-t border-line bg-bg/40 lg:w-1/5 lg:min-w-[292px] lg:rounded-b-none lg:rounded-r-2xl lg:border-l lg:border-t-0">
             <div className="lg:sticky lg:top-4">
               <div className="flex items-center gap-2 border-b border-line px-4 py-4">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">

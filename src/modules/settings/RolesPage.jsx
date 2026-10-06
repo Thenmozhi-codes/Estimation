@@ -171,7 +171,7 @@ export function RolesPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-sm">
+            <table className="w-full min-w-[630px] text-sm">
               <thead>
                 <tr className="border-b border-line bg-bg/60">
                   <th className="sticky left-0 bg-bg/90 px-4 py-2.5 text-left text-2xs font-bold uppercase tracking-wide text-muted">

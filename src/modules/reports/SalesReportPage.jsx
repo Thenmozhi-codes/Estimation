@@ -148,7 +148,7 @@ function KPI({ label, value }) {
   return (
     <Card>
       <CardBody className="py-3">
-        <div className="text-[11px] font-semibold text-muted uppercase tracking-wide">
+        <div className="text-[0.75rem] font-semibold text-muted uppercase tracking-wide">
           {label}
         </div>
         <div className="text-lg font-extrabold mt-1 text-timber-700">{value}</div>

@@ -183,7 +183,7 @@ export function CompanyPage() {
                 ) : (
                   <div className="flex flex-col items-center gap-1 text-muted">
                     <ImagePlus className="h-6 w-6" />
-                    <span className="text-[11px]">No logo</span>
+                    <span className="text-[0.75rem]">No logo</span>
                   </div>
                 )}
               </div>

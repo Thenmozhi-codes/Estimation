@@ -163,7 +163,7 @@ export function GlobalSearch({ open, onClose }) {
           )}
         </div>
 
-        <div className="border-t border-line px-4 py-2 flex items-center gap-4 text-[10px] text-muted bg-bg/40">
+        <div className="border-t border-line px-4 py-2 flex items-center gap-4 text-[0.6875rem] text-muted bg-bg/40">
           <span className="flex items-center gap-1">
             <kbd className="border border-line rounded px-1 py-0.5 bg-surface">↑↓</kbd>
             Navigate

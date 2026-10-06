@@ -183,7 +183,7 @@ export function MasterOverviewPage() {
                               {stats[resource.key] ?? 0}
                             </div>
 
-                            <div className="text-[10px] text-muted mt-0.5">
+                            <div className="text-[0.6875rem] text-muted mt-0.5">
                               {resource.key === "product-types"
                                 ? "configured types"
                                 : resource.key === "attributes"
@@ -194,7 +194,7 @@ export function MasterOverviewPage() {
                             </div>
                           </div>
 
-                          <span className="text-[11px] font-semibold text-primary-600 dark:text-primary-400">
+                          <span className="text-[0.75rem] font-semibold text-primary-600 dark:text-primary-400">
                             Open
                           </span>
                         </div>
@@ -243,7 +243,7 @@ export function MasterOverviewPage() {
 function FlowItem({ number, label }) {
   return (
     <div className="flex items-center gap-2 shrink-0">
-      <div className="h-7 w-7 rounded-lg bg-primary-50 dark:bg-primary-950/30 text-primary-600 dark:text-primary-400 flex items-center justify-center text-[10px] font-bold">
+      <div className="h-7 w-7 rounded-lg bg-primary-50 dark:bg-primary-950/30 text-primary-600 dark:text-primary-400 flex items-center justify-center text-[0.6875rem] font-bold">
         {number}
       </div>
 

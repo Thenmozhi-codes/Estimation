@@ -303,7 +303,7 @@ export function ProductFormPage({
                 <div className="text-sm font-bold text-ink">
                   Product Details
                 </div>
-                <p className="mt-0.5 text-[10px] leading-4 text-muted">
+                <p className="mt-0.5 text-[0.6875rem] leading-4 text-muted">
                   Only basic product information is required here.
                 </p>
               </div>
@@ -355,7 +355,7 @@ export function ProductFormPage({
                   <div className="text-xs font-bold text-ink">
                     {selectedCategory.name} selected
                   </div>
-                  <p className="mt-1 text-[10px] leading-5 text-muted">
+                  <p className="mt-1 text-[0.6875rem] leading-5 text-muted">
                     Attributes and allowed values for this Product Type are
                     managed in Attribute Master.
                   </p>

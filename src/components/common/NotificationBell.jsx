@@ -114,7 +114,7 @@ export function NotificationBell() {
         <button className="relative p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
           <Bell className="h-4.5 w-4.5 text-ink" strokeWidth={1.75} />
           {unread > 0 && (
-            <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center">
+            <span className="absolute top-1 right-1 min-w-[18px] h-4 px-1 rounded-full bg-danger text-white text-[0.6875rem] font-bold flex items-center justify-center">
               {unread > 9 ? "9+" : unread}
             </span>
           )}

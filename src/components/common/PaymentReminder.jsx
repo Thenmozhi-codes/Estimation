@@ -45,6 +45,7 @@ export function useReminderMessage(partyId, excludeInvoiceId = null) {
         total: outstanding.total,
         invoices: outstanding.invoices,
         companyName: companies?.[0]?.name || "",
+        companyPhone: companies?.[0]?.phone || companies?.[0]?.mobile || "",
       }),
     };
   }, [invoices, parties, companies, partyId, excludeInvoiceId]);

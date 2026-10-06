@@ -1264,7 +1264,7 @@ export function ProductPicker({
             <div className="truncate text-sm font-bold text-ink">
               {mode === "edit" ? "Edit Item" : "Add Item"}
             </div>
-            <div className="text-[10px] text-muted">
+            <div className="text-[0.6875rem] text-muted">
               Select Product Type, Brand and Pcs, then choose a specification
             </div>
           </div>
@@ -1282,9 +1282,9 @@ export function ProductPicker({
         {/* CONTENT */}
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           {/* SINGLE LINE: PRODUCT TYPE | BRAND | PCS */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_110px]">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_124px]">
             <div className="min-w-0">
-              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
+              <span className="mb-1 block text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
                 Product Type
               </span>
               <SearchableSelect
@@ -1309,7 +1309,7 @@ export function ProductPicker({
             </div>
 
             <div className="min-w-0">
-              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
+              <span className="mb-1 block text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
                 Brand Name
               </span>
               <SearchableSelect
@@ -1343,7 +1343,7 @@ export function ProductPicker({
             </div>
 
             <label className="min-w-0">
-              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
+              <span className="mb-1 block text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
                 Nos
               </span>
               <input
@@ -1363,7 +1363,7 @@ export function ProductPicker({
           </div>
 
           {selectedType && !typeConfig?.noBrand && !availableBrands.length && (
-            <div className="rounded-lg border border-dashed border-line px-3 py-2 text-[10px] text-muted">
+            <div className="rounded-lg border border-dashed border-line px-3 py-2 text-[0.6875rem] text-muted">
               No brands found for this Product Type. Add the brand in Brand
               Master first.
             </div>
@@ -1529,7 +1529,7 @@ function SpecificationStep({
         <div className="text-xs font-bold text-ink">
           {isTimber ? "Specifications & Price (optional)" : "Specifications & Price"}
         </div>
-        <div className="mt-0.5 text-[10px] text-muted">
+        <div className="mt-0.5 text-[0.6875rem] text-muted">
           Price is the default rate from Brand Master and does not change with
           Pcs. Only the Total changes.
         </div>
@@ -1538,7 +1538,7 @@ function SpecificationStep({
       {!specifications.length && !isTimber ? (
         <div className="rounded-lg border border-dashed border-line bg-bg/40 p-4 text-center">
           <div className="text-sm font-bold text-ink">No specifications found</div>
-          <div className="mt-1 text-[10px] text-muted">
+          <div className="mt-1 text-[0.6875rem] text-muted">
             Add specifications and prices in Brand Master.
           </div>
         </div>
@@ -1547,7 +1547,7 @@ function SpecificationStep({
           {/* SPECIFICATION TABLE */}
           {specifications.length > 0 && (
           <div className="overflow-hidden rounded-lg border border-line">
-            <div className="grid grid-cols-[1fr_110px_32px] items-center gap-2 border-b border-line bg-bg/60 px-2.5 py-2 text-[9px] font-bold uppercase tracking-wide text-muted">
+            <div className="grid grid-cols-[1fr_124px_36px] items-center gap-2 border-b border-line bg-bg/60 px-2.5 py-2 text-[0.625rem] font-bold uppercase tracking-wide text-muted">
               <div>Specification</div>
               <div className="text-right">Price (₹)</div>
               <div />
@@ -1564,7 +1564,7 @@ function SpecificationStep({
                     type="button"
                     onClick={() => onSelectSpecification(specification)}
                     className={[
-                      "grid w-full grid-cols-[1fr_110px_32px] items-center gap-2 px-2.5 py-2.5 text-left transition",
+                      "grid w-full grid-cols-[1fr_124px_36px] items-center gap-2 px-2.5 py-2.5 text-left transition",
                       selected ? "bg-primary-500/5" : "hover:bg-bg/60",
                     ].join(" ")}
                   >
@@ -1597,10 +1597,10 @@ function SpecificationStep({
 
           {/* CUSTOM SPECIFICATION + PRICE */}
           <div className="rounded-lg border border-dashed border-line bg-bg/40 p-3">
-            <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-muted">
+            <div className="mb-2 text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
               Add specification for this Brand
             </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_130px_auto]">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_146px_auto]">
               <input
                 value={customSpecification}
                 onChange={(event) => onCustomSpecificationChange(event.target.value)}
@@ -1626,7 +1626,7 @@ function SpecificationStep({
                 Add
               </button>
             </div>
-            <p className="mt-1.5 text-[10px] text-muted">
+            <p className="mt-1.5 text-[0.6875rem] text-muted">
               Saved to this Brand Master and available next time. It does not overwrite existing prices.
             </p>
           </div>
@@ -1641,7 +1641,7 @@ function SpecificationStep({
                 )}
               </div>
 
-              <div className="mt-0.5 text-[10px] text-muted">
+              <div className="mt-0.5 text-[0.6875rem] text-muted">
                 {measure.fields.length
                   ? `${measure.label} = ${
                       measure.formula ||
@@ -1713,7 +1713,7 @@ function SpecificationStep({
           {/* SUMMARY + ADD */}
           <div className="flex flex-col gap-3 rounded-lg border border-primary-500/15 bg-primary-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
+              <div className="text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
                 Selected Specification
               </div>
 
@@ -1722,7 +1722,7 @@ function SpecificationStep({
                   (isTimber ? "None (optional)" : "Select a specification")}
               </div>
 
-              <div className="mt-0.5 text-[10px] text-muted">
+              <div className="mt-0.5 text-[0.6875rem] text-muted">
                 {selectedSpecification && measure.thicknessMissing
                   ? "This specification needs a numeric thickness (e.g. 1.5)."
                   : (selectedSpecification || isTimber) && needsMeasurement
@@ -1739,7 +1739,7 @@ function SpecificationStep({
 
             <div className="flex shrink-0 items-center justify-between gap-4 sm:justify-end">
               <div className="text-right">
-                <div className="text-[9px] font-bold uppercase tracking-wide text-muted">
+                <div className="text-[0.625rem] font-bold uppercase tracking-wide text-muted">
                   Total
                 </div>
                 <div className="text-base font-black text-ink">
@@ -1812,7 +1812,7 @@ function DoorStep({
         <div className="text-xs font-bold text-ink">
           Door Details<span className="ml-0.5 text-red-500">*</span>
         </div>
-        <div className="mt-0.5 text-[10px] text-muted">
+        <div className="mt-0.5 text-[0.6875rem] text-muted">
           {measure.label} = {measure.formula}. Enter the rate per Sq.ft.
         </div>
       </div>
@@ -1851,7 +1851,7 @@ function DoorStep({
       </div>
 
       {oversized && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-semibold text-amber-600">
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[0.75rem] font-semibold text-amber-600">
           Length / width looks very large. Please check the size is in feet.
         </div>
       )}
@@ -1869,7 +1869,7 @@ function DoorStep({
       </div>
 
       <div className="flex flex-col gap-3 rounded-lg border border-primary-500/15 bg-primary-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 text-[10px] text-muted">
+        <div className="min-w-0 text-[0.6875rem] text-muted">
           {ready
             ? `${formatINR(billedQty)} sq.ft × ₹${formatINR(rateValue)}`
             : "Enter thickness, length, width and rate to continue."}
@@ -1877,7 +1877,7 @@ function DoorStep({
 
         <div className="flex shrink-0 items-center justify-between gap-4 sm:justify-end">
           <div className="text-right">
-            <div className="text-[9px] font-bold uppercase tracking-wide text-muted">
+            <div className="text-[0.625rem] font-bold uppercase tracking-wide text-muted">
               Total
             </div>
             <div className="text-base font-black text-ink">
@@ -1903,7 +1903,7 @@ function DoorStep({
 function MeasurementField({ label, value, onChange, placeholder, min, listId }) {
   return (
     <label className="min-w-0">
-      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
+      <span className="mb-1 block text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
         {label}
       </span>
 
@@ -1924,7 +1924,7 @@ function MeasurementField({ label, value, onChange, placeholder, min, listId }) 
 function ReadOnlyMetric({ label, value, strong = false }) {
   return (
     <div className="min-w-0">
-      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted">
+      <span className="mb-1 block text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
         {label}
       </span>
 

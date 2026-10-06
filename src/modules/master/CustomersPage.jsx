@@ -265,7 +265,7 @@ export function CustomersPage() {
           </div>
 
           {/* Right — Search */}
-          <div className="relative w-full sm:w-[235px]">
+          <div className="relative w-full sm:w-[264px]">
             <Search
               className="
                 pointer-events-none

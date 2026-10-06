@@ -201,7 +201,7 @@ export function ProductDetailPage() {
               <h3 className="text-sm font-bold text-ink">
                 Available Attributes
               </h3>
-              <p className="text-[11px] text-muted mt-0.5">
+              <p className="text-[0.75rem] text-muted mt-0.5">
                 Configured in Attribute Master for {cat?.name || "this Product Type"}.
                 These are the choices billing will offer for {product.name}.
               </p>
@@ -225,7 +225,7 @@ export function ProductDetailPage() {
               <h3 className="text-sm font-bold text-ink">
                 Configured Options ({rows.length})
               </h3>
-              <p className="text-[11px] text-muted mt-0.5">
+              <p className="text-[0.75rem] text-muted mt-0.5">
                 Each row is a combination of attribute values — chosen from
                 Attribute Master — that has been used for {product.name} on
                 a bill. These are created automatically; you don&apos;t
@@ -251,7 +251,7 @@ export function ProductDetailPage() {
                       {r.attrSummary.map((x, i) => (
                         <span
                           key={i}
-                          className="inline-flex items-center px-2 py-1 rounded-md bg-bg border border-line text-ink text-[11px] font-semibold"
+                          className="inline-flex items-center px-2 py-1 rounded-md bg-bg border border-line text-ink text-[0.75rem] font-semibold"
                         >
                           {x.name}: {String(x.value)}
                         </span>
@@ -309,7 +309,7 @@ export function ProductDetailPage() {
 function Detail({ label, children }) {
   return (
     <div>
-      <div className="text-[10px] font-bold text-muted uppercase tracking-wide">
+      <div className="text-[0.6875rem] font-bold text-muted uppercase tracking-wide">
         {label}
       </div>
       <div className="text-sm mt-1 text-ink">{children}</div>

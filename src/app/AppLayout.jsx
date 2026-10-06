@@ -25,7 +25,7 @@ const NAV = [
     paths: ["/master/attributes", "/master/brands", "/master/customers"],
   },
   { to: "/bills",     label: "Bills",     icon: Receipt,   paths: ["/bills/quotations"] },
-  { to: "/reports",   label: "Reports",   icon: BarChart3, paths: ["/reports/sales"] },
+  { to: "/reports",   label: "Reports",   icon: BarChart3, paths: ["/reports/quotations"] },
   { to: "/settings",  label: "Settings",  icon: SettingsIcon, paths: ["/settings/company"] },
 ];
 
@@ -153,7 +153,7 @@ export function AppLayout() {
                     {(user?.name || "?").charAt(0).toUpperCase()}
                   </div>
                   <div className="hidden sm:block text-left">
-                    <div className="text-xs font-semibold text-ink leading-tight max-w-[110px] truncate tracking-tight">
+                    <div className="text-xs font-semibold text-ink leading-tight max-w-[124px] truncate tracking-tight">
                       {user?.name || "Guest"}
                     </div>
                     <div className="text-2xs text-muted capitalize leading-tight">

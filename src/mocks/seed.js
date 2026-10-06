@@ -6,6 +6,7 @@ import { nowIso } from "@/lib/utils/date";
 export function seedIfEmpty() {
   if (!mockStore.get().companies.length) mockStore.set(build());
   ensureDefaultProductTypes();
+  ensureDemoBrands();
 }
 
 /*
@@ -53,6 +54,132 @@ export function ensureDefaultProductTypes() {
   mappings
     .filter((m) => newIds.has(m.categoryId) && sharedElsewhere(m.attributeId))
     .forEach((m) => mockStore.remove("categoryAttributes", m.id));
+}
+
+/*
+ * DEMO BRANDS — a few ready-made brands for every Product Type, each with
+ * its specifications, prices and unit, so the Brand master, the Brand form
+ * and the quotation picker can be shown with real-looking data.
+ *
+ * Safe to run on every start: a brand is added only once (tracked by
+ * `demoKey`), so a demo brand you rename or delete never comes back, and
+ * nothing you created yourself is touched. Demo brands carry `isDemo: true`.
+ *
+ * Specification lists match the Brand form (same values per Product Type).
+ */
+const DEMO_SPECS = {
+  Plywood: ["19mm", "18mm", "16mm", "12mm", "9mm", "6mm"],
+  Laminate: ["0.6mm", "0.8mm", "1mm"],
+  "Edge Band": ["0.5mm"],
+  WPC: ["3x2 inch", "4x2.5 inch"],
+  Fevicol: ["1/2kg", "1kg", "2kg", "5kg", "10kg", "20kg", "50kg"],
+  Timber: ["1 inch", "1.5 inch", "2 inch", "3 inch", "4 inch"],
+  Beading: ["1/2 inch", "3/4 inch", "1 inch"],
+  "Laminated Board": ["19mm", "18mm", "16mm", "12mm", "9mm", "6mm"],
+  "HMR Board": ["19mm", "18mm", "16mm", "12mm"],
+  Door: ["40mm", "35mm", "32mm", "30mm", "25mm", "18mm"],
+};
+
+/* category names a Product Type may be stored under, best match first */
+const DEMO_CATEGORY_NAMES = { Fevicol: ["Adhesive", "Fevicol"] };
+
+/* [brand name, unit, prices in the same order as the type's specifications] */
+const DEMO_BRANDS = {
+  Plywood: [
+    ["Royal Teak MR Plywood", "Sq.ft", [84, 78, 70, 56, 46, 36]],
+    ["Prime Gold BWP Plywood", "Sq.ft", [118, 108, 96, 78, 62, 48]],
+  ],
+  Laminate: [
+    ["Classic Oak Laminate", "Sq.ft", [22, 26, 32]],
+    ["Stella Gloss Laminate", "Sq.ft", [25, 30, 38]],
+  ],
+  "Edge Band": [
+    ["Smooth Edge Band PVC", "R.ft", [5]],
+    ["Premium Edge Band ABS", "R.ft", [6.5]],
+  ],
+  WPC: [
+    ["Durable WPC Door Frame", "C.ft", [420, 560]],
+    ["Eco WPC Frame", "C.ft", [390, 520]],
+  ],
+  Fevicol: [
+    ["Fevicol Marine", "Nos", [95, 180, 345, 820, 1580, 3050, 7400]],
+    ["Fevicol SpeedX", "Nos", [90, 170, 330, 790, 1520, 2950, 7150]],
+  ],
+  Timber: [
+    ["Burma Teak Wood", "C.ft", [5200, 5400, 5600, 5800, 6000]],
+    ["Mahogany Wood", "C.ft", [3200, 3300, 3400, 3500, 3600]],
+  ],
+  Beading: [
+    ["Teak Beading", "R.ft", [18, 24, 32]],
+    ["Mahogany Beading", "R.ft", [10, 14, 19]],
+  ],
+  "Laminated Board": [
+    ["Prelam MDF Board", "Sq.ft", [72, 66, 58, 46, 38, 30]],
+    ["Royal Laminated Board", "Sq.ft", [80, 74, 65, 52, 43, 34]],
+  ],
+  "HMR Board": [
+    ["Hydro HMR Board", "Sq.ft", [78, 72, 64, 52]],
+    ["Aqua Shield HMR Board", "Sq.ft", [86, 80, 72, 58]],
+  ],
+  Door: [
+    ["Premium Panel Door", "Sq.ft", [180, 165, 150, 140, 120, 95]],
+    ["Standard Flush Door", "Sq.ft", [140, 128, 115, 105, 92, 75]],
+  ],
+};
+
+export function ensureDemoBrands() {
+  const norm = (v) => String(v || "").trim().toLowerCase();
+  const db = mockStore.get();
+  const companyId = db.companies?.[0]?.id || null;
+
+  const categories = mockStore.all("categories");
+  /* a COPY (the store returns its live array); includes deleted ones */
+  const existing = [...mockStore.all("brands")];
+
+  const findCategory = (type) =>
+    (DEMO_CATEGORY_NAMES[type] || [type])
+      .map((name) => categories.find((c) => norm(c.name) === norm(name)))
+      .find(Boolean) || null;
+
+  for (const [type, brands] of Object.entries(DEMO_BRANDS)) {
+    const category = findCategory(type);
+    if (!category) continue; // Product Type not created yet
+
+    const specs = DEMO_SPECS[type];
+
+    brands.forEach(([name, unit, prices]) => {
+      const demoKey = `${toCode(type)}-${toCode(name)}`;
+
+      const alreadyThere = existing.some(
+        (b) =>
+          b.demoKey === demoKey ||
+          (norm(b.name) === norm(name) && b.categoryId === category.id),
+      );
+      if (alreadyThere) return;
+
+      const row = {
+        id: newId(),
+        companyId,
+        name,
+        code: toCode(name),
+        categoryId: category.id,
+        isActive: true,
+        isDemo: true,
+        demoKey,
+        specifications: specs.map((specification, i) => ({
+          specification,
+          price: prices[i] ?? null,
+        })),
+        materialDetails: { category: type, brand: name, unit },
+        calculation: { wastage: null, markup: null, discount: null },
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      };
+
+      mockStore.insert("brands", row);
+      existing.push(row);
+    });
+  }
 }
 
 function build() {

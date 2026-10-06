@@ -91,7 +91,7 @@ export function AttributeConfigPreview({
           <div className="text-xs font-bold text-ink">
             No attributes configured for {categoryName || "this Product Type"} yet
           </div>
-          <p className="text-[11px] text-muted mt-1 leading-5">
+          <p className="text-[0.75rem] text-muted mt-1 leading-5">
             Billing for this Product Type won&apos;t offer any Thickness,
             Length or Grade choices until you add them in Attribute Master.
           </p>
@@ -116,7 +116,7 @@ export function AttributeConfigPreview({
       }`}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="text-[11px] text-muted leading-5">
+        <div className="text-[0.75rem] text-muted leading-5">
           <span className="font-bold text-ink">
             {categoryName || "This Product Type"}
           </span>{" "}
@@ -127,7 +127,7 @@ export function AttributeConfigPreview({
         <button
           type="button"
           onClick={() => navigate(`/master/attributes?type=${categoryId}`)}
-          className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-primary-600 dark:text-primary-400 hover:underline whitespace-nowrap"
+          className="shrink-0 inline-flex items-center gap-1 text-[0.6875rem] font-bold text-primary-600 dark:text-primary-400 hover:underline whitespace-nowrap"
         >
           Manage
           <ArrowRight className="h-3 w-3" />
@@ -137,7 +137,7 @@ export function AttributeConfigPreview({
       <div className="mt-3 space-y-2.5">
         {rows.map(({ attribute, values, isRequired }) => (
           <div key={attribute.id} className="flex items-start gap-2.5">
-            <div className="text-[10px] font-bold text-ink w-20 shrink-0 pt-1 flex items-center gap-1">
+            <div className="text-[0.6875rem] font-bold text-ink w-20 shrink-0 pt-1 flex items-center gap-1">
               {attribute.name}
               {isRequired && (
                 <span className="text-primary-500" title="Required">
@@ -147,14 +147,14 @@ export function AttributeConfigPreview({
             </div>
             <div className="flex-1 flex flex-wrap gap-1.5">
               {values.length === 0 ? (
-                <span className="text-[10px] text-muted italic">
+                <span className="text-[0.6875rem] text-muted italic">
                   No allowed values yet
                 </span>
               ) : (
                 values.map((value) => (
                   <span
                     key={value.id}
-                    className="inline-flex items-center px-2 py-0.5 rounded-md bg-surface border border-line text-ink text-[10px] font-semibold"
+                    className="inline-flex items-center px-2 py-0.5 rounded-md bg-surface border border-line text-ink text-[0.6875rem] font-semibold"
                   >
                     {value.label}
                   </span>
