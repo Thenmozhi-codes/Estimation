@@ -20,7 +20,7 @@ import { DataTable } from "@/components/ui/DataTable";
 import { FilterBar } from "@/components/common/FilterBar";
 import { CustomerCell } from "@/components/common/CustomerCell";
 import { StatusTabs } from "@/components/common/StatusTabs";
-import { IconAction } from "@/components/ui/IconAction";
+import { IconAction, IconActionSpacer } from "@/components/ui/IconAction";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -355,17 +355,26 @@ export function InvoiceListPage() {
             onSearch={setSearch}
             placeholder="Search by number or customer…"
           >
-            <div className="hidden text-xs tabular-nums text-muted sm:block">
-              {filtered.length} invoice{filtered.length === 1 ? "" : "s"}
-              <span className="mx-1.5">·</span>
-              <span className="font-semibold text-ink">{formatMoney(filteredTotals.total)}</span>
+            {/* SUMMARY — count, total and amount due as three tidy chips */}
+            <div className="hidden items-center gap-2 text-xs tabular-nums sm:flex">
+              <span className="inline-flex h-9 items-center rounded-lg bg-slate-100 px-3 font-semibold text-muted dark:bg-slate-800">
+                {filtered.length} invoice{filtered.length === 1 ? "" : "s"}
+              </span>
+
+              <span className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-line bg-surface px-3">
+                <span className="font-medium text-muted">Total</span>
+                <span className="font-bold text-ink">
+                  {formatMoney(filteredTotals.total)}
+                </span>
+              </span>
+
               {filteredTotals.balance > 0.009 && (
-                <>
-                  <span className="mx-1.5">·</span>
-                  <span className="font-semibold text-red-500">
-                    {formatMoney(filteredTotals.balance)} due
+                <span className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-red-200 bg-red-50 px-3 dark:border-red-900 dark:bg-red-950/30">
+                  <span className="font-medium text-red-500/80">Due</span>
+                  <span className="font-bold text-red-600 dark:text-red-400">
+                    {formatMoney(filteredTotals.balance)}
                   </span>
-                </>
+                </span>
               )}
             </div>
           </FilterBar>
@@ -375,6 +384,7 @@ export function InvoiceListPage() {
               {
                 key: "number",
                 header: "No",
+                width: 150,
                 sortable: true,
                 render: (row) => (
                   <span className="font-semibold tabular-nums text-primary-600">
@@ -385,6 +395,7 @@ export function InvoiceListPage() {
               {
                 key: "date",
                 header: "Date",
+                width: 130,
                 hideOnMobile: true,
                 sortable: true,
                 render: (row) => (
@@ -401,6 +412,7 @@ export function InvoiceListPage() {
               {
                 key: "grandTotal",
                 header: "Total",
+                width: 150,
                 align: "right",
                 sortable: true,
                 render: (row) => (
@@ -412,6 +424,7 @@ export function InvoiceListPage() {
               {
                 key: "balance",
                 header: "Balance",
+                width: 130,
                 align: "right",
                 hideOnMobile: true,
                 render: (row) => {
@@ -423,7 +436,7 @@ export function InvoiceListPage() {
                         balance > 0.009 ? "font-bold text-red-500" : "text-muted"
                       }
                     >
-                      {formatMoney(balance)}
+                      {balance > 0.009 ? formatMoney(balance) : "—"}
                     </span>
                   );
                 },
@@ -431,18 +444,19 @@ export function InvoiceListPage() {
               {
                 key: "status",
                 header: "Status",
+                width: 140,
                 render: (row) => <StatusBadge status={row.status} />,
               },
               {
                 key: "__actions",
                 header: "Actions",
                 align: "right",
-                width: 210,
+                width: 196,
                 render: (row) => {
                   const count = paymentsOf(row).length;
 
                   return (
-                    <div className="flex items-center justify-end">
+                    <div className="flex items-center justify-end gap-1">
                       <IconAction
                         icon={Download}
                         tone="sky"
@@ -456,7 +470,8 @@ export function InvoiceListPage() {
                         onClick={() => onDownloadPdf(row)}
                       />
 
-                      {count > 0 && (
+                      {/* always one slot, so Edit / Delete stay in the same column */}
+                      {count > 0 ? (
                         <IconAction
                           icon={Receipt}
                           tone="emerald"
@@ -464,24 +479,36 @@ export function InvoiceListPage() {
                           badge={count}
                           onClick={() => onReceiptClick(row)}
                         />
+                      ) : (
+                        <IconActionSpacer />
                       )}
 
-                      {canEdit && (
+                      {/* thin line separates "download" from "edit / delete" */}
+                      <span
+                        className="mx-1 h-4 w-px shrink-0 bg-line"
+                        aria-hidden="true"
+                      />
+
+                      {canEdit ? (
                         <IconAction
                           icon={Pencil}
                           tone="primary"
                           label="Edit invoice"
                           onClick={() => onEdit(row)}
                         />
+                      ) : (
+                        <IconActionSpacer />
                       )}
 
-                      {canDelete && (
+                      {canDelete ? (
                         <IconAction
                           icon={Trash2}
                           tone="red"
                           label="Delete invoice"
                           onClick={() => setConfirm(row)}
                         />
+                      ) : (
+                        <IconActionSpacer />
                       )}
                     </div>
                   );
@@ -489,6 +516,7 @@ export function InvoiceListPage() {
               },
             ]}
             rows={filtered}
+            dense
             loading={isLoading}
             onRowClick={(row) => navigate(`/bills/invoices/${row.id}`)}
             emptyTitle="No invoices yet"

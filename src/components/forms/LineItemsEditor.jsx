@@ -198,34 +198,40 @@ export function LineItemsEditor({ items = [], onChange }) {
 
   return (
     <div className="space-y-4">
-      {items.length > 0 && (
-          <div className="overflow-hidden rounded-xl border border-line">
-            {/* TABLE HEADER */}
-            <div className="hidden border-b border-line bg-bg/60 px-3 py-2.5 text-[0.6875rem] font-bold uppercase tracking-wide text-muted lg:grid lg:grid-cols-[36px_minmax(152px,1.25fr)_minmax(118px,1fr)_81px_135px_99px_72px] lg:items-center lg:gap-2">
-              <div>#</div>
-              <div>Brand</div>
-              <div>Specification</div>
-              <div>Qty</div>
-              <div>Unit</div>
-              <div>Rate</div>
-              <div />
-            </div>
+      {/* Layout rules: the row switches between "one line per item" and the
+          stacked card layout based on the width of THIS box (not the screen),
+          so it always fits beside the sidebar and the summary panel. */}
+      <style>{LINE_ITEMS_CSS}</style>
 
-            {/* TABLE ROWS */}
-            <div className="divide-y divide-line">
-              {items.map((item, index) => (
-                <LineItemRow
-                  key={item.tempId}
-                  item={item}
-                  index={index}
-                  lineAmount={lineAmount(item)}
-                  onUpdate={(patch) => updateRow(item.tempId, patch)}
-                  onEdit={() => startEditRow(item.tempId)}
-                  onRemove={() => removeRow(item.tempId)}
-                />
-              ))}
-            </div>
+      {items.length > 0 && (
+        <div className="li-root overflow-hidden rounded-xl border border-line">
+          {/* TABLE HEADER (single line) */}
+          <div className="li-wide li-grid border-b border-line bg-bg/60 px-3 py-2.5 text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
+            <div>#</div>
+            <div>Brand</div>
+            <div>Specification</div>
+            <div className="text-right">Qty</div>
+            <div>Unit</div>
+            <div className="text-right">Rate</div>
+            <div className="text-right">Amount</div>
+            <div />
           </div>
+
+          {/* TABLE ROWS */}
+          <div className="divide-y divide-line">
+            {items.map((item, index) => (
+              <LineItemRow
+                key={item.tempId}
+                item={item}
+                index={index}
+                lineAmount={lineAmount(item)}
+                onUpdate={(patch) => updateRow(item.tempId, patch)}
+                onEdit={() => startEditRow(item.tempId)}
+                onRemove={() => removeRow(item.tempId)}
+              />
+            ))}
+          </div>
+        </div>
       )}
 
       <Button
@@ -250,6 +256,48 @@ export function LineItemsEditor({ items = [], onChange }) {
     </div>
   );
 }
+
+/* ==========================================================================
+   LAYOUT CSS
+   --------------------------------------------------------------------------
+   Columns:  #  | Brand | Specification | Qty | Unit | Rate | Amount | Actions
+   Brand and Specification share the free space (and truncate with "…");
+   every other column has a fixed width so nothing is ever pushed off-screen.
+   ========================================================================== */
+
+const LINE_ITEMS_CSS = `
+.li-root { container-type: inline-size; container-name: li; }
+
+.li-root .li-wide   { display: none; }
+.li-root .li-narrow { display: block; }
+
+.li-root .li-grid {
+  grid-template-columns:
+    24px
+    minmax(0, 1fr)
+    minmax(0, 1.35fr)
+    72px
+    84px
+    92px
+    100px
+    56px;
+  column-gap: 6px;
+  align-items: center;
+}
+
+@container li (min-width: 640px) {
+  .li-root .li-wide   { display: grid; }
+  .li-root .li-narrow { display: none; }
+}
+
+/* number inputs: hide the spinner arrows so the value always has room */
+.li-root input[type="number"]::-webkit-outer-spin-button,
+.li-root input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.li-root input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+`;
 
 /* ==========================================================================
    LINE ITEM ROW
@@ -282,7 +330,7 @@ function RateInput({ item, onUpdate, className }) {
             event.target.value === "" ? "" : Number(event.target.value),
         })
       }
-       title="Editable for this document"
+      title="Editable for this document"
       className={className}
     />
   );
@@ -290,11 +338,11 @@ function RateInput({ item, onUpdate, className }) {
 
 function RowActions({ onEdit, onRemove }) {
   return (
-    <div className="flex items-center justify-end gap-1">
+    <div className="flex items-center justify-end">
       <button
         type="button"
         onClick={onEdit}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-primary-500/10 hover:text-primary-600"
+        className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition hover:bg-primary-500/10 hover:text-primary-600"
         aria-label="Edit item"
         title="Edit item"
       >
@@ -304,7 +352,7 @@ function RowActions({ onEdit, onRemove }) {
       <button
         type="button"
         onClick={onRemove}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-red-500/10 hover:text-red-500"
+        className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition hover:bg-red-500/10 hover:text-red-500"
         aria-label="Remove item"
         title="Delete item"
       >
@@ -314,27 +362,27 @@ function RowActions({ onEdit, onRemove }) {
   );
 }
 
-function MeasurementSummary({ item }) {
+/* "6 in (W) × 1.5 in (T) × 9 ft (L) × 1 nos" — returned as plain text */
+function measurementText(item) {
   /* Timber & Beading: width in inches, length in feet */
   const typeKey = String(item?.productType || "").toLowerCase();
+
   if (typeKey === "timber" || typeKey === "beading") {
     const w = Number(item?.width) || 0;
     const l = Number(item?.length) || 0;
     const th =
       parseFloat(
-        String(item?.attributeValues?.Thickness || item?.thickness || "").match(/[\d.]+/)?.[0],
+        String(
+          item?.attributeValues?.Thickness || item?.thickness || "",
+        ).match(/[\d.]+/)?.[0],
       ) || 0;
     const nos = Number(item?.pcs) || 1;
     const parts = [];
     if (w > 0) parts.push(`${w} in (W)`);
     if (typeKey === "timber" && th > 0) parts.push(`${th} in (T)`);
     if (l > 0) parts.push(`${l} ft (L)`);
-    if (!parts.length) return null;
-    return (
-      <div className="mt-0.5 text-[0.6875rem] text-muted">
-        {parts.join(" × ")} × {nos} nos
-      </div>
-    );
+    if (!parts.length) return "";
+    return `${parts.join(" × ")} × ${nos} nos`;
   }
 
   const dims = [item?.length, item?.width, item?.height]
@@ -343,11 +391,21 @@ function MeasurementSummary({ item }) {
 
   const pcs = Number(item?.pcs) || 0;
 
-  if (!dims.length) return null;
+  if (!dims.length) return "";
+
+  return `${dims.join(" × ")} ft × ${pcs || 1} pcs`;
+}
+
+function MeasurementSummary({ item, truncate = false }) {
+  const text = measurementText(item);
+  if (!text) return null;
 
   return (
-    <div className="mt-0.5 text-[0.6875rem] text-muted">
-      {dims.join(" × ")} ft × {pcs || 1} pcs
+    <div
+      className={`mt-0.5 text-[0.6875rem] text-muted ${truncate ? "truncate" : ""}`}
+      title={text}
+    >
+      {text}
     </div>
   );
 }
@@ -360,48 +418,58 @@ function LineItemRow({
   onEdit,
   onRemove,
 }) {
+  const brand = item.brandName || item.productName || "Brand";
+  const type = item.productType || "Product Type";
+
   return (
-    <div className="bg-surface p-3.5 transition hover:bg-bg/20">
-      {/* DESKTOP GRID */}
-      <div className="hidden lg:grid lg:grid-cols-[36px_minmax(152px,1.25fr)_minmax(118px,1fr)_81px_135px_99px_72px] lg:items-center lg:gap-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-500/10 text-xs font-black text-primary-600">
+    <div className="bg-surface px-3 py-2.5 transition hover:bg-bg/20">
+      {/* ===== SINGLE-LINE ROW (when the box is wide enough) ===== */}
+      <div className="li-wide li-grid">
+        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary-500/10 text-[0.6875rem] font-black text-primary-600">
           {index + 1}
         </div>
 
-        <div className="min-w-0">
-          <div className="truncate text-sm font-bold text-ink">
-            {item.brandName || item.productName || "Brand"}
+        <div className="min-w-0" title={`${brand} • ${type}`}>
+          <div className="truncate text-sm font-bold leading-tight text-ink">
+            {brand}
           </div>
-          <div className="mt-0.5 text-[0.6875rem] text-muted">
-            {item.productType || "Product Type"}
+          <div className="mt-0.5 truncate text-[0.6875rem] leading-tight text-muted">
+            {type}
           </div>
         </div>
 
         <div className="min-w-0">
-          <SpecificationField item={item} />
-          <MeasurementSummary item={item} />
+          <SpecificationField item={item} compact />
+          <MeasurementSummary item={item} truncate />
         </div>
 
-        <QuantityInput item={item} onUpdate={onUpdate} className="h-9" />
+        <QuantityInput
+          item={item}
+          onUpdate={onUpdate}
+          className="h-9 px-2 text-right"
+        />
 
         <div
-          className="flex h-9 min-w-0 items-center rounded-lg border border-line bg-bg/40 px-2.5 text-xs font-semibold text-ink"
+          className="flex h-9 min-w-0 items-center rounded-lg border border-line bg-bg/40 px-2 text-xs font-semibold text-ink"
           title={formatUnitValue(item)}
         >
           <span className="truncate">{formatUnitValue(item)}</span>
         </div>
 
-        <RateInput
-          item={item}
-          onUpdate={onUpdate}
-          className="h-9"
-        />
+        <RateInput item={item} onUpdate={onUpdate} className="h-9 pr-2" />
+
+        <div
+          className="truncate text-right text-sm font-black tabular-nums text-ink"
+          title={formatAmount(lineAmount)}
+        >
+          {formatAmount(lineAmount)}
+        </div>
 
         <RowActions onEdit={onEdit} onRemove={onRemove} />
       </div>
 
-      {/* MOBILE / TABLET CARD */}
-      <div className="lg:hidden">
+      {/* ===== MOBILE / NARROW CARD ===== */}
+      <div className="li-narrow">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-2.5">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-500/10 text-xs font-black text-primary-600">
@@ -409,12 +477,8 @@ function LineItemRow({
             </div>
 
             <div className="min-w-0">
-              <div className="truncate text-sm font-bold text-ink">
-                {item.brandName || item.productName || "Brand"}
-              </div>
-              <div className="mt-0.5 text-[0.6875rem] text-muted">
-                {item.productType || "Product Type"}
-              </div>
+              <div className="truncate text-sm font-bold text-ink">{brand}</div>
+              <div className="mt-0.5 text-[0.6875rem] text-muted">{type}</div>
             </div>
           </div>
 
@@ -422,7 +486,7 @@ function LineItemRow({
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
+          <div className="min-w-0">
             <label className="text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
               Specification
             </label>
@@ -450,11 +514,7 @@ function LineItemRow({
             <label className="text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
               Rate
             </label>
-            <RateInput
-              item={item}
-              onUpdate={onUpdate}
-                 className="mt-1"
-            />
+            <RateInput item={item} onUpdate={onUpdate} className="mt-1" />
           </div>
         </div>
 
@@ -467,40 +527,58 @@ function LineItemRow({
           </span>
         </div>
       </div>
-
-      {/* DESKTOP AMOUNT */}
-      <div className="mt-3 hidden border-t border-line pt-3 text-right lg:block">
-        <span className="mr-2 text-[0.6875rem] font-bold uppercase tracking-wide text-muted">
-          Amount
-        </span>
-        <span className="text-sm font-black text-ink">
-          {formatAmount(lineAmount)}
-        </span>
-      </div>
     </div>
   );
 }
 
 /* ==========================================================================
    SPECIFICATION FIELD
+   --------------------------------------------------------------------------
+   compact = used inside the single-line row: plain text, one line, "…" when
+   too long (full text on hover).
    ========================================================================== */
 
-function SpecificationField({ item }) {
-  if (item?.selectedSpecification) {
-    return (
-      <div className="flex min-h-9 items-center rounded-lg border border-line bg-bg/40 px-3 text-xs font-semibold text-ink">
-        {item.selectedSpecification}
-      </div>
-    );
-  }
+function SpecificationField({ item, compact = false }) {
+  const selected = item?.selectedSpecification;
 
   const rows = Array.isArray(item?.specifications)
     ? item.specifications.filter((row) => row?.specification)
     : [];
 
+  /* ---------- compact (single line) ---------- */
+  if (compact) {
+    const text = selected || rows.map((row) => row.specification).join(" · ");
+
+    if (!text) {
+      return (
+        <div className="truncate text-xs leading-tight text-muted">
+          No specification
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className="truncate text-xs font-semibold leading-tight text-ink"
+        title={text}
+      >
+        {text}
+      </div>
+    );
+  }
+
+  /* ---------- full (mobile card) ---------- */
+  if (selected) {
+    return (
+      <div className="mt-1 flex min-h-9 items-center rounded-lg border border-line bg-bg/40 px-3 py-1.5 text-xs font-semibold text-ink">
+        {selected}
+      </div>
+    );
+  }
+
   if (rows.length) {
     return (
-      <div className="flex min-h-9 flex-wrap items-center gap-1 rounded-lg border border-line bg-bg/40 px-2 py-1.5">
+      <div className="mt-1 flex min-h-9 flex-wrap items-center gap-1 rounded-lg border border-line bg-bg/40 px-2 py-1.5">
         {rows.map((row, index) => (
           <span
             key={`${row.specification}-${index}`}
@@ -514,7 +592,7 @@ function SpecificationField({ item }) {
   }
 
   return (
-    <div className="flex h-9 items-center rounded-lg border border-line bg-bg/40 px-3 text-xs text-muted">
+    <div className="mt-1 flex h-9 items-center rounded-lg border border-line bg-bg/40 px-3 text-xs text-muted">
       No specification
     </div>
   );

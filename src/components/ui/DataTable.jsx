@@ -116,7 +116,7 @@ export function DataTable({
     );
   }
 
-  const rowPy = dense ? "py-2" : "py-3";
+  const rowPy = dense ? "py-1.5" : "py-2.5";
 
   const startItem = (currentPage - 1) * pageSize + 1;
   const endItem = Math.min(currentPage * pageSize, totalRows);

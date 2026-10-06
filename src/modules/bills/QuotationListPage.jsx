@@ -244,18 +244,7 @@ export function QuotationListPage() {
               </Button>
             )}
 
-            {quotations.length > 0 && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setClearOpen(true)}
-                className="text-danger hover:bg-red-50 dark:hover:bg-red-950/40"
-                title="Delete every quotation"
-              >
-                <Trash2 className="h-4 w-4" />
-                <span className="hidden sm:inline">Clear All</span>
-              </Button>
-            )}
+           
 
             <Button size="sm" onClick={() => navigate("/bills/quotations/new")}>
               <Plus className="h-4 w-4" />
