@@ -273,13 +273,13 @@ const LINE_ITEMS_CSS = `
 
 .li-root .li-grid {
   grid-template-columns:
-    24px
+    22px
     minmax(0, 1fr)
     minmax(0, 1.35fr)
-    72px
+    64px
+    80px
     84px
-    92px
-    100px
+    96px
     56px;
   column-gap: 6px;
   align-items: center;
