@@ -31,16 +31,17 @@
 @layer base {
   /*
    * TEXT SIZE — the one place that controls how big everything is.
-   *   100%    = 16px (browser default, the old size)
-   *   112.5%  = 18px (current)
+   *   93.75%  = 15px (smaller)
+   *   100%    = 16px (browser default)      <- current, desktop
+   *   112.5%  = 18px (the previous, larger size)
    * Tailwind sizes (text-*, spacing, h-*, w-*) are all rem, so text,
-   * inputs, buttons and spacing grow together and the layout stays balanced.
-   * Phones get a smaller step so screens do not feel cramped.
+   * inputs, buttons and spacing shrink together and the layout stays balanced.
+   * Phones get one step smaller so screens do not feel cramped.
    */
-  html { font-size: 112.5%; }
+  html { font-size: 100%; }
 
   @media (max-width: 640px) {
-    html { font-size: 106.25%; }
+    html { font-size: 93.75%; }
   }
 
   html, body, #root { height: 100%; }
