@@ -116,7 +116,7 @@ export function DataTable({
     );
   }
 
-  const rowPy = dense ? "py-2" : "py-2.5";
+  const rowPy = dense ? "py-2" : "py-3";
 
   const startItem = (currentPage - 1) * pageSize + 1;
   const endItem = Math.min(currentPage * pageSize, totalRows);
@@ -172,13 +172,13 @@ export function DataTable({
       <div className="hidden md:block overflow-x-auto scrollbar-thin">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-bg/60 text-muted text-2xs uppercase tracking-wider">
+            <tr className="bg-slate-50/80 dark:bg-slate-900/40 text-muted text-2xs uppercase tracking-wider">
               {columns.map((c) => (
                 <th
                   key={c.key}
                   style={{ width: c.width }}
                   className={cn(
-                    "px-4 py-2.5 font-semibold border-b border-line whitespace-nowrap select-none",
+                    "px-4 py-3 font-semibold border-b border-line whitespace-nowrap select-none",
                     c.align === "right" && "text-right",
                     c.align === "center" && "text-center",
                     c.align !== "right" &&
@@ -217,7 +217,7 @@ export function DataTable({
                 className={cn(
                   "border-b border-line/60 last:border-b-0 transition-colors",
                   onRowClick &&
-                    "cursor-pointer hover:bg-primary-50/40 dark:hover:bg-slate-800/60",
+                    "cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-800/60",
                 )}
               >
                 {columns.map((c) => (
@@ -324,6 +324,8 @@ export function DataTable({
               >
                 <option value={10}>10</option>
                 <option value={20}>20</option>
+                <option value={30}>30</option>
+                <option value={40}>40</option>
                 <option value={50}>50</option>
               </select>
             </div>

@@ -86,7 +86,7 @@ export function AppLayout() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto scrollbar-thin">
+        <nav className="flex-1 px-3 py-3 space-y-1 overflow-y-auto scrollbar-thin">
           {visibleNav.map(({ to, target, label, icon: Icon }) => (
             <NavLink
               key={to}
@@ -94,6 +94,7 @@ export function AppLayout() {
               className={({ isActive }) =>
                 cn(
                   "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-150",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40",
                   (isActive || baseActive(to))
                     ? "bg-primary-50 text-primary-700 font-semibold dark:bg-primary-950/40 dark:text-primary-300"
                     : "text-ink/70 hover:text-ink hover:bg-slate-100 dark:hover:bg-slate-800",
@@ -102,6 +103,9 @@ export function AppLayout() {
             >
               {({ isActive }) => (
                 <>
+                  {(isActive || baseActive(to)) && (
+                    <span className="absolute -left-2 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary-500" />
+                  )}
                   <Icon
                     className={cn(
                       "h-4 w-4 shrink-0 transition-colors",

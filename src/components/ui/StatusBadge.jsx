@@ -9,6 +9,15 @@ const TONES = {
   primary: "bg-primary-50 text-primary-700 border-primary-100 dark:bg-primary-950/40 dark:text-primary-300 dark:border-primary-900",
 };
 
+const DOTS = {
+  neutral: "bg-slate-400",
+  info: "bg-blue-500",
+  success: "bg-emerald-500",
+  warning: "bg-amber-500",
+  danger: "bg-red-500",
+  primary: "bg-primary-500",
+};
+
 const STATUS_TONE = {
   active: "success", inactive: "neutral",
   draft: "neutral", sent: "info", approved: "success",
@@ -26,11 +35,12 @@ export function StatusBadge({ status, tone, className }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center px-2 py-0.5 rounded-md border text-2xs font-semibold capitalize whitespace-nowrap tracking-tight",
+        "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-2xs font-semibold capitalize whitespace-nowrap tracking-tight",
         TONES[t],
         className,
       )}
     >
+      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOTS[t])} />
       {label}
     </span>
   );

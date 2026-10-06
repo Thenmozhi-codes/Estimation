@@ -1,12 +1,24 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download, FileSpreadsheet, FileText, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  FileSpreadsheet,
+  FileText,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Download,
+} from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
 import { Button } from "@/components/ui/Button";
-import { Select } from "@/components/ui/Select";
 import { DataTable } from "@/components/ui/DataTable";
-import { Toolbar } from "@/components/ui/Toolbar";
+import { FilterBar } from "@/components/common/FilterBar";
+import { CustomerCell } from "@/components/common/CustomerCell";
+import { StatusTabs } from "@/components/common/StatusTabs";
+import { IconAction } from "@/components/ui/IconAction";
+import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { toast } from "@/lib/toast";
@@ -27,6 +39,19 @@ import {
 import { useParties } from "@/hooks/useParties";
 import { MODULE_TABS } from "@/app/moduleNav";
 
+
+const EXPORT_BTN =
+  "border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900 dark:text-emerald-400 dark:hover:bg-emerald-950/30";
+
+const QUOTATION_STATUSES = [
+  ["draft", "Draft"],
+  ["sent", "Sent"],
+  ["approved", "Approved"],
+  ["rejected", "Rejected"],
+  ["expired", "Expired"],
+  ["converted", "Converted"],
+];
+
 export function QuotationListPage() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
@@ -35,6 +60,7 @@ export function QuotationListPage() {
   const [clearOpen, setClearOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const canExportAll = usePermission("canExportAll");
+  const queryClient = useQueryClient();
 
   const { data: quotations = [], isLoading } = useQuotations();
   const { data: parties = [] } = useParties();
@@ -59,6 +85,30 @@ export function QuotationListPage() {
     }
     return list;
   }, [quotations, search, statusFilter, partyById]);
+
+  /* status tabs with counts (empty statuses are hidden unless selected) */
+  const statusTabs = useMemo(() => {
+    const count = (status) => quotations.filter((q) => q.status === status).length;
+
+    return [
+      { value: "", label: "All", count: quotations.length },
+      ...QUOTATION_STATUSES.map(([value, label]) => ({
+        value,
+        label,
+        count: count(value),
+      })).filter((tab) => tab.count > 0 || tab.value === statusFilter),
+    ];
+  }, [quotations, statusFilter]);
+
+  const filteredTotal = useMemo(
+    () => filtered.reduce((sum, q) => sum + (Number(q.grandTotal) || 0), 0),
+    [filtered],
+  );
+
+  const onRefresh = async () => {
+    await queryClient.invalidateQueries();
+    toast.success("List refreshed");
+  };
 
   const onDelete = async () => {
     try {
@@ -171,9 +221,28 @@ export function QuotationListPage() {
     <div className="page-container min-h-full">
       <PageHeader
         title="Quotations"
+        count={quotations.length}
         actions={
-          <div className="flex items-center gap-2">
-           
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={onRefresh}>
+              <RefreshCw className="h-4 w-4" />
+              <span className="hidden sm:inline">Refresh</span>
+            </Button>
+
+            {canExportAll && (
+              <Button
+                size="sm"
+                variant="secondary"
+                className={EXPORT_BTN}
+                onClick={onExportAll}
+                disabled={exporting || quotations.length === 0}
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                <span className="hidden sm:inline">
+                  {exporting ? "Exporting…" : "Excel"}
+                </span>
+              </Button>
+            )}
 
             {quotations.length > 0 && (
               <Button
@@ -181,25 +250,10 @@ export function QuotationListPage() {
                 variant="ghost"
                 onClick={() => setClearOpen(true)}
                 className="text-danger hover:bg-red-50 dark:hover:bg-red-950/40"
+                title="Delete every quotation"
               >
                 <Trash2 className="h-4 w-4" />
                 <span className="hidden sm:inline">Clear All</span>
-                <span className="sm:hidden">Clear</span>
-              </Button>
-            )}
-
-             {canExportAll && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onExportAll}
-                disabled={exporting || quotations.length === 0}
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                <span className="hidden sm:inline">
-                  {exporting ? "Exporting…" : "Export All"}
-                </span>
-                <span className="sm:hidden">Export</span>
               </Button>
             )}
 
@@ -213,154 +267,114 @@ export function QuotationListPage() {
       />
       <ModuleTabs tabs={MODULE_TABS.bills} />
 
-      <Toolbar
-        search={search}
-        onSearch={setSearch}
-        placeholder="Search by number or customer…"
-      >
-        <Select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="w-full sm:w-40"
-        >
-          <option value="">All status</option>
-          <option value="draft">Draft</option>
-          <option value="sent">Sent</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-          <option value="expired">Expired</option>
-          <option value="converted">Converted</option>
-        </Select>
-      </Toolbar>
+      <div className="space-y-4 p-4 pb-24 md:p-6 md:pb-6">
+        {/* LIST */}
+        <Card className="overflow-hidden">
+          <StatusTabs tabs={statusTabs} value={statusFilter} onChange={setStatusFilter} />
 
-      <div className="bg-surface border-t border-line pb-24 md:pb-0">
-        <DataTable
-          columns={[
-            {
-              key: "number",
-              header: "Number",
-              sortable: true,
-              render: (r) => (
-                <div className="font-bold text-ink">{r.number}</div>
-              ),
-            },
-            {
-              key: "partyId",
-              header: "Customer",
-              render: (r) => partyById[r.partyId]?.name || "—",
-            },
-            {
-              key: "date",
-              header: "Date",
-              hideOnMobile: true,
-              render: (r) => fmtDate(r.date),
-            },
-            {
-              key: "grandTotal",
-              header: "Amount",
-              align: "right",
-              sortable: true,
-              render: (r) => (
-                <span className="font-bold text-ink">
-                  {formatMoney(r.grandTotal)}
-                </span>
-              ),
-            },
-            {
-              key: "status",
-              header: "Status",
-              align: "right",
-              render: (r) => <StatusBadge status={r.status} />,
-            },
+          <FilterBar
+            search={search}
+            onSearch={setSearch}
+            placeholder="Search by number or customer…"
+          >
+            <div className="hidden text-xs tabular-nums text-muted sm:block">
+              {filtered.length} quotation{filtered.length === 1 ? "" : "s"}
+              <span className="mx-1.5">·</span>
+              <span className="font-semibold text-ink">{formatMoney(filteredTotal)}</span>
+            </div>
+          </FilterBar>
 
-            /* Excel + PDF — right after Status */
-            {
-              key: "__downloads",
-              header: "",
-              width: 160,
-              align: "right",
-              render: (row) => (
-                <div className="flex items-center justify-end gap-1">
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onDownloadExcel(row);
-                    }}
-                    className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold text-sky-600 transition hover:bg-sky-500/10"
-                    title="Download Excel"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    <span>Excel</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onDownloadPdf(row);
-                    }}
-                    className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold text-red-600 transition hover:bg-red-500/10"
-                    title="Download PDF"
-                  >
-                    <FileText className="h-3.5 w-3.5" />
-                    <span>PDF</span>
-                  </button>
-                </div>
-              ),
-            },
-
-            /* EDIT — right after Status */
-            {
-              key: "__edit",
-              header: "",
-              width: 75,
-              align: "right",
-              render: (row) => (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEdit(row);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-bold text-primary-600 transition hover:bg-primary-500/10"
-                  title="Edit quotation"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  <span>Edit</span>
-                </button>
-              ),
-            },
-
-            {
-              key: "__actions",
-              header: "",
-              width: 70,
-              align: "right",
-              render: (row) => (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setConfirm(row);
-                  }}
-                  className="px-2 py-1 text-xs font-bold text-red-500 hover:bg-red-500/10 rounded-md"
-                >
-                  Del
-                </button>
-              ),
-            },
-          ]}
-          rows={filtered}
-          loading={isLoading}
-          onRowClick={(r) => navigate(`/bills/quotations/${r.id}`)}
-          emptyTitle="No quotations yet"
-          emptyDescription="Create your first quotation to send to a customer."
-          emptyAction={
-            <Button onClick={() => navigate("/bills/quotations/new")}>
-              <Plus className="h-4 w-4" /> New Quotation
-            </Button>
-          }
-        />
+          <DataTable
+            columns={[
+              {
+                key: "number",
+                header: "No",
+                sortable: true,
+                render: (r) => (
+                  <span className="font-semibold tabular-nums text-primary-600">
+                    {r.number}
+                  </span>
+                ),
+              },
+              {
+                key: "date",
+                header: "Date",
+                hideOnMobile: true,
+                sortable: true,
+                render: (r) => (
+                  <span className="whitespace-nowrap text-ink/80">
+                    {fmtDate(r.date)}
+                  </span>
+                ),
+              },
+              {
+                key: "partyId",
+                header: "Customer",
+                render: (r) => <CustomerCell party={partyById[r.partyId]} />,
+              },
+              {
+                key: "grandTotal",
+                header: "Total",
+                align: "right",
+                sortable: true,
+                render: (r) => (
+                  <span className="font-bold text-ink">
+                    {formatMoney(r.grandTotal)}
+                  </span>
+                ),
+              },
+              {
+                key: "status",
+                header: "Status",
+                render: (r) => <StatusBadge status={r.status} />,
+              },
+              {
+                key: "__actions",
+                header: "Actions",
+                align: "right",
+                width: 170,
+                render: (row) => (
+                  <div className="flex items-center justify-end">
+                    <IconAction
+                      icon={Download}
+                      tone="sky"
+                      label="Download Excel"
+                      onClick={() => onDownloadExcel(row)}
+                    />
+                    <IconAction
+                      icon={FileText}
+                      tone="red"
+                      label="Download PDF"
+                      onClick={() => onDownloadPdf(row)}
+                    />
+                    <IconAction
+                      icon={Pencil}
+                      tone="primary"
+                      label="Edit quotation"
+                      onClick={() => onEdit(row)}
+                    />
+                    <IconAction
+                      icon={Trash2}
+                      tone="red"
+                      label="Delete quotation"
+                      onClick={() => setConfirm(row)}
+                    />
+                  </div>
+                ),
+              },
+            ]}
+            rows={filtered}
+            loading={isLoading}
+            onRowClick={(r) => navigate(`/bills/quotations/${r.id}`)}
+            emptyTitle="No quotations yet"
+            emptyDescription="Create your first quotation to send to a customer."
+            emptyAction={
+              <Button onClick={() => navigate("/bills/quotations/new")}>
+                <Plus className="h-4 w-4" /> New Quotation
+              </Button>
+            }
+          />
+        </Card>
       </div>
 
       <ConfirmDialog

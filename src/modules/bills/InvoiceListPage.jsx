@@ -1,13 +1,27 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download, FileSpreadsheet, FileText, Pencil, Plus, X } from "lucide-react";
+import {
+  Download,
+  FileSpreadsheet,
+  FileText,
+  Pencil,
+  Plus,
+  Receipt,
+  RefreshCw,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { PageHeader } from "@/components/common/PageHeader";
 import { ModuleTabs } from "@/components/common/ModuleTabs";
 import { Button } from "@/components/ui/Button";
-import { Select } from "@/components/ui/Select";
 import { DataTable } from "@/components/ui/DataTable";
-import { Toolbar } from "@/components/ui/Toolbar";
+import { FilterBar } from "@/components/common/FilterBar";
+import { CustomerCell } from "@/components/common/CustomerCell";
+import { StatusTabs } from "@/components/common/StatusTabs";
+import { IconAction } from "@/components/ui/IconAction";
+import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
@@ -34,6 +48,19 @@ import {
 import { useParties } from "@/hooks/useParties";
 import { MODULE_TABS } from "@/app/moduleNav";
 
+
+const EXPORT_BTN =
+  "border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900 dark:text-emerald-400 dark:hover:bg-emerald-950/30";
+
+const INVOICE_STATUSES = [
+  ["draft", "Draft"],
+  ["issued", "Issued"],
+  ["partially_paid", "Partially paid"],
+  ["paid", "Paid"],
+  ["overdue", "Overdue"],
+  ["cancelled", "Cancelled"],
+];
+
 export function InvoiceListPage() {
   const navigate = useNavigate();
 
@@ -53,6 +80,7 @@ export function InvoiceListPage() {
   const canDelete = usePermission("canDeleteDocuments");
   const canExportAll = usePermission("canExportAll");
   const [exporting, setExporting] = useState(false);
+  const queryClient = useQueryClient();
 
   /* PAYMENTS GROUPED BY INVOICE
      A payment is matched to an invoice if ANY of its fields holds that
@@ -247,31 +275,66 @@ export function InvoiceListPage() {
 
   const modalPayments = receiptInvoice ? paymentsOf(receiptInvoice) : [];
 
+  const balanceOf = (invoice) =>
+    Math.max(0, (Number(invoice.grandTotal) || 0) - (Number(invoice.amountPaid) || 0));
+
+  /* status tabs with counts (empty statuses are hidden unless selected) */
+  const statusTabs = useMemo(() => {
+    const count = (status) => invoices.filter((i) => i.status === status).length;
+
+    return [
+      { value: "", label: "All", count: invoices.length },
+      ...INVOICE_STATUSES.map(([value, label]) => ({
+        value,
+        label,
+        count: count(value),
+      })).filter((tab) => tab.count > 0 || tab.value === statusFilter),
+    ];
+  }, [invoices, statusFilter]);
+
+  const filteredTotals = useMemo(
+    () => ({
+      total: filtered.reduce((sum, i) => sum + (Number(i.grandTotal) || 0), 0),
+      balance: filtered.reduce((sum, i) => sum + balanceOf(i), 0),
+    }),
+    [filtered],
+  );
+
+  const onRefresh = async () => {
+    await queryClient.invalidateQueries();
+    toast.success("List refreshed");
+  };
+
   return (
     <div className="page-container min-h-full">
       <PageHeader
         title="Invoices"
+        count={invoices.length}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={onRefresh}>
+              <RefreshCw className="h-4 w-4" />
+              <span className="hidden sm:inline">Refresh</span>
+            </Button>
+
             {canExportAll && (
               <Button
                 size="sm"
-                variant="outline"
+                variant="secondary"
+                className={EXPORT_BTN}
                 onClick={onExportAll}
                 disabled={exporting}
               >
                 <FileSpreadsheet className="h-4 w-4" />
                 <span className="hidden sm:inline">
-                  {exporting ? "Exporting…" : "Export All"}
+                  {exporting ? "Exporting…" : "Excel"}
                 </span>
-                <span className="sm:hidden">Export</span>
               </Button>
             )}
 
             {canCreate && (
               <Button size="sm" onClick={() => navigate("/bills/invoices/new")}>
                 <Plus className="h-4 w-4" />
-
                 <span className="hidden sm:inline">New Invoice</span>
                 <span className="sm:hidden">New</span>
               </Button>
@@ -282,209 +345,164 @@ export function InvoiceListPage() {
 
       <ModuleTabs tabs={MODULE_TABS.bills} />
 
-      <Toolbar
-        search={search}
-        onSearch={setSearch}
-        placeholder="Search by number or customer…"
-      >
-        <Select
-          value={statusFilter}
-          onChange={(event) => setStatusFilter(event.target.value)}
-          className="w-full sm:w-44"
-        >
-          <option value="">All status</option>
-          <option value="draft">Draft</option>
-          <option value="issued">Issued</option>
-          <option value="partially_paid">Partially Paid</option>
-          <option value="paid">Paid</option>
-          <option value="overdue">Overdue</option>
-          <option value="cancelled">Cancelled</option>
-        </Select>
-      </Toolbar>
+      <div className="space-y-4 p-4 pb-24 md:p-6 md:pb-6">
+        {/* LIST */}
+        <Card className="overflow-hidden">
+          <StatusTabs tabs={statusTabs} value={statusFilter} onChange={setStatusFilter} />
 
-      <div className="border-t border-line bg-surface pb-24 md:pb-0">
-        <DataTable
-          columns={[
-            {
-              key: "number",
-              header: "Number",
-              sortable: true,
-              render: (row) => (
-                <div className="font-bold text-ink">{row.number}</div>
-              ),
-            },
-
-            {
-              key: "partyId",
-              header: "Customer",
-              render: (row) => partyById[row.partyId]?.name || "—",
-            },
-
-            {
-              key: "date",
-              header: "Date",
-              hideOnMobile: true,
-              render: (row) => fmtDate(row.date),
-            },
-
-            {
-              key: "grandTotal",
-              header: "Total",
-              align: "right",
-              sortable: true,
-              render: (row) => (
-                <span className="font-bold text-ink">
-                  {formatMoney(row.grandTotal)}
-                </span>
-              ),
-            },
-
-            {
-              key: "balance",
-              header: "Balance",
-              align: "right",
-              hideOnMobile: true,
-              render: (row) => {
-                const balance =
-                  (row.grandTotal || 0) - (row.amountPaid || 0);
-
-                return (
-                  <span
-                    className={
-                      balance > 0 ? "font-bold text-red-500" : "text-muted"
-                    }
-                  >
-                    {formatMoney(Math.max(0, balance))}
+          <FilterBar
+            search={search}
+            onSearch={setSearch}
+            placeholder="Search by number or customer…"
+          >
+            <div className="hidden text-xs tabular-nums text-muted sm:block">
+              {filtered.length} invoice{filtered.length === 1 ? "" : "s"}
+              <span className="mx-1.5">·</span>
+              <span className="font-semibold text-ink">{formatMoney(filteredTotals.total)}</span>
+              {filteredTotals.balance > 0.009 && (
+                <>
+                  <span className="mx-1.5">·</span>
+                  <span className="font-semibold text-red-500">
+                    {formatMoney(filteredTotals.balance)} due
                   </span>
-                );
+                </>
+              )}
+            </div>
+          </FilterBar>
+
+          <DataTable
+            columns={[
+              {
+                key: "number",
+                header: "No",
+                sortable: true,
+                render: (row) => (
+                  <span className="font-semibold tabular-nums text-primary-600">
+                    {row.number}
+                  </span>
+                ),
               },
-            },
-
-            {
-              key: "status",
-              header: "Status",
-              align: "right",
-              render: (row) => <StatusBadge status={row.status} />,
-            },
-
-            /* Excel + PDF — right after Status */
-            {
-              key: "__downloads",
-              header: "",
-              width: 160,
-              align: "right",
-              render: (row) => (
-                <div className="flex items-center justify-end gap-1">
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onDownloadExcel(row);
-                    }}
-                    className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold text-sky-600 transition hover:bg-sky-500/10"
-                    title="Download Excel"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    <span>Excel</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onDownloadPdf(row);
-                    }}
-                    className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold text-red-600 transition hover:bg-red-500/10"
-                    title="Download PDF"
-                  >
-                    <FileText className="h-3.5 w-3.5" />
-                    <span>PDF</span>
-                  </button>
-                </div>
-              ),
-            },
-
-            /* RECEIPT — one per payment; several payments open a list */
-            {
-              key: "__receipt",
-              header: "",
-              width: 150,
-              align: "right",
-              render: (row) => {
-                const count = paymentsOf(row).length;
-
-                if (count === 0) return null;
-
-                return (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onReceiptClick(row);
-                    }}
-                    className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold text-emerald-600 transition hover:bg-emerald-500/10"
-                    title="View all payments and download receipts"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    <span>Receipts ({count})</span>
-                  </button>
-                );
+              {
+                key: "date",
+                header: "Date",
+                hideOnMobile: true,
+                sortable: true,
+                render: (row) => (
+                  <span className="whitespace-nowrap text-ink/80">
+                    {fmtDate(row.date)}
+                  </span>
+                ),
               },
-            },
+              {
+                key: "partyId",
+                header: "Customer",
+                render: (row) => <CustomerCell party={partyById[row.partyId]} />,
+              },
+              {
+                key: "grandTotal",
+                header: "Total",
+                align: "right",
+                sortable: true,
+                render: (row) => (
+                  <span className="font-bold text-ink">
+                    {formatMoney(row.grandTotal)}
+                  </span>
+                ),
+              },
+              {
+                key: "balance",
+                header: "Balance",
+                align: "right",
+                hideOnMobile: true,
+                render: (row) => {
+                  const balance = balanceOf(row);
 
-            {
-              key: "__edit",
-              header: "",
-              width: 75,
-              align: "right",
-              render: (row) => !canEdit ? null : (
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onEdit(row);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-bold text-primary-600 transition hover:bg-primary-500/10"
-                  title="Edit invoice"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  <span>Edit</span>
-                </button>
-              ),
-            },
+                  return (
+                    <span
+                      className={
+                        balance > 0.009 ? "font-bold text-red-500" : "text-muted"
+                      }
+                    >
+                      {formatMoney(balance)}
+                    </span>
+                  );
+                },
+              },
+              {
+                key: "status",
+                header: "Status",
+                render: (row) => <StatusBadge status={row.status} />,
+              },
+              {
+                key: "__actions",
+                header: "Actions",
+                align: "right",
+                width: 210,
+                render: (row) => {
+                  const count = paymentsOf(row).length;
 
-            {
-              key: "__actions",
-              header: "",
-              width: 70,
-              align: "right",
-              render: (row) => !canDelete ? null : (
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setConfirm(row);
-                  }}
-                  className="rounded-md px-2 py-1 text-xs font-bold text-red-500 transition hover:bg-red-500/10"
-                >
-                  Del
-                </button>
-              ),
-            },
-          ]}
-          rows={filtered}
-          loading={isLoading}
-          onRowClick={(row) => navigate(`/bills/invoices/${row.id}`)}
-          emptyTitle="No invoices yet"
-          emptyDescription="Issue your first invoice, or convert a quotation."
-          emptyAction={
-            canCreate ? (
-              <Button onClick={() => navigate("/bills/invoices/new")}>
-                <Plus className="h-4 w-4" />
-                New Invoice
-              </Button>
-            ) : null
-          }
-        />
+                  return (
+                    <div className="flex items-center justify-end">
+                      <IconAction
+                        icon={Download}
+                        tone="sky"
+                        label="Download Excel"
+                        onClick={() => onDownloadExcel(row)}
+                      />
+                      <IconAction
+                        icon={FileText}
+                        tone="red"
+                        label="Download PDF"
+                        onClick={() => onDownloadPdf(row)}
+                      />
+
+                      {count > 0 && (
+                        <IconAction
+                          icon={Receipt}
+                          tone="emerald"
+                          label={`Payments and receipts (${count})`}
+                          badge={count}
+                          onClick={() => onReceiptClick(row)}
+                        />
+                      )}
+
+                      {canEdit && (
+                        <IconAction
+                          icon={Pencil}
+                          tone="primary"
+                          label="Edit invoice"
+                          onClick={() => onEdit(row)}
+                        />
+                      )}
+
+                      {canDelete && (
+                        <IconAction
+                          icon={Trash2}
+                          tone="red"
+                          label="Delete invoice"
+                          onClick={() => setConfirm(row)}
+                        />
+                      )}
+                    </div>
+                  );
+                },
+              },
+            ]}
+            rows={filtered}
+            loading={isLoading}
+            onRowClick={(row) => navigate(`/bills/invoices/${row.id}`)}
+            emptyTitle="No invoices yet"
+            emptyDescription="Issue your first invoice, or convert a quotation."
+            emptyAction={
+              canCreate ? (
+                <Button onClick={() => navigate("/bills/invoices/new")}>
+                  <Plus className="h-4 w-4" />
+                  New Invoice
+                </Button>
+              ) : null
+            }
+          />
+        </Card>
       </div>
 
       {/* PAYMENT LIST — one receipt per payment */}
